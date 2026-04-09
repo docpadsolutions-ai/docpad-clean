@@ -1,0 +1,3 @@
+# Allow Supabase pg_cron / net.http_post to call without a user JWT.
+# Prefer also setting CRON_SECRET and sending header X-Cron-Secret from the job (see index.ts).
+verify_jwt = false

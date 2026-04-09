@@ -1,26 +1,109 @@
 @import "tailwindcss";
+/* RF2/SNOMED .txt contains substrings like `[-:7,8]` that Tailwind would treat as arbitrary utilities. */
+@source not "./snomed";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* Maps to variables in styles/themes.css (:root / html.dark) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s step-start infinite;
+}
+
+/* Pharmacy receipt modal — only when html.receipt-print-active (set while modal open) */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  html.receipt-print-active body * {
+    visibility: hidden;
+  }
+  html.receipt-print-active #prescription-receipt-sheet,
+  html.receipt-print-active #prescription-receipt-sheet * {
+    visibility: visible;
+  }
+
+  html.receipt-print-active .receipt-modal-root {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    background: transparent !important;
+  }
+
+  html.receipt-print-active #prescription-receipt-sheet {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 11pt;
+    line-height: 1.4;
+    color: #000;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html.receipt-print-active #prescription-receipt-sheet .receipt-print-scroll {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  html.receipt-print-active #prescription-receipt-sheet .receipt-med-table {
+    width: 100%;
+    border: 1px solid #000;
+  }
+
+  html.receipt-print-active #prescription-receipt-sheet .receipt-med-th,
+  html.receipt-print-active #prescription-receipt-sheet .receipt-med-td {
+    border: 1px solid #000;
+    padding: 0.35rem 0.5rem;
+    vertical-align: top;
+  }
+
+  html.receipt-print-active #prescription-receipt-sheet .receipt-med-th {
+    font-weight: 700;
+    background: #f0f0f0;
+  }
+
+  html.receipt-print-active #prescription-receipt-sheet .receipt-med-th-qty,
+  html.receipt-print-active #prescription-receipt-sheet .receipt-med-td-qty {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  html.receipt-print-active #prescription-receipt-sheet .receipt-signature-line {
+    max-width: 16rem;
+    margin-left: auto;
+    margin-right: auto;
+    border-bottom-width: 1px;
+  }
+
+  html.receipt-print-active .receipt-no-print {
+    display: none !important;
+  }
 }

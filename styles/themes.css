@@ -1,0 +1,604 @@
+/* Light theme (default — matches current app) */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-sidebar: #1e293b; /* current dark sidebar */
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-sidebar: #ffffff;
+  --border: #e2e8f0;
+  --accent-blue: #2563eb; /* current primary blue */
+  --card-bg: #ffffff;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+
+  /* Shadcn-aligned semantic tokens (light) — use with bg-background, bg-card, etc. */
+  --background: var(--bg-secondary);
+  --foreground: var(--text-primary);
+  --card: var(--card-bg);
+  --card-foreground: var(--text-primary);
+  --muted: #f1f5f9;
+  --muted-foreground: var(--text-secondary);
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: var(--accent-blue);
+}
+
+/* Dark theme — refined tokens */
+html.dark {
+  /* Background layers — 3 distinct depths */
+  --color-bg-base: #0a0e1a; /* page background — deepest */
+  --color-bg-surface: #111827; /* cards, panels */
+  --color-bg-elevated: #1a2236; /* inputs, dropdowns, hover states */
+  --color-bg-overlay: #1e2d45; /* tooltips, popovers */
+
+  /* Borders */
+  --color-border-subtle: #1e2d3d;
+  --color-border-default: #2a3a52;
+  --color-border-strong: #3d5166;
+
+  /* Text — 4 levels */
+  --color-text-primary: #e8edf5;
+  --color-text-secondary: #8fa3bc;
+  --color-text-muted: #546b82;
+  --color-text-disabled: #374a5c;
+
+  /* Accent — keep your existing blue, just adjust glow */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #60a5fa;
+  --color-accent-subtle: rgba(59, 130, 246, 0.12);
+
+  /* Status colors — slightly desaturated for dark */
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-info: #60a5fa;
+
+  /* Shadows — colored, not grey */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+  /* Zone accents (clinical UI) */
+  --color-zone-blue: rgba(59, 130, 246, 0.55);
+  --color-zone-teal: rgba(45, 212, 191, 0.5);
+  --color-zone-violet: rgba(167, 139, 250, 0.5);
+  --color-zone-amber: rgba(251, 191, 36, 0.5);
+  --color-zone-emerald: rgba(52, 211, 153, 0.45);
+
+  /* Semantic tokens (after --color-* so var() resolves) */
+  --background: var(--color-bg-base);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-surface);
+  --card-foreground: var(--color-text-primary);
+  --muted: var(--color-bg-elevated);
+  --muted-foreground: var(--color-text-secondary);
+  --border: var(--color-border-default);
+  --input: var(--color-border-default);
+  --ring: var(--color-accent);
+}
+
+/* Apply the tokens via direct selectors */
+
+html.dark body {
+  background-color: var(--color-bg-base);
+  background-image:
+    radial-gradient(ellipse 130% 95% at 50% -40%, rgba(59, 130, 246, 0.17), transparent 58%),
+    radial-gradient(ellipse 85% 70% at 100% -5%, rgba(139, 92, 246, 0.11), transparent 52%),
+    radial-gradient(ellipse 75% 55% at 0% 18%, rgba(20, 184, 166, 0.09), transparent 48%);
+  background-attachment: fixed;
+  color: var(--color-text-primary);
+}
+
+/* Main content area — same ambient wash as body (full-bleed layouts use .min-h-screen) */
+html.dark .min-h-screen,
+html.dark main,
+html.dark [class*="content"] {
+  background-color: var(--color-bg-base);
+  background-image:
+    radial-gradient(ellipse 130% 95% at 50% -40%, rgba(59, 130, 246, 0.17), transparent 58%),
+    radial-gradient(ellipse 85% 70% at 100% -5%, rgba(139, 92, 246, 0.11), transparent 52%),
+    radial-gradient(ellipse 75% 55% at 0% 18%, rgba(20, 184, 166, 0.09), transparent 48%);
+  background-attachment: fixed;
+}
+
+/* All cards and panels */
+html.dark .bg-white,
+html.dark .bg-gray-50,
+html.dark .bg-slate-50 {
+  background-color: var(--color-bg-surface) !important;
+  border-color: var(--color-border-subtle) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+/* Stat cards (the 0 Scheduled / Active / Completed / No-show tiles) */
+html.dark [class*="rounded-lg"],
+html.dark [class*="rounded-xl"] {
+  border-color: var(--color-border-subtle);
+}
+
+/* Inputs and search boxes */
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: var(--color-bg-elevated) !important;
+  border-color: var(--color-border-default) !important;
+  color: var(--color-text-primary) !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--color-text-muted) !important;
+}
+
+html.dark input:focus,
+html.dark textarea:focus {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 3px var(--color-accent-subtle) !important;
+}
+
+/* Secondary text */
+html.dark p,
+html.dark span,
+html.dark label {
+  color: inherit;
+}
+
+/* Muted/secondary text — target common patterns */
+html.dark .text-gray-500,
+html.dark .text-gray-600,
+html.dark .text-slate-500 {
+  color: var(--color-text-secondary) !important;
+}
+
+html.dark .text-gray-400,
+html.dark .text-slate-400 {
+  color: var(--color-text-muted) !important;
+}
+
+/* Headers */
+html.dark h1,
+html.dark h2,
+html.dark h3,
+html.dark h4,
+html.dark h5,
+html.dark h6 {
+  color: var(--color-text-primary);
+}
+
+/* Quick Actions panel right side */
+html.dark .border,
+html.dark [class*="border-gray"],
+html.dark [class*="border-slate"] {
+  border-color: var(--color-border-subtle) !important;
+}
+
+/* Notification cards */
+html.dark .bg-yellow-50 {
+  background-color: rgba(251, 191, 36, 0.08) !important;
+}
+html.dark .bg-red-50 {
+  background-color: rgba(248, 113, 113, 0.08) !important;
+}
+html.dark .bg-green-50 {
+  background-color: rgba(52, 211, 153, 0.08) !important;
+}
+html.dark .bg-blue-50 {
+  background-color: rgba(96, 165, 250, 0.08) !important;
+}
+
+/* Stat tile accent colors — preserve the teal/orange/green tints */
+html.dark .bg-orange-50 {
+  background-color: rgba(251, 146, 60, 0.1) !important;
+}
+html.dark .bg-teal-50 {
+  background-color: rgba(20, 184, 166, 0.1) !important;
+}
+
+/* Table rows */
+html.dark tr:hover {
+  background-color: var(--color-bg-elevated) !important;
+}
+
+html.dark thead tr,
+html.dark th {
+  background-color: var(--color-bg-surface) !important;
+  color: var(--color-text-secondary) !important;
+  border-color: var(--color-border-default) !important;
+}
+
+html.dark td {
+  border-color: var(--color-border-subtle) !important;
+  color: var(--color-text-primary);
+}
+
+/* Tabs — active vs inactive (not ARIA tabs — those use underline only; see TAB BAR block) */
+html.dark button[class*="active"]:not([role="tab"]),
+html.dark [aria-selected="true"]:not([role="tab"]) {
+  background-color: var(--color-accent) !important;
+  color: #ffffff !important;
+}
+
+/* Scrollbar */
+html.dark ::-webkit-scrollbar {
+  width: 6px;
+}
+html.dark ::-webkit-scrollbar-track {
+  background: var(--color-bg-base);
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.55), rgba(37, 99, 235, 0.45));
+  border-radius: 4px;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.75), rgba(59, 130, 246, 0.55));
+}
+
+/* The sidebar — already dark, just deepen it */
+html.dark nav,
+html.dark aside,
+html.dark [class*="sidebar"] {
+  background-color: #080c17 !important;
+  border-right-color: var(--color-border-subtle) !important;
+}
+
+/* Top header bar */
+html.dark header {
+  background-color: var(--color-bg-surface) !important;
+  border-bottom-color: var(--color-border-subtle) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* === CARDS — add visible border + slight lift === */
+html.dark .rounded-lg,
+html.dark .rounded-xl {
+  border: 1px solid #1e2d3d !important;
+  background-color: #111827 !important;
+}
+
+/* Inner cards / nested surfaces need more contrast */
+html.dark .rounded-lg .rounded-lg,
+html.dark .rounded-xl .rounded-xl {
+  background-color: #1a2236 !important;
+  border-color: #2a3a52 !important;
+}
+
+/* === CHIPS / PILL TAGS (advice, suggestions) === */
+html.dark .rounded-full {
+  background-color: #1a2236 !important;
+  border: 1px solid #2a3a52 !important;
+  color: #8fa3bc !important;
+}
+
+html.dark .rounded-full:hover {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  border-color: #3b82f6 !important;
+  color: #e8edf5 !important;
+}
+
+/* === HEALTH TIMELINE — force dark interior === */
+html.dark [class*="timeline"],
+html.dark [class*="Timeline"] {
+  background-color: #111827 !important;
+}
+
+/* === SECONDARY TEXT — bump contrast slightly === */
+html.dark .text-gray-500,
+html.dark .text-slate-500,
+html.dark .text-gray-600 {
+  color: #7a97b5 !important; /* was too dim at #546b82 */
+}
+
+/* === DIVIDERS === */
+html.dark hr,
+html.dark [class*="divide"] > * + * {
+  border-color: #1e2d3d !important;
+}
+
+/* === ACTION BUTTONS (Order Investigations etc) === */
+/* Exclude role="tab" — chart tab strips stay flat (underline only), see TAB BAR block */
+html.dark button:not([class*="bg-blue"]):not([class*="bg-green"]):not([role="tab"]) {
+  background-color: #1a2236 !important;
+  border: 1px solid #2a3a52 !important;
+  color: #8fa3bc !important;
+}
+
+html.dark button:not([class*="bg-blue"]):not([class*="bg-green"]):not([role="tab"]):hover {
+  background-color: #1e2d45 !important;
+  color: #e8edf5 !important;
+}
+
+/* === SECTION LABELS (CARE TEAM, ALLERGIES etc) === */
+html.dark [class*="uppercase"],
+html.dark [class*="tracking-wide"] {
+  color: #546b82 !important;
+  letter-spacing: 0.08em;
+}
+
+/* === CHECKBOX === */
+html.dark input[type="checkbox"] {
+  accent-color: #3b82f6;
+}
+
+/* === LOGO — prevent dark overlay killing it === */
+html.dark [class*="logo"] img,
+html.dark header img,
+html.dark nav img {
+  filter: brightness(1.2) !important;
+}
+
+/* Specifically the DocPad icon square */
+html.dark [class*="logo"],
+html.dark .bg-blue-600,
+html.dark .bg-blue-500 {
+  /* preserve blue — don't override branded elements */
+  background-color: #2563eb !important;
+}
+
+/* === HEADER NAV TEXT — force light color === */
+html.dark header a,
+html.dark header nav a,
+html.dark header button,
+html.dark header span,
+html.dark [class*="navbar"] a,
+html.dark [class*="topbar"] a {
+  color: #c8d8e8 !important;
+}
+
+html.dark header a:hover {
+  color: #ffffff !important;
+}
+
+/* Active nav item */
+html.dark header a[class*="active"],
+html.dark header a[aria-current="page"] {
+  color: #ffffff !important;
+}
+
+/* === QUICK ACTION BUTTONS — text + border fix === */
+html.dark [class*="quick"] button:not([role="tab"]),
+html.dark [class*="Quick"] button:not([role="tab"]),
+html.dark aside button:not([role="tab"]):not([data-theme-toggle]):not([data-theme-toggle-cycle]),
+html.dark .rounded-lg button:not([role="tab"]) {
+  background-color: #1a2236 !important;
+  border: 1px solid #2a3a52 !important;
+  color: #c8d8e8 !important;
+}
+
+html.dark aside button:not([role="tab"]):not([data-theme-toggle]):not([data-theme-toggle-cycle]):hover,
+html.dark .rounded-lg button:not([role="tab"]):hover {
+  background-color: #1e2d45 !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+/* Theme toggle (footer) — must not be flattened by generic aside button rules */
+html.dark aside [data-theme-toggle-root] {
+  border-color: var(--color-border-default) !important;
+  background-color: rgba(15, 23, 42, 0.6) !important;
+}
+
+html.dark aside button[data-theme-toggle] {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--color-text-secondary) !important;
+}
+
+html.dark aside button[data-theme-toggle][aria-pressed="true"] {
+  background-color: var(--color-bg-elevated) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+html.dark aside button[data-theme-toggle]:hover {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+  color: var(--color-text-primary) !important;
+}
+
+html.dark aside button[data-theme-toggle-cycle] {
+  background-color: var(--color-bg-elevated) !important;
+  border: 1px solid rgba(96, 165, 250, 0.45) !important;
+  color: #fde68a !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2) !important;
+}
+
+html.dark aside button[data-theme-toggle-cycle]:hover {
+  background-color: #1e2d45 !important;
+  border-color: #60a5fa !important;
+  color: #fff !important;
+}
+
+/* Protect primary blue CTA buttons */
+html.dark button[class*="bg-blue"],
+html.dark button[class*="bg-green"] {
+  color: #ffffff !important;
+  border: none !important;
+}
+
+/* === GENERAL — ensure no text ever goes fully black === */
+html.dark * {
+  color: inherit;
+}
+
+html.dark .text-black,
+html.dark .text-gray-900,
+html.dark .text-slate-900 {
+  color: #e8edf5 !important;
+}
+
+/* Advice & Instructions accordion header */
+html.dark [class*="advice"],
+html.dark [class*="Advice"],
+html.dark [class*="instruction"],
+html.dark [class*="Instruction"] {
+  background-color: #1a2236 !important;
+  border: 1px solid #2a3a52 !important;
+  color: #e8edf5 !important;
+}
+
+/* The grey bar at bottom (allergies input area) */
+html.dark [class*="allerg"] input,
+html.dark [class*="allerg"] {
+  background-color: #1a2236 !important;
+  border-color: #2a3a52 !important;
+  color: #e8edf5 !important;
+}
+
+/* That grey loading/skeleton bar */
+html.dark [class*="bg-gray-200"],
+html.dark [class*="bg-slate-200"],
+html.dark [class*="animate-pulse"] {
+  background-color: #2a3a52 !important;
+}
+
+/* === TAB BAR — definition in dark mode === */
+html.dark [role="tablist"],
+html.dark [class*="tab-bar"],
+html.dark [class*="tabBar"] {
+  background-color: #111827 !important;
+  border-bottom: 1px solid #1e2d3d !important;
+}
+
+/* Inactive tabs — flat strip (no boxed button chrome from global button rules) */
+html.dark [role="tab"] {
+  background-color: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  color: #7a97b5 !important;
+  box-shadow: none !important;
+}
+
+/* Avoid matching unrelated classes (e.g. "tablet", "database") — keep narrow hooks only */
+html.dark [class*="tab-bar"] button,
+html.dark [class*="tabBar"] button {
+  background-color: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  color: #7a97b5 !important;
+  box-shadow: none !important;
+}
+
+/* Active tab */
+html.dark [role="tab"][aria-selected="true"],
+html.dark [class*="tab-active"] {
+  color: #e8edf5 !important;
+  border-bottom: 2px solid #3b82f6 !important;
+  background-color: transparent !important;
+}
+
+html.dark [class*="tab-bar"] button[aria-selected="true"],
+html.dark [class*="tabBar"] button[aria-selected="true"] {
+  color: #e8edf5 !important;
+  border-bottom: 2px solid #3b82f6 !important;
+  background-color: transparent !important;
+}
+
+/* Hover */
+html.dark [role="tab"]:hover {
+  color: #c8d8e8 !important;
+  background-color: rgba(59, 130, 246, 0.08) !important;
+}
+
+html.dark [class*="tab-bar"] button:hover,
+html.dark [class*="tabBar"] button:hover {
+  color: #c8d8e8 !important;
+  background-color: rgba(59, 130, 246, 0.08) !important;
+}
+
+/* Patient chart (OPD) — tab row matches card surface; avoid a separate filled bar */
+html.dark .patient-chart-tab-bar {
+  background-color: transparent !important;
+  border-bottom: none !important;
+}
+
+/* === DARK MODE — richer color (ambient light + accents) === */
+html.dark aside[aria-label="Main navigation"] {
+  border-right-color: rgba(59, 130, 246, 0.28) !important;
+}
+
+/* Section titles — slight cool tint instead of flat grey-white */
+html.dark h2.text-sm.font-bold.text-gray-900,
+html.dark h3.text-sm.font-bold.text-gray-900,
+html.dark label.text-sm.font-bold.text-gray-900 {
+  color: #d8e0ff !important;
+}
+
+/* Brighter semantic blues / greens (links, CTAs, badges) */
+html.dark .text-blue-600 {
+  color: #7cb3ff !important;
+}
+html.dark .text-blue-700 {
+  color: #93c5fd !important;
+}
+html.dark .text-emerald-600,
+html.dark .text-emerald-700,
+html.dark .text-emerald-800 {
+  color: #6ee7b7 !important;
+}
+html.dark .text-emerald-900 {
+  color: #a7f3d0 !important;
+}
+html.dark .text-sky-800 {
+  color: #7dd3fc !important;
+}
+html.dark .text-orange-500,
+html.dark .text-orange-600 {
+  color: #fdba74 !important;
+}
+
+/* Colored outline on cards (subtle blue halo) */
+html.dark .rounded-xl {
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(59, 130, 246, 0.14) !important;
+}
+
+/* Pills / chips — cooler border, slightly lifted hue */
+html.dark .rounded-full {
+  border-color: rgba(96, 165, 250, 0.38) !important;
+}
+
+html.dark .rounded-full:hover {
+  border-color: #60a5fa !important;
+}
+
+/* Quick-action tiles (Order investigations, Rx, etc.) */
+html.dark [class*="border-blue-200"] {
+  border-color: rgba(59, 130, 246, 0.42) !important;
+}
+html.dark [class*="border-emerald-200"] {
+  border-color: rgba(52, 211, 153, 0.38) !important;
+}
+html.dark [class*="bg-blue-50"] {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+html.dark [class*="bg-emerald-50"] {
+  background-color: rgba(52, 211, 153, 0.1) !important;
+}
+html.dark [class*="bg-sky-50"] {
+  background-color: rgba(14, 165, 233, 0.12) !important;
+}
+
+/* Patient summary — “Global patient summary” and timeline heading stay vivid */
+html.dark .patient-summary-root .text-blue-600 {
+  color: #7cb3ff !important;
+}
+
+/* Clinical zones — colored top edge on encounter cards (subjective / vitals / allergy / exam / dx) */
+html.dark .encounter-zone-chief {
+  border-top: 3px solid var(--color-zone-blue) !important;
+}
+html.dark .encounter-zone-exam {
+  border-top: 3px solid var(--color-zone-violet) !important;
+}
+html.dark .encounter-zone-triage {
+  border-top: 3px solid rgba(148, 163, 184, 0.45) !important;
+}
+html.dark #encounter-quick-vitals {
+  border-top: 3px solid var(--color-zone-teal) !important;
+}
+html.dark #encounter-known-allergies {
+  border-top: 3px solid var(--color-zone-amber) !important;
+}
+html.dark #encounter-working-diagnosis {
+  border-top: 3px solid var(--color-zone-emerald) !important;
+}

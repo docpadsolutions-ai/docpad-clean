@@ -1,0 +1,123 @@
+-- Medication JSON: dosage, quantity (display string); keep dispensed/total for client preview patch.
+create or replace function public.generate_prescription_receipt(prescription_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid;
+  v_med text;
+  v_total int;
+  v_disp int;
+  v_dosage text;
+  v_freq text;
+  v_dur text;
+  v_instr text;
+  v_patient text;
+  v_docpad text;
+  v_age int;
+  v_sex text;
+  v_pharm text;
+  v_hosp text;
+  v_dispensed_at timestamptz;
+  v_qty text;
+begin
+  v_org := public.auth_org();
+  if v_org is null then
+    raise exception 'no hospital context';
+  end if;
+
+  select
+    p.medicine_name,
+    p.total_quantity,
+    p.dispensed_quantity,
+    p.dosage_text,
+    p.frequency,
+    p.duration,
+    p.instructions,
+    pt.full_name,
+    pt.docpad_id,
+    pt.age_years,
+    pt.sex,
+    p.dispensed_at
+  into
+    v_med,
+    v_total,
+    v_disp,
+    v_dosage,
+    v_freq,
+    v_dur,
+    v_instr,
+    v_patient,
+    v_docpad,
+    v_age,
+    v_sex,
+    v_dispensed_at
+  from public.prescriptions p
+  inner join public.opd_encounters e on e.id = p.encounter_id
+  inner join public.patients pt on pt.id = e.patient_id
+  where p.id = prescription_id
+    and e.hospital_id = v_org;
+
+  if not found then
+    raise exception 'prescription not found or access denied';
+  end if;
+
+  v_qty := case
+    when v_disp is not null and v_total is not null then v_disp::text || ' / ' || v_total::text
+    when v_disp is not null then v_disp::text
+    when v_total is not null then v_total::text
+    else null
+  end;
+
+  select coalesce(
+    nullif(trim(pr.full_name), ''),
+    nullif(trim(concat_ws(' ', pr.first_name, pr.last_name)), ''),
+    '—'
+  )
+  into v_pharm
+  from public.practitioners pr
+  where (pr.id = auth.uid() or pr.user_id = auth.uid())
+    and pr.hospital_id = v_org
+  limit 1;
+
+  select coalesce(nullif(trim(o.name), ''), '—')
+  into v_hosp
+  from public.organizations o
+  where o.id = v_org
+  limit 1;
+
+  return jsonb_build_object(
+    'receipt_number', 'RX-' || upper(substr(replace(prescription_id::text, '-', ''), 1, 12)),
+    'patient', jsonb_build_object(
+      'name', v_patient,
+      'docpad_id', v_docpad,
+      'age_years', v_age,
+      'sex', v_sex
+    ),
+    'medication', jsonb_build_object(
+      'name', v_med,
+      'dosage', v_dosage,
+      'frequency', v_freq,
+      'duration', v_dur,
+      'quantity', v_qty,
+      'dispensed_quantity', v_disp,
+      'total_quantity', v_total,
+      'instructions', v_instr
+    ),
+    'pharmacist', jsonb_build_object(
+      'name', coalesce(v_pharm, '—'),
+      'registration', null
+    ),
+    'hospital', jsonb_build_object(
+      'name', coalesce(v_hosp, '—')
+    ),
+    'dispensed_at', to_jsonb(coalesce(v_dispensed_at, clock_timestamp()))
+  );
+end;
+$$;
+
+comment on function public.generate_prescription_receipt(uuid) is
+  'Receipt JSON: medication as object with name, dosage, frequency, duration, quantity (+ dispensed/total for UI).';

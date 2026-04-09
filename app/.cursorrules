@@ -1,0 +1,1 @@
+This is Docpad. We use Supabase at hvjbzlwlqnntwxgufjkm. Always check existing types in src/types/supabase.ts before creating new code. Ensure all medical data uses SNOMED-CT standards, NABH, FHIR, HL7 where possible

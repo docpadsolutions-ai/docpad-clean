@@ -1,0 +1,2 @@
+# Consent Manager calls this URL without an end-user JWT.
+verify_jwt = false

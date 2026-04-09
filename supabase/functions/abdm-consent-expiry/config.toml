@@ -1,0 +1,2 @@
+# Invoked by pg_cron with x-cron-secret (same pattern as send-expiry-alerts).
+verify_jwt = false
