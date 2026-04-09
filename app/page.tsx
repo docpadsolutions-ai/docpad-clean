@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DocPadLogoMark } from "./components/DocPadLogoMark";
 import { createBrowserSupabaseClient } from "./lib/supabase/client";
@@ -83,6 +84,7 @@ function EyeOffIcon({ className }: { className?: string }) {
 }
 
 export default function LoginPage() {
+  const router = useRouter();
   const [loginMode, setLoginMode] = useState<"email" | "mobile">("email");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
@@ -143,7 +145,8 @@ export default function LoginPage() {
     }
 
     // Temporary: skip role fetch (RLS blocks practitioners on browser client on Vercel).
-    window.location.assign("/opd");
+    await supabase.auth.getSession();
+    router.push("/opd");
   }
 
   return (
