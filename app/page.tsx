@@ -6,6 +6,7 @@ import {
   resolveDefaultHomePathFromPractitionerRole,
 } from "./lib/postLoginHomePath";
 import { DocPadLogoMark } from "./components/DocPadLogoMark";
+import { createBrowserSupabaseClient } from "./lib/supabase/client";
 import { supabase } from "./supabase";
 
 function ShieldIcon({ className }: { className?: string }) {
@@ -111,22 +112,37 @@ export default function LoginPage() {
     }
 
     setIsLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: trimmed,
-      password,
-    });
-
-    if (error) {
+    try {
+      const testClient = createBrowserSupabaseClient();
+      console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+    } catch (err) {
+      setAuthError("Client init failed: " + String(err));
       setIsLoading(false);
-      const msg = error.message.toLowerCase();
-      if (
-        msg.includes("invalid login credentials") ||
-        msg.includes("invalid email or password")
-      ) {
-        setAuthError("Wrong email or password. Please try again.");
-      } else {
-        setAuthError(error.message);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: trimmed,
+        password,
+      });
+
+      if (error) {
+        setIsLoading(false);
+        const msg = error.message.toLowerCase();
+        if (
+          msg.includes("invalid login credentials") ||
+          msg.includes("invalid email or password")
+        ) {
+          setAuthError("Wrong email or password. Please try again.");
+        } else {
+          setAuthError(error.message);
+        }
+        return;
       }
+    } catch (err) {
+      setIsLoading(false);
+      setAuthError("Auth failed: " + String(err));
       return;
     }
 
