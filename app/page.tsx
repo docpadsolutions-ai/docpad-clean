@@ -1,10 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import {
-  fetchPractitionerRoleColumnForAuth,
-  resolveDefaultHomePathFromPractitionerRole,
-} from "./lib/postLoginHomePath";
 import { DocPadLogoMark } from "./components/DocPadLogoMark";
 import { createBrowserSupabaseClient } from "./lib/supabase/client";
 import { supabase } from "./supabase";
@@ -146,21 +142,8 @@ export default function LoginPage() {
       return;
     }
 
-    const params = new URLSearchParams(
-      typeof window !== "undefined" ? window.location.search : "",
-    );
-    const nextParam = params.get("next");
-    const explicitNext =
-      nextParam?.startsWith("/") && !nextParam.startsWith("//") ? nextParam : null;
-    let dest = explicitNext ?? "/dashboard";
-    if (!explicitNext || dest === "/dashboard") {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const role = user?.id ? await fetchPractitionerRoleColumnForAuth(supabase, user.id) : null;
-      dest = resolveDefaultHomePathFromPractitionerRole(role);
-    }
-    window.location.assign(dest);
+    // Temporary: skip role fetch (RLS blocks practitioners on browser client on Vercel).
+    window.location.assign("/opd");
   }
 
   return (
