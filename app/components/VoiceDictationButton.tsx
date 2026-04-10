@@ -4,8 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { StreamingTranscriber } from "assemblyai";
 import type { TurnEvent } from "assemblyai";
-import { ASSEMBLYAI_CLINICAL_WORD_BOOST } from "../lib/assemblyaiVoiceConfig";
+import { getSpecialtyWordBoost } from "../lib/assemblyaiVoiceConfig";
 import { scrubExaminationFindingsAgainstTranscript } from "../lib/examFindingTranscriptScrub";
+import { buildGeminiSystemPrompt, mapVoiceContextToGeminiContext } from "../lib/geminiClinicalPrompt";
+import {
+  composeBodySiteLabel,
+  fetchSnomedForEntity,
+  type GeminiEntityRow,
+  type SnomedClientHit,
+} from "../lib/clinicalVoicePipeline";
+import { supabase } from "../supabase";
 
 // ─── Gemini client — initialised once at module level ─────────────────────────
 
@@ -16,13 +24,17 @@ const genAI = new GoogleGenerativeAI(
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ClinicalFinding = {
-  finding:   string;
-  // Complaint context
-  duration:  string | null;
-  severity:  string | null;
-  // Examination context
-  location:  string | null;
+  finding: string;
+  duration: string | null;
+  severity: string | null;
+  location: string | null;
   qualifier: string | null;
+  bodySite?: string | null;
+  laterality?: string | null;
+  negation?: boolean;
+  rawText?: string | null;
+  snomed?: SnomedClientHit | null;
+  snomedAlternatives?: SnomedClientHit[];
 };
 
 /** Gemini output when `contextType === "diagnosis"` */
@@ -57,16 +69,126 @@ type Props = {
    */
   onExtractionComplete?: (payload: unknown) => void;
   className?: string;
+  /** Logged-in practitioner specialty — drives Gemini + SNOMED tiering. */
+  specialty?: string;
+  /** `practitioners.id` for `search_snomed_cached` + frequency RPC. */
+  doctorId?: string;
+  /** Encounter id — optional persistence to `transcriptions` / `clinical_extractions`. */
+  encounterId?: string;
+  /** Optional India NRC refset key for SNOMED search (same as encounter env). */
+  indiaRefset?: string;
 };
 
 // ─── Gemini extraction ────────────────────────────────────────────────────────
 
 function parseJsonResponse(raw: string): unknown {
-  const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+  const cleaned = raw
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
   return JSON.parse(cleaned);
 }
 
-async function extractClinicalData(text: string, contextType: string): Promise<unknown> {
+function normalizeGeminiEntities(parsed: unknown): GeminiEntityRow[] {
+  if (!Array.isArray(parsed)) return [];
+  const out: GeminiEntityRow[] = [];
+  for (const row of parsed) {
+    if (!row || typeof row !== "object") continue;
+    const o = row as Record<string, unknown>;
+    const finding = String(o.finding ?? "").trim();
+    if (!finding) continue;
+    out.push({
+      finding,
+      bodySite: o.bodySite != null && String(o.bodySite).trim() !== "" ? String(o.bodySite) : null,
+      laterality:
+        o.laterality != null && String(o.laterality).trim() !== "" ? String(o.laterality) : null,
+      negation: Boolean(o.negation),
+      duration: o.duration != null ? String(o.duration) : null,
+      severity: o.severity != null ? String(o.severity) : null,
+      rawText: o.rawText != null ? String(o.rawText) : null,
+    });
+  }
+  return out;
+}
+
+async function extractStructuredClinicalEntities(
+  transcript: string,
+  contextType: "complaint" | "examination",
+  specialty: string,
+): Promise<GeminiEntityRow[]> {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: buildGeminiSystemPrompt(
+      specialty,
+      mapVoiceContextToGeminiContext(contextType),
+    ),
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+    },
+  });
+  const result = await model.generateContent(transcript);
+  const raw = result.response.text().trim();
+  const parsed = parseJsonResponse(raw);
+  return normalizeGeminiEntities(parsed);
+}
+
+function toClinicalFinding(
+  e: GeminiEntityRow & {
+    snomed?: SnomedClientHit | null;
+    snomedAlternatives?: SnomedClientHit[];
+  },
+): ClinicalFinding {
+  return {
+    finding: e.finding,
+    duration: e.duration ?? null,
+    severity: e.severity ?? null,
+    location: composeBodySiteLabel(e.laterality, e.bodySite) || null,
+    qualifier: e.negation ? "Absent" : null,
+    bodySite: e.bodySite ?? null,
+    laterality: e.laterality ?? null,
+    negation: Boolean(e.negation),
+    rawText: e.rawText ?? null,
+    snomed: e.snomed ?? null,
+    snomedAlternatives: e.snomedAlternatives ?? [],
+  };
+}
+
+async function saveClinicalExtractionSafe(
+  encounterId: string | undefined,
+  contextType: string,
+  rawTranscript: string,
+  entities: unknown[],
+) {
+  if (!encounterId?.trim()) return;
+  try {
+    const { data: txn, error: txErr } = await supabase
+      .from("transcriptions")
+      .insert({
+        session_id: encounterId.trim(),
+        raw_transcript: rawTranscript,
+        standardized_text: (entities as { rawText?: string | null }[])
+          .map((x) => x.rawText)
+          .filter(Boolean)
+          .join("; "),
+      })
+      .select("id")
+      .single();
+    if (txErr || !txn?.id) return;
+    await supabase.from("clinical_extractions").insert({
+      transcription_id: txn.id,
+      context_type: contextType,
+      extraction_json: entities,
+      doctor_confirmed: false,
+    });
+  } catch (e) {
+    console.warn("STT→ saveClinicalExtraction:", e);
+  }
+}
+
+/** Diagnosis / plan / advice — legacy prompts (not the structured chief_complaint schema). */
+async function extractClinicalDataLegacy(text: string, contextType: string): Promise<unknown> {
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     generationConfig: { responseMimeType: "application/json" },
@@ -74,16 +196,7 @@ async function extractClinicalData(text: string, contextType: string): Promise<u
 
   let prompt: string;
 
-  if (contextType === "examination") {
-    prompt = `You are a clinical AI assisting a doctor. Extract physical examination findings from this transcript. Return a flat JSON array of objects. Keys: 'finding', 'location' (anatomical site or null), 'qualifier' (e.g., 'Positive', 'Mild', or null).
-
-STRICT:
-- Every substantive word in 'finding' MUST appear in the transcript (case-insensitive). Do NOT add anatomy or adjectives the doctor did not say (e.g. do not say "nipple", "conjunctival", "nasal", "rectal" unless those words appear in the transcript).
-- You may only normalize spelling for phrases that ARE said (e.g. "Crepitations" for "crepitus", "Wheezing" for "wheeze", "Erythema" for "redness").
-- Put the body site ONLY in 'location', never in 'finding'.
-
-Transcript: "${text}"`;
-  } else if (contextType === "diagnosis") {
+  if (contextType === "diagnosis") {
     prompt = `Extract the definitive working diagnoses from this transcript. Return a flat JSON array of objects with the key: "diagnosis". Transcript: "${text}"`;
   } else if (contextType === "plan") {
     prompt = `Extract the treatment plan from this transcript. Return a single JSON object with three distinct arrays:
@@ -93,7 +206,6 @@ Transcript: "${text}"`;
 
 Use empty arrays when a section has no items. Transcript: "${text}"`;
   } else {
-    // complaint (default) and any other context that expects symptom extraction
     prompt = `Extract every distinct medical finding mentioned in the transcript below.
 Return a JSON array where each element has exactly these keys:
   "finding"   – the symptom / complaint in plain English (string, required)
@@ -107,16 +219,16 @@ Transcript: "${text}"`;
   }
 
   const result = await model.generateContent(prompt);
-  const raw    = result.response.text().trim();
+  const raw = result.response.text().trim();
   const parsed = parseJsonResponse(raw);
 
   if (contextType === "plan") {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const o = parsed as Record<string, unknown>;
       return {
-        medications:    Array.isArray(o.medications)    ? o.medications    : [],
+        medications: Array.isArray(o.medications) ? o.medications : [],
         investigations: Array.isArray(o.investigations) ? o.investigations : [],
-        advice:         Array.isArray(o.advice)         ? o.advice         : [],
+        advice: Array.isArray(o.advice) ? o.advice : [],
       } satisfies PlanExtractionResult;
     }
     return { medications: [], investigations: [], advice: [] } satisfies PlanExtractionResult;
@@ -152,6 +264,10 @@ export default function VoiceDictationButton({
   onTranscriptUpdate,
   onExtractionComplete,
   className = "",
+  specialty: specialtyProp,
+  doctorId: doctorIdProp,
+  encounterId: encounterIdProp,
+  indiaRefset: indiaRefsetProp,
 }: Props) {
   const [status, setStatus]         = useState<Status>("idle");
   const [errorMsg, setErrorMsg]     = useState<string | null>(null);
@@ -243,7 +359,7 @@ export default function VoiceDictationButton({
         encoding: "pcm_s16le",
         speechModel: "u3-rt-pro",
         domain: "medical-v1",
-        keytermsPrompt: [...ASSEMBLYAI_CLINICAL_WORD_BOOST],
+        keytermsPrompt: getSpecialtyWordBoost(specialtyProp ?? "General Medicine"),
       });
       transcriberRef.current = transcriber;
 
@@ -332,8 +448,75 @@ export default function VoiceDictationButton({
 
     if (fullText && onExtractionComplete) {
       setIsExtracting(true);
-      extractClinicalData(fullText, contextType)
-        .then((result) => {
+      void (async () => {
+        const start = Date.now();
+        console.log("STT→ [1/4] Raw transcript:", fullText);
+        try {
+          if (contextType === "complaint" || contextType === "examination") {
+            const specialty = specialtyProp?.trim() || "General Medicine";
+            let entities = await extractStructuredClinicalEntities(
+              fullText,
+              contextType,
+              specialty,
+            );
+            console.log("STT→ [2/4] Gemini entities:", JSON.stringify(entities, null, 2));
+
+            if (contextType === "examination") {
+              entities = entities.map((row) => {
+                const one = scrubExaminationFindingsAgainstTranscript(
+                  [
+                    {
+                      finding: row.finding,
+                      location: composeBodySiteLabel(row.laterality, row.bodySite) || null,
+                      qualifier: row.negation ? "Absent" : null,
+                      duration: row.duration ?? null,
+                      severity: row.severity ?? null,
+                    },
+                  ],
+                  fullText,
+                )[0];
+                return { ...row, finding: one.finding };
+              });
+            }
+
+            const hi = contextType === "complaint" ? "complaint" : "finding";
+            const snomedRuns = await Promise.all(
+              entities.map((entity, i) => {
+                const bodyLabel = composeBodySiteLabel(entity.laterality, entity.bodySite);
+                console.log(`STT→ [3/4] SNOMED query #${i}:`, {
+                  finding: entity.finding,
+                  bodySite: bodyLabel,
+                  laterality: entity.laterality,
+                  queryTerm: entity.finding,
+                });
+                return fetchSnomedForEntity({
+                  finding: entity.finding,
+                  bodySiteLabel: bodyLabel,
+                  hierarchy: hi,
+                  specialty,
+                  doctorId: doctorIdProp ?? null,
+                  indiaRefset: indiaRefsetProp ?? null,
+                });
+              }),
+            );
+
+            const merged = entities.map((entity, i) => ({
+              ...entity,
+              snomed: snomedRuns[i]?.top ?? null,
+              snomedAlternatives: snomedRuns[i]?.alternatives ?? [],
+            }));
+            console.log(`STT→ [4/4] Results (${Date.now() - start}ms):`, merged);
+
+            void saveClinicalExtractionSafe(encounterIdProp, contextType, fullText, merged);
+
+            const output = merged.map(toClinicalFinding);
+            if (output.length > 0) {
+              onExtractionComplete(output);
+            }
+            return;
+          }
+
+          const result = await extractClinicalDataLegacy(fullText, contextType);
           if (contextType === "plan") {
             const p = result as PlanExtractionResult;
             const hasData =
@@ -344,15 +527,14 @@ export default function VoiceDictationButton({
               onExtractionComplete(result);
             }
           } else if (Array.isArray(result) && result.length > 0) {
-            let rows = result as ClinicalFinding[];
-            if (contextType === "examination") {
-              rows = scrubExaminationFindingsAgainstTranscript(rows, fullText) as ClinicalFinding[];
-            }
-            onExtractionComplete(rows);
+            onExtractionComplete(result as ClinicalFinding[] | DiagnosisExtractionRow[]);
           }
-        })
-        .catch((err) => console.error("Gemini extraction failed:", err))
-        .finally(() => setIsExtracting(false));
+        } catch (err) {
+          console.error("Gemini extraction failed:", err);
+        } finally {
+          setIsExtracting(false);
+        }
+      })();
     }
   }
 

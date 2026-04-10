@@ -5,6 +5,7 @@ import {
   rankSnomedResultsForBodySite,
   type SnomedRow,
 } from "../../../lib/snomedBodySiteRank";
+import { filterSnomedByBodySiteAnatomy } from "../../../lib/snomedAnatomyExclusions";
 import { expandValueSetFromCsiro } from "../../../lib/snomedCsiroExpand";
 import {
   buildConstrainedSearchEcl,
@@ -40,6 +41,45 @@ function dedupeByConceptIdPreserveOrder(rows: SnomedResult[]): SnomedResult[] {
   return out;
 }
 
+function rowFromSearchSnomedCachedRpc(row: unknown): SnomedResult | null {
+  if (!row || typeof row !== "object") return null;
+  const o = row as Record<string, unknown>;
+  const conceptId = String(o.sctid ?? o.concept_id ?? o.conceptId ?? "").trim();
+  const term = String(o.term ?? o.display_term ?? o.fsn ?? "").trim();
+  if (!conceptId || !term) return null;
+  return { conceptId, term, icd10: null };
+}
+
+/** Tiered cache RPC — finding term only in `p_query`; body site passed separately. */
+async function trySearchSnomedCached(params: {
+  query: string;
+  specialty: string | null;
+  bodySite: string | null;
+  doctorId: string | null;
+  limit: number;
+}): Promise<SnomedResult[] | null> {
+  try {
+    const { data, error } = await supabase.rpc("search_snomed_cached", {
+      p_query: params.query,
+      p_specialty: params.specialty,
+      p_body_site: params.bodySite,
+      p_doctor_id: params.doctorId,
+      p_limit: params.limit,
+    });
+    if (error) {
+      console.warn("[SNOMED] search_snomed_cached:", error.message);
+      return null;
+    }
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const mapped = data.map(rowFromSearchSnomedCachedRpc).filter(Boolean) as SnomedResult[];
+    return mapped.length > 0 ? mapped : null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[SNOMED] search_snomed_cached exception:", msg);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const query = searchParams.get("q");
@@ -50,15 +90,16 @@ export async function GET(req: NextRequest) {
   const findingSiteConcept = searchParams.get("findingSiteConcept");
   const morphologyConcept = searchParams.get("morphologyConcept");
   const indiaRefsetKey = searchParams.get("indiaRefset");
+  const specialtyParam = searchParams.get("specialty");
+  const doctorIdParam = searchParams.get("doctorId");
 
   if (!query) return NextResponse.json({ results: [] });
   const frag = sanitizeIlikeFragment(query);
   if (frag.length < 2) return NextResponse.json({ results: [] });
 
-  const bodySiteFrag =
-    hierarchy === "finding" && bodySiteParam?.trim()
-      ? sanitizeIlikeFragment(bodySiteParam)
-      : "";
+  const bodySiteRaw = (bodySiteParam ?? "").trim();
+  const applyBodySitePipeline =
+    (hierarchy === "finding" || hierarchy === "complaint") && bodySiteRaw.length > 0;
 
   const indiaRefsetId = resolveIndiaRefsetId(indiaRefsetKey);
 
@@ -82,48 +123,66 @@ export async function GET(req: NextRequest) {
         await expandValueSetFromCsiro(ecl, frag, 22, CSIRO_TIMEOUT_MS),
       );
     } else {
-      const { data: cacheData, error: cacheError } = await supabase
-        .from("snomed_cache")
-        .select("concept_id, term, category, usage_count")
-        .eq("category", hierarchy)
-        .ilike("term", `%${frag}%`)
-        .order("usage_count", { ascending: false })
-        .limit(CACHE_LIMIT);
+      const rpcFirst = await trySearchSnomedCached({
+        query: frag,
+        specialty: specialtyParam?.trim() || null,
+        bodySite: applyBodySitePipeline ? bodySiteRaw : null,
+        doctorId: doctorIdParam?.trim() || null,
+        limit: CACHE_LIMIT,
+      });
 
-      if (cacheError) {
-        console.error("[SNOMED] Supabase cache error:", cacheError.message);
-      }
-
-      const fromCache: SnomedResult[] = dedupeByConceptIdPreserveOrder(
-        (cacheData || []).map((row) => ({
-          conceptId: String(row.concept_id).trim(),
-          term: String(row.term).trim(),
-          icd10: null,
-        })).filter((r) => r.conceptId && r.term),
-      );
-
-      if (fromCache.length > 0) {
-        candidates = fromCache;
+      if (rpcFirst && rpcFirst.length > 0) {
+        candidates = rpcFirst;
         usedCache = true;
       } else {
-        const baseEcl = HIERARCHY_ECL[hierarchy] ?? HIERARCHY_ECL.diagnosis;
-        candidates = dedupeByConceptIdPreserveOrder(
-          await expandValueSetFromCsiro(baseEcl, frag, 15, CSIRO_TIMEOUT_MS),
+        const { data: cacheData, error: cacheError } = await supabase
+          .from("snomed_cache")
+          .select("concept_id, term, category, usage_count")
+          .eq("category", hierarchy)
+          .ilike("term", `%${frag}%`)
+          .order("usage_count", { ascending: false })
+          .limit(CACHE_LIMIT);
+
+        if (cacheError) {
+          console.error("[SNOMED] Supabase cache error:", cacheError.message);
+        }
+
+        const fromCache: SnomedResult[] = dedupeByConceptIdPreserveOrder(
+          (cacheData || [])
+            .map((row) => ({
+              conceptId: String(row.concept_id).trim(),
+              term: String(row.term).trim(),
+              icd10: null,
+            }))
+            .filter((r) => r.conceptId && r.term),
         );
+
+        if (fromCache.length > 0) {
+          candidates = fromCache;
+          usedCache = true;
+        } else {
+          const baseEcl = HIERARCHY_ECL[hierarchy] ?? HIERARCHY_ECL.diagnosis;
+          candidates = dedupeByConceptIdPreserveOrder(
+            await expandValueSetFromCsiro(baseEcl, frag, 15, CSIRO_TIMEOUT_MS),
+          );
+        }
       }
     }
 
     const limit = constrained ? 22 : usedCache ? 20 : 15;
     let finalResults = dedupeByConceptIdPreserveOrder(candidates).slice(0, limit);
 
-    if (bodySiteFrag) {
-      const siteTrim = (bodySiteParam ?? "").trim();
+    if (applyBodySitePipeline) {
+      const siteTrim = bodySiteRaw;
       finalResults = filterFindingResultsForBodySite(finalResults, siteTrim);
       if (finalResults.length === 0) {
         return NextResponse.json({ results: [] });
       }
       const { ranked } = rankSnomedResultsForBodySite(finalResults, siteTrim);
-      finalResults = ranked;
+      finalResults = filterSnomedByBodySiteAnatomy(ranked, siteTrim);
+      if (finalResults.length === 0) {
+        return NextResponse.json({ results: [] });
+      }
     }
 
     return NextResponse.json({ results: finalResults });

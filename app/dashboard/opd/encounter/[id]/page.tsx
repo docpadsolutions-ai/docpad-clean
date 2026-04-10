@@ -34,6 +34,7 @@ import { usePatientOpdEncounters } from "../../../../hooks/usePatientOpdEncounte
 import { usePatientSummaryHighlights } from "../../../../hooks/usePatientSummaryHighlights";
 import { readIndiaRefsetKeyFromEnv } from "../../../../lib/snomedUiConfig";
 import { buildDiagnosesForSync, syncActiveProblemsFromEncounter } from "../../../../lib/syncActiveProblems";
+import { incrementDoctorConceptUsage } from "../../../../lib/incrementDoctorConcept";
 
 /** Optional India NRC refset filter for all SNOMED pickers (`NEXT_PUBLIC_SNOMED_INDIA_REFSET`). */
 const SNOMED_INDIA_REFSET_UI = readIndiaRefsetKeyFromEnv();
@@ -57,11 +58,13 @@ type PatientRowDb = PatientData & {
 };
 
 type PractitionerProfileRow = {
+  id: string;
   first_name: string | null;
   last_name: string | null;
   full_name?: string | null;
   role?: string | null;
   user_role?: string | null;
+  specialty?: string | null;
 };
 
 type FhirCoding = {
@@ -73,20 +76,24 @@ type FhirCoding = {
 
 // A single voice-extracted complaint enriched with SNOMED and Gemini metadata
 type VoiceComplaint = {
-  term:     string;
-  snomed:   string;        // SNOMED conceptId ("" if lookup failed)
+  term: string;
+  snomed: string;
   duration: string | null;
   severity: string | null;
+  negated?: boolean;
+  locationLabel?: string | null;
+  snomedAlternatives?: { term: string; conceptId: string }[];
 };
 
 // A single voice-extracted physical examination finding
 type ExamFinding = {
-  term:      string;       // clinical sign / test name
-  location:  string | null;
+  term: string;
+  location: string | null;
   qualifier: string | null;
-  snomed:    string;
+  snomed: string;
   /** SNOMED concept chosen without body-site confirmation in FSN — verify. */
   snomedLowConfidence?: boolean;
+  negated?: boolean;
 };
 
 // Working diagnosis chip (manual SNOMED pick or voice + auto-link)
@@ -697,6 +704,12 @@ export default function EncounterPage() {
   const [isLabOrdersModalOpen, setIsLabOrdersModalOpen] = useState(false);
   const [currentPatientId, setCurrentPatientId] = useState<string>("");
   const [doctorName, setDoctorName] = useState<string>("Doctor");
+  /** `practitioners.id` for SNOMED tiering + frequency RPC. */
+  const [doctorPractitionerId, setDoctorPractitionerId] = useState<string | null>(null);
+  /** Prefer DB specialty; drives Gemini + Assembly keyterms. */
+  const [doctorSpecialty, setDoctorSpecialty] = useState<string>("General Medicine");
+  /** Chief-complaint chip: index showing SNOMED alternatives popover. */
+  const [complaintChipDetail, setComplaintChipDetail] = useState<number | null>(null);
   /** Normalized signed-in practitioner role (in-memory; no routing). */
   const practitionerRoleRef = useRef<UserRole | null>(null);
 
@@ -1316,13 +1329,16 @@ export default function EncounterPage() {
       if (!uid) return;
       supabase
         .from("practitioners")
-        .select("first_name, last_name, full_name, role, user_role")
+        .select("id, first_name, last_name, full_name, role, user_role, specialty")
         .or(practitionersOrFilterForAuthUid(uid))
         .maybeSingle()
         .then(({ data: profile }: { data: PractitionerProfileRow | null }) => {
           if (profile) {
             const fullName = practitionerDisplayNameFromRow(profile);
             if (fullName) setDoctorName(fullName);
+            if (profile.id) setDoctorPractitionerId(String(profile.id));
+            const spec = (profile.specialty ?? "").trim();
+            if (spec) setDoctorSpecialty(spec);
             practitionerRoleRef.current = parsePractitionerRoleColumn(
               practitionerRoleRawFromRow(profile),
             );
@@ -2227,63 +2243,65 @@ export default function EncounterPage() {
                     <button type="button" className="p-1 hover:text-gray-600"><CameraIcon className="h-4 w-4" /></button>
                     <VoiceDictationButton
                       contextType="complaint"
+                      specialty={doctorSpecialty || department}
+                      doctorId={doctorPractitionerId ?? undefined}
+                      encounterId={encounterId ?? undefined}
+                      indiaRefset={SNOMED_INDIA_REFSET_UI ?? undefined}
                       onTranscriptUpdate={(text, isFinal) => {
-                        // Stream every word directly into the search box (triggers SNOMED dropdown)
                         setComplaintQuery(text);
-                        // On final, clear the query — Gemini's onExtractionComplete will add the chip
                         if (isFinal) setComplaintQuery("");
                       }}
-                      onExtractionComplete={async (raw) => {
+                      onExtractionComplete={(raw) => {
                         const findings = raw as ClinicalFinding[];
                         if (!Array.isArray(findings) || findings.length === 0) return;
 
+                        const toVoiceRow = (f: ClinicalFinding): VoiceComplaint => {
+                          const loc = f.location?.trim() ?? "";
+                          const labelBase = f.finding.trim();
+                          const display =
+                            loc && !labelBase.toLowerCase().includes(loc.toLowerCase())
+                              ? `${labelBase} — ${loc}`
+                              : labelBase;
+                          const topTerm = f.snomed?.term?.trim();
+                          const term =
+                            f.snomed?.conceptId && topTerm && !f.snomed?.lowConfidence
+                              ? topTerm
+                              : display;
+                          return {
+                            term,
+                            snomed: f.snomed?.conceptId?.trim() ?? "",
+                            duration: f.duration,
+                            severity: f.severity,
+                            negated: Boolean(f.negation),
+                            locationLabel: loc || null,
+                            snomedAlternatives: (f.snomedAlternatives ?? []).map((a) => ({
+                              term: a.term,
+                              conceptId: a.conceptId,
+                            })),
+                          };
+                        };
+
                         if (findings.length === 1) {
-                          // ── Single finding ─────────────────────────────────────────
-                          // Populate the SnomedSearch input so its debounced API fires
-                          // naturally and the doctor can confirm from the dropdown.
-                          // Also pre-fill the Duration field below it.
-                          setComplaintQuery(findings[0].finding);
-                          setDurationText(findings[0].duration ?? "");
+                          const f = findings[0];
+                          setDurationText(f.duration ?? "");
+                          setComplaintQuery("");
+                          setVoiceComplaints((prev) => {
+                            const row = toVoiceRow(f);
+                            const next = [...prev, row];
+                            if (prev.length === 0) {
+                              setSelectedChiefComplaintConcept({
+                                term: row.term,
+                                conceptId: row.snomed?.trim() ?? "",
+                              });
+                            }
+                            return next;
+                          });
                           return;
                         }
 
-                        // ── Multiple findings ───────────────────────────────────────
-                        // Bypass the text input — SNOMED-link findings one at a time (rate-limit friendly).
                         setSnomedLinking(true);
                         try {
-                          const resolvedItems: VoiceComplaint[] = [];
-                          let i = 0;
-                          for (const f of findings) {
-                            try {
-                              const ir = SNOMED_INDIA_REFSET_UI
-                                ? `&indiaRefset=${encodeURIComponent(SNOMED_INDIA_REFSET_UI)}`
-                                : "";
-                              const res = await fetch(
-                                `/api/snomed/search?q=${encodeURIComponent(f.finding)}&hierarchy=complaint${ir}`,
-                              );
-                              const data = (await res.json()) as {
-                                results?: Array<{ term: string; conceptId: string; icd10: string | null }>;
-                              };
-                              const top = data.results?.[0];
-                              resolvedItems.push({
-                                term:     top?.term ?? f.finding,
-                                snomed:   top?.conceptId ?? "",
-                                duration: f.duration,
-                                severity: f.severity,
-                              });
-                            } catch {
-                              resolvedItems.push({
-                                term:     f.finding,
-                                snomed:   "",
-                                duration: f.duration,
-                                severity: f.severity,
-                              });
-                            }
-                            i += 1;
-                            if (i < findings.length) {
-                              await new Promise((resolve) => setTimeout(resolve, 200));
-                            }
-                          }
+                          const resolvedItems = findings.map(toVoiceRow);
                           setVoiceComplaints((prev) => {
                             const next = [...prev, ...resolvedItems];
                             if (prev.length === 0 && resolvedItems[0]) {
@@ -2295,7 +2313,6 @@ export default function EncounterPage() {
                             }
                             return next;
                           });
-                          // Clear the staging inputs so they're ready for the next manual entry
                           setComplaintQuery("");
                           setDurationText("");
                         } finally {
@@ -2309,31 +2326,101 @@ export default function EncounterPage() {
                 {(voiceComplaints.length > 0 || snomedLinking) && (
                   <div className="mb-2 flex flex-wrap gap-1.5">
                     {voiceComplaints.map((c, i) => (
-                      <span
-                        key={`vc-${i}`}
-                        title={c.snomed ? `SNOMED: ${c.snomed}` : "No SNOMED code"}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm"
-                      >
-                        {/* Green dot = SNOMED-standardised; gray = free text only */}
+                      <span key={`vc-${i}`} className="relative inline-flex max-w-full flex-col">
                         <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${c.snomed ? "bg-emerald-400" : "bg-gray-300"}`}
-                        />
-                        <span className="text-[12px] font-medium capitalize text-gray-900">{c.term}</span>
-                        {(c.duration || c.severity) && (
-                          <span className="text-[11px] text-gray-400">
-                            {[c.duration, c.severity].filter(Boolean).join(" · ")}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeVoiceComplaintAt(i)}
-                          className="ml-0.5 shrink-0 rounded p-0.5 text-gray-300 transition hover:bg-red-50 hover:text-red-400"
-                          aria-label={`Remove ${c.term}`}
+                          className={`inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-sm ${
+                            c.negated
+                              ? "border-red-200 bg-red-50/90 line-through decoration-red-400"
+                              : c.snomed
+                                ? "border-emerald-200/90 bg-emerald-50/50"
+                                : "border-amber-200 bg-amber-50/70"
+                          }`}
+                          role="button"
+                          tabIndex={0}
+                          title={
+                            c.snomed
+                              ? `SNOMED ${c.snomed} — click for alternatives`
+                              : "Low confidence — click for details"
+                          }
+                          onClick={() => setComplaintChipDetail((x) => (x === i ? null : i))}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setComplaintChipDetail((x) => (x === i ? null : i));
+                            }
+                          }}
                         >
-                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
-                            <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
-                          </svg>
-                        </button>
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              c.negated ? "bg-red-400" : c.snomed ? "bg-emerald-400" : "bg-amber-400"
+                            }`}
+                          />
+                          <span className="min-w-0 text-[12px] font-medium text-gray-900">{c.term}</span>
+                          {(c.duration || c.severity) && (
+                            <span className="shrink-0 text-[11px] text-gray-500">
+                              {[c.duration, c.severity].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeVoiceComplaintAt(i);
+                              setComplaintChipDetail(null);
+                            }}
+                            className="ml-0.5 shrink-0 rounded p-0.5 text-gray-300 transition hover:bg-red-50 hover:text-red-400"
+                            aria-label={`Remove ${c.term}`}
+                          >
+                            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                        </span>
+                        {complaintChipDetail === i && (
+                          <div className="absolute left-0 top-full z-30 mt-1 min-w-[240px] max-w-[min(100vw-2rem,320px)] rounded-lg border border-gray-200 bg-white p-2.5 shadow-xl">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">SNOMED concept</p>
+                            <p className="break-all font-mono text-[11px] text-gray-800">{c.snomed || "—"}</p>
+                            {(c.snomedAlternatives ?? []).length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                <p className="text-[10px] font-semibold text-gray-500">Alternatives</p>
+                                {(c.snomedAlternatives ?? []).map((alt) => (
+                                  <button
+                                    key={alt.conceptId}
+                                    type="button"
+                                    className="block w-full rounded-md border border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-800 hover:bg-gray-50"
+                                    onClick={() => {
+                                      setVoiceComplaints((prev) =>
+                                        prev.map((row, j) =>
+                                          j === i ? { ...row, term: alt.term, snomed: alt.conceptId } : row,
+                                        ),
+                                      );
+                                      setComplaintChipDetail(null);
+                                    }}
+                                  >
+                                    {alt.term}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {doctorPractitionerId && c.snomed ? (
+                              <button
+                                type="button"
+                                className="mt-2 w-full rounded-lg bg-emerald-600 px-2 py-2 text-[11px] font-semibold text-white transition hover:bg-emerald-700"
+                                onClick={() => {
+                                  void incrementDoctorConceptUsage(supabase, {
+                                    doctorId: doctorPractitionerId,
+                                    sctid: c.snomed,
+                                    displayTerm: c.term,
+                                    contextType: "chief_complaint",
+                                  });
+                                  setComplaintChipDetail(null);
+                                }}
+                              >
+                                Confirm for my shortcuts
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
                       </span>
                     ))}
                     {snomedLinking && (
@@ -2395,62 +2482,33 @@ export default function EncounterPage() {
                 <span className="min-w-0 flex-1" />
                 <VoiceDictationButton
                   contextType="examination"
+                  specialty={doctorSpecialty || department}
+                  doctorId={doctorPractitionerId ?? undefined}
+                  encounterId={encounterId ?? undefined}
+                  indiaRefset={SNOMED_INDIA_REFSET_UI ?? undefined}
                   onTranscriptUpdate={(text, isFinal) => {
                     if (!isFinal) setExamQuery(text);
                     if (isFinal) setExamQuery("");
                   }}
-                  onExtractionComplete={async (raw) => {
+                  onExtractionComplete={(raw) => {
                     const findings = raw as ClinicalFinding[];
                     if (!Array.isArray(findings) || findings.length === 0) return;
                     setSnomedLinkingExam(true);
                     try {
-                      const resolvedItems: ExamFinding[] = [];
-                      let i = 0;
-                      for (const f of findings) {
-                        const findingOnly = f.finding.trim();
-                        const loc = (f.location ?? "").trim();
-                        const ir = SNOMED_INDIA_REFSET_UI
-                          ? `&indiaRefset=${encodeURIComponent(SNOMED_INDIA_REFSET_UI)}`
-                          : "";
-                        const url =
-                          `/api/snomed/search?q=${encodeURIComponent(findingOnly)}&hierarchy=finding` +
-                          (loc ? `&bodySite=${encodeURIComponent(loc)}` : "") +
-                          ir;
-                        try {
-                          const res = await fetch(url);
-                          const data = (await res.json()) as {
-                            results?: Array<{
-                              term: string;
-                              conceptId: string;
-                              lowConfidence?: boolean;
-                            }>;
-                          };
-                          const top = data.results?.[0];
-                          const findingLabel = f.finding.trim();
-                          const hasCode = Boolean(top?.conceptId?.trim());
-                          const lowConf = Boolean(hasCode && top?.lowConfidence);
-                          resolvedItems.push({
-                            term: lowConf
-                              ? findingLabel
-                              : (top?.term ?? findingLabel),
-                            location: f.location,
-                            qualifier: f.qualifier,
-                            snomed: top?.conceptId ?? "",
-                            snomedLowConfidence: lowConf,
-                          });
-                        } catch {
-                          resolvedItems.push({
-                            term:      f.finding,
-                            location:  f.location,
-                            qualifier: f.qualifier,
-                            snomed:    "",
-                          });
-                        }
-                        i += 1;
-                        if (i < findings.length) {
-                          await new Promise((resolve) => setTimeout(resolve, 200));
-                        }
-                      }
+                      const resolvedItems: ExamFinding[] = findings.map((f) => {
+                        const top = f.snomed;
+                        const findingLabel = f.finding.trim();
+                        const hasCode = Boolean(top?.conceptId?.trim());
+                        const lowConf = Boolean(hasCode && top?.lowConfidence);
+                        return {
+                          term: lowConf ? findingLabel : (top?.term ?? findingLabel),
+                          location: f.location,
+                          qualifier: f.qualifier,
+                          snomed: top?.conceptId ?? "",
+                          snomedLowConfidence: lowConf,
+                          negated: Boolean(f.negation),
+                        };
+                      });
                       setExamFindings((prev) => [...prev, ...resolvedItems]);
                     } finally {
                       setSnomedLinkingExam(false);
@@ -2472,11 +2530,25 @@ export default function EncounterPage() {
                             ? `SNOMED: ${f.snomed} — verify match for [${f.location ?? "site"}]`
                             : "No SNOMED code"
                       }
-                      className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm"
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-sm ${
+                        f.negated
+                          ? "border-red-200 bg-red-50/90 line-through decoration-red-400"
+                          : f.snomed?.trim() && !f.snomedLowConfidence
+                            ? "border-emerald-200/90 bg-emerald-50/50"
+                            : f.snomed?.trim()
+                              ? "border-amber-200 bg-amber-50/70"
+                              : "border-gray-200 bg-white"
+                      }`}
                     >
                       <span
                         className={`h-2 w-2 shrink-0 rounded-full ${
-                          f.snomed?.trim() && !f.snomedLowConfidence ? "bg-emerald-400" : "bg-gray-300"
+                          f.negated
+                            ? "bg-red-400"
+                            : f.snomed?.trim() && !f.snomedLowConfidence
+                              ? "bg-emerald-400"
+                              : f.snomed?.trim()
+                                ? "bg-amber-400"
+                                : "bg-gray-300"
                         }`}
                       />
                       {f.location && (
@@ -2563,6 +2635,7 @@ export default function EncounterPage() {
                 <span className="min-w-0 flex-1" />
                 <VoiceDictationButton
                   contextType="diagnosis"
+                  specialty={doctorSpecialty || department}
                   onTranscriptUpdate={(text, isFinal) => {
                     setDiagnosisQuery(text);
                     if (isFinal) setDiagnosisQuery("");
@@ -2764,6 +2837,7 @@ export default function EncounterPage() {
                       <div className="pointer-events-auto rounded-full bg-gray-100 p-1.5 shadow-sm ring-1 ring-gray-200/80 transition hover:bg-violet-50 hover:ring-violet-200 dark:bg-[#2a3a52] dark:ring-[#3d5166] dark:hover:bg-[#1e2d45] dark:hover:ring-purple-500/40">
                         <VoiceDictationButton
                           contextType="advice"
+                          specialty={doctorSpecialty || department}
                           onTranscriptUpdate={(text, isFinal) => {
                             setAdviceOpen(true);
                             if (isFinal) {
@@ -2958,6 +3032,7 @@ export default function EncounterPage() {
                 <span className="min-w-0 flex-1" />
                 <VoiceDictationButton
                   contextType="plan"
+                  specialty={doctorSpecialty || department}
                   className="shrink-0"
                   onTranscriptUpdate={() => {
                     /* Live text streams only in Advice mic; plan uses extraction only */
