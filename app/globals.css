@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@config "../tailwind.config.ts";
 /* RF2/SNOMED .txt contains substrings like `[-:7,8]` that Tailwind would treat as arbitrary utilities. */
 @source not "./snomed";
 

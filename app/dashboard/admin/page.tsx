@@ -3,6 +3,7 @@ import {
   BarChart3,
   Building2,
   ClipboardList,
+  FileCheck,
   Hospital,
   Pill,
   Shield,
@@ -68,6 +69,12 @@ export default function AdminDashboardPage() {
           title="OPD templates"
           description="Department-scoped documentation templates (structure on detail only)."
           icon={<ClipboardList className="h-5 w-5" aria-hidden />}
+        />
+        <NavCard
+          href="/admin/dashboard/consent-templates"
+          title="Consent library"
+          description="IPD consent forms: system defaults, hospital PDFs, and template text."
+          icon={<FileCheck className="h-5 w-5" aria-hidden />}
         />
         <NavCard
           href="/admin/analytics"

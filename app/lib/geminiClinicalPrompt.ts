@@ -133,6 +133,42 @@ COMMON EXAMINATION TERMS: fluid status, renal angle tenderness,
   const specialtyContext =
     SPECIALTY_CONTEXTS[specialty] || SPECIALTY_CONTEXTS["General Medicine"] || "";
 
+  const examinationRomRules =
+    contextType === "examination"
+      ? `
+EXAMINATION — MULTIPLE DISTINCT FINDINGS (CRITICAL):
+- Extract ALL distinct clinical findings as SEPARATE items in the JSON array.
+- Each unique finding, deformity, measurement, or exam sign for each joint or body part must be its own object.
+- NEVER merge findings that belong to different body sites (e.g. hip vs knee), different joints, or different finding types into one item.
+- NEVER collapse unrelated clauses into one object (e.g. "decreased ROM right hip + fixed flexion deformity right knee" → TWO objects).
+- ALWAYS return a JSON array, even if only one finding exists.
+
+EXAMINATION — RANGE OF MOTION (ROM) — MERGE ONLY SAME JOINT + SAME LATERALITY:
+When several ROM planes (flexion, extension, abduction, adduction, internal/external rotation, etc.) are spoken for the SAME joint and SAME laterality in one breath, output ONE array element for that joint — merge planes into "structured_values" and/or "rom" (see below). Do NOT split one joint’s ROM into multiple array elements.
+
+EXAMINATION — MEASURED VALUES (DEGREES, CM, ETC.):
+- When a finding includes a measured number with units (degrees, cm, mm, weeks, kg, %, etc.), you MUST capture them so nothing is dropped.
+- Use numeric "value" and string "unit" on that finding object (e.g. value: 20, unit: "degrees").
+- Normalize unit to a short token: "degrees" | "cm" | "mm" | "weeks" | "kg" | "%" | etc.
+- For ROM spread across multiple planes for one joint, prefer "structured_values" OR "rom" (same shape) with lowercase snake_case keys: flexion, extension, abduction, adduction, internal_rotation, external_rotation — numeric degrees. You may also set "unit": "degrees" on that row.
+- Example ROM object (one joint):
+  { "finding": "Restricted range of motion", "bodySite": "hip", "laterality": "right",
+    "rom": { "abduction": 20 }, "unit": "degrees",
+    "rawText": "..." }
+  You may use "structured_values" instead of "rom" with the same key shape — either is acceptable.
+- Do NOT invent SNOMED conceptIds; omit "conceptId" (coding is resolved server-side).
+
+Per-object fields (examination):
+- "finding": SHORT English phrase for SNOMED lookup — no degree numbers in this string for ROM rows.
+- "bodySite": anatomical site only (e.g. "hip", "knee") — never put laterality in bodySite.
+- "laterality": "left" | "right" | "bilateral" | null
+- "structured_values" OR "rom": merged ROM planes (degrees) when applicable; include only measured planes.
+- "value" / "unit": non-ROM measurements or single numeric measures as spoken.
+- "chip_display": optional; the UI may compose the label — you may omit if structured_values/value are present.
+- "negation", "duration", "severity", "rawText" as usual; "rawText" must contain the spoken fragment for this object.
+`
+      : "";
+
   return `You are a clinical documentation AI for DocPad EHR (India). 
 You receive raw speech-to-text transcripts from doctors during OPD consultations.
 Your job: extract structured clinical entities from the transcript.
@@ -178,21 +214,27 @@ RULES — FOLLOW EXACTLY:
    - "past_history": prior conditions, surgeries, medications
    - "family_history": family conditions
    - "investigation": test orders
-
+${examinationRomRules}
 RESPOND WITH ONLY valid JSON array. No markdown, no backticks, no explanation.
 
 SCHEMA:
 [
   {
-    "finding": "string — the clinical term ONLY (no body site here)",
-    "bodySite": "string | null — exact anatomical site without laterality", 
+    "finding": "string — clinical term ONLY (no body site); for merged ROM use a SHORT SNOMED-oriented phrase without numbers",
+    "bodySite": "string | null — exact anatomical site without laterality",
     "laterality": "left | right | bilateral | null",
     "negation": false,
-    "duration": "string | null — e.g. '5 days', '2 weeks'",
+    "duration": "string | null",
     "severity": "mild | moderate | severe | null",
-    "rawText": "string — the original spoken fragment this was extracted from"
+    "rawText": "string — spoken fragment for this object",
+    "chip_display": "string | null — optional human-readable chip line",
+    "structured_values": { "flexion": 20, "abduction": 30 } | null,
+    "rom": { "abduction": 20 } | null,
+    "value": 20,
+    "unit": "degrees"
   }
 ]
+Note: For context "examination", include "structured_values" and/or "rom" for multi-plane ROM; include "value"+"unit" whenever a measurement with units is spoken. Omit unused fields (use null or omit).
 
 EXAMPLES:
 Input: "patient has pain in right knee for 3 months with swelling and no instability"
@@ -235,7 +277,67 @@ Output:
 [
   {"finding": "pain", "bodySite": "leg", "laterality": "bilateral", "negation": false, "duration": null, "severity": null, "rawText": "pain in both legs"},
   {"finding": "swelling", "bodySite": "calf", "laterality": "left", "negation": false, "duration": null, "severity": null, "rawText": "swelling in left calf"}
-]`;
+]
+${
+    contextType === "examination"
+      ? `
+
+Input: "Right hip Flexion 20 degrees, Abduction 30 degrees, Adduction 20 degrees"
+Output:
+[
+  {
+    "finding": "Limited range of joint movement",
+    "bodySite": "hip",
+    "laterality": "right",
+    "negation": false,
+    "duration": null,
+    "severity": null,
+    "rawText": "Right hip Flexion 20 degrees, Abduction 30 degrees, Adduction 20 degrees",
+    "unit": "degrees",
+    "structured_values": { "flexion": 20, "abduction": 30, "adduction": 20 }
+  }
+]
+
+Input: "decreased ROM right hip plus fixed flexion deformity right knee"
+Output:
+[
+  {
+    "finding": "Decreased range of motion",
+    "bodySite": "hip",
+    "laterality": "right",
+    "negation": false,
+    "duration": null,
+    "severity": null,
+    "rawText": "decreased ROM right hip"
+  },
+  {
+    "finding": "Fixed flexion deformity",
+    "bodySite": "knee",
+    "laterality": "right",
+    "negation": false,
+    "duration": null,
+    "severity": null,
+    "rawText": "fixed flexion deformity right knee"
+  }
+]
+
+Input: "flexion up to 20 degrees right knee fixed flexion deformity"
+Output:
+[
+  {
+    "finding": "Fixed flexion deformity",
+    "bodySite": "knee",
+    "laterality": "right",
+    "negation": false,
+    "duration": null,
+    "severity": null,
+    "rawText": "flexion up to 20 degrees right knee fixed flexion deformity",
+    "value": 20,
+    "unit": "degrees"
+  }
+]`
+      : ""
+}`;
 }
 
 /** Map VoiceDictationButton contextType to prompt context string. */

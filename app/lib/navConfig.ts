@@ -5,6 +5,7 @@ export type NavItem = { href: string; label: string };
 const doctorNav: NavItem[] = [
   { href: "/dashboard/opd", label: "Home" },
   { href: "/dashboard/opd", label: "OPD" },
+  { href: "/dashboard/ipd", label: "IPD" },
   { href: "/dashboard/opd/patients", label: "Patients" },
   { href: "/dashboard/opd/new", label: "New visit" },
   { href: "/dashboard/settings", label: "Settings" },
@@ -52,5 +53,6 @@ export function isActiveHref(pathname: string, href: string): boolean {
   const p = pathname.endsWith("/") && pathname !== "/" ? pathname.slice(0, -1) : pathname;
   const h = href.endsWith("/") && href !== "/" ? href.slice(0, -1) : href;
   if (h === "/dashboard/opd") return p === "/dashboard/opd" || p === "/dashboard";
+  if (h === "/dashboard/ipd") return p === "/dashboard/ipd" || p.startsWith("/dashboard/ipd/");
   return p === h || p.startsWith(h + "/");
 }

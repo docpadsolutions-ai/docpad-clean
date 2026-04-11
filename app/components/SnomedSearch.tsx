@@ -51,6 +51,7 @@ export default function SnomedSearch({
   findingSiteConceptId,
   morphologyConceptId,
   indiaRefset,
+  variant = "default",
 }: {
   placeholder: string;
   hierarchy?: "diagnosis" | "complaint" | "procedure" | "allergy" | "finding";
@@ -64,6 +65,8 @@ export default function SnomedSearch({
   findingSiteConceptId?: string;
   morphologyConceptId?: string;
   indiaRefset?: string;
+  /** Dark panel styling (IPD progress notes, schedule surgery). */
+  variant?: "default" | "slate";
 }) {
   // ALL HOOKS MUST BE AT THE TOP
   const [isMounted, setIsMounted] = useState(false);
@@ -141,9 +144,32 @@ export default function SnomedSearch({
   ]);
 
 
+  const isSlate = variant === "slate";
+  const shellClass = isSlate
+    ? "flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/50 px-3 py-2.5 focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/25"
+    : "flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100";
+  const inputClass = isSlate
+    ? "flex-1 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+    : "flex-1 bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400";
+  const iconMuted = isSlate ? "text-slate-500" : "text-gray-400";
+  const spinClass = isSlate ? "text-sky-400" : "text-blue-400";
+  const listClass = isSlate
+    ? "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-slate-600 bg-[#1e293b] py-1 shadow-xl"
+    : "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-xl";
+  const itemHover = isSlate ? "hover:bg-slate-700/90" : "hover:bg-blue-50";
+  const titleClass = isSlate ? "text-sm font-medium text-slate-100" : "text-sm font-medium text-gray-900";
+  const metaClass = isSlate ? "mt-0.5 text-xs text-slate-400" : "mt-0.5 text-xs text-gray-400";
+  const freeHover = isSlate ? "hover:bg-amber-900/30" : "hover:bg-amber-50";
+  const freeTitle = isSlate ? "text-sm font-medium text-amber-200" : "text-sm font-medium text-amber-900";
+  const freeSub = isSlate ? "mt-0.5 text-xs text-amber-100/80" : "mt-0.5 text-xs text-amber-800/80";
+
   // --- HYDRATION SAFETY RENDER MUST BE PLACED *AFTER* ALL HOOKS ---
   if (!isMounted) {
-    return <div className="h-[42px] w-full rounded-xl border border-gray-200 bg-gray-50 animate-pulse"></div>;
+    return (
+      <div
+        className={`h-[42px] w-full animate-pulse rounded-xl border ${isSlate ? "border-slate-600 bg-slate-800/50" : "border-gray-200 bg-gray-50"}`}
+      />
+    );
   }
 
   const trimmedQuery = query.trim();
@@ -152,10 +178,10 @@ export default function SnomedSearch({
 
   return (
     <div className="relative w-full">
-      <div className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+      <div className={shellClass}>
         {isLoading ? (
           <svg
-            className="h-4 w-4 shrink-0 animate-spin text-blue-400"
+            className={`h-4 w-4 shrink-0 animate-spin ${spinClass}`}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -167,7 +193,7 @@ export default function SnomedSearch({
           </svg>
         ) : (
           <svg
-            className="h-4 w-4 shrink-0 text-gray-400"
+            className={`h-4 w-4 shrink-0 ${iconMuted}`}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -180,7 +206,7 @@ export default function SnomedSearch({
         )}
         <input
           type="text"
-          className="flex-1 bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400"
+          className={inputClass}
           placeholder={placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -189,11 +215,11 @@ export default function SnomedSearch({
       </div>
 
       {isOpen && (results.length > 0 || showFreeText) && (
-        <ul className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+        <ul className={listClass}>
           {results.map((item) => (
             <li
               key={item.conceptId}
-              className="cursor-pointer px-4 py-2.5 hover:bg-blue-50"
+              className={`cursor-pointer px-4 py-2.5 ${itemHover}`}
               onMouseDown={() => {
                 setQuery("");
                 setIsOpen(false);
@@ -201,21 +227,24 @@ export default function SnomedSearch({
                 onSelect(item);
               }}
             >
-              <p className="text-sm font-medium text-gray-900">{item.term}</p>
-              <p className="mt-0.5 text-xs text-gray-400">
+              <p className={titleClass}>{item.term}</p>
+              <p className={metaClass}>
                 SNOMED: {item.conceptId}
                 {item.icd10 && <> · ICD-10: {item.icd10}</>}
                 {item.lowConfidence && (
-                  <span className="ml-1.5 font-medium text-amber-700"> · Review match (body site)</span>
+                  <span className={`ml-1.5 font-medium ${isSlate ? "text-amber-400" : "text-amber-700"}`}>
+                    {" "}
+                    · Review match (body site)
+                  </span>
                 )}
               </p>
             </li>
           ))}
           {showFreeText && (
-            <li className="border-t border-gray-100">
+            <li className={isSlate ? "border-t border-slate-600" : "border-t border-gray-100"}>
               <button
                 type="button"
-                className="w-full cursor-pointer px-4 py-2.5 text-left hover:bg-amber-50"
+                className={`w-full cursor-pointer px-4 py-2.5 text-left ${freeHover}`}
                 onMouseDown={() => {
                   const t = trimmedQuery;
                   setQuery("");
@@ -223,8 +252,8 @@ export default function SnomedSearch({
                   onSelect({ term: t, conceptId: "", icd10: null });
                 }}
               >
-                <p className="text-sm font-medium text-amber-900">Add as free text (no SNOMED code)</p>
-                <p className="mt-0.5 text-xs text-amber-800/80">&quot;{trimmedQuery}&quot;</p>
+                <p className={freeTitle}>Add as free text (no SNOMED code)</p>
+                <p className={freeSub}>&quot;{trimmedQuery}&quot;</p>
               </button>
             </li>
           )}

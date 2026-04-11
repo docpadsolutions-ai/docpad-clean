@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ClinicalConfigurationNav from "@/components/admin/ClinicalConfigurationNav";
 import {
   OpdTemplateTableRowInner,
   OpdTemplateVirtualRow,
@@ -183,8 +184,12 @@ export default function OpdTemplatesListPage() {
     <div className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+          <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Administration</p>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Clinical configuration</p>
+              <ClinicalConfigurationNav />
+            </div>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">OPD templates</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Note structures load only on the detail page. Search and filters are debounced ({DEBOUNCE_MS}ms).

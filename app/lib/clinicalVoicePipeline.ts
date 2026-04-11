@@ -16,6 +16,15 @@ export type GeminiEntityRow = {
   duration?: string | null;
   severity?: string | null;
   rawText?: string | null;
+  /**
+   * Full chip label for merged ROM rows (degrees, joint, laterality). SNOMED lookup uses `finding`.
+   */
+  chip_display?: string | null;
+  /** Numeric ROM planes in degrees (e.g. flexion, abduction) for trending / graphing. */
+  structured_values?: Record<string, number> | null;
+  /** Single measured value when spoken with units (non-ROM or one number). */
+  value?: number | null;
+  unit?: string | null;
 };
 
 export type SnomedClientHit = {

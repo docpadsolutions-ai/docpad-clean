@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DocPadLogoMark } from "./components/DocPadLogoMark";
-import { createBrowserSupabaseClient } from "./lib/supabase/client";
 import { supabase } from "./supabase";
 
 function ShieldIcon({ className }: { className?: string }) {
@@ -110,15 +109,6 @@ export default function LoginPage() {
     }
 
     setIsLoading(true);
-    try {
-      const testClient = createBrowserSupabaseClient();
-      console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-    } catch (err) {
-      setAuthError("Client init failed: " + String(err));
-      setIsLoading(false);
-      return;
-    }
-
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: trimmed,

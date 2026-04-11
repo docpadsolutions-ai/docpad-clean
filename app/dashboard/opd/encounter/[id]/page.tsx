@@ -45,7 +45,6 @@ import {
 import ClinicalEntityChipPopover, {
   ClinicalChipEditedMarker,
 } from "../../../../components/ClinicalEntityChipPopover";
-
 /** Optional India NRC refset filter for all SNOMED pickers (`NEXT_PUBLIC_SNOMED_INDIA_REFSET`). */
 const SNOMED_INDIA_REFSET_UI = readIndiaRefsetKeyFromEnv();
 
@@ -3321,7 +3320,17 @@ export default function EncounterPage() {
                   <SurgeryIcon className="h-5 w-5 shrink-0 text-blue-500" />
                   <span className="text-sm font-semibold text-gray-800">Plan Surgery</span>
                 </button>
-                <button type="button" className="flex items-center gap-2.5 rounded-lg border-2 border-amber-200 bg-amber-50/50 px-3 py-2.5 text-left transition hover:bg-amber-50">
+                <button
+                  type="button"
+                  disabled={!encounterId?.trim() || !currentPatientId.trim() || isEncounterReadOnly}
+                  onClick={() => {
+                    if (!encounterId?.trim()) return;
+                    router.push(
+                      `/dashboard/ipd/pre-admission?encounterId=${encodeURIComponent(encounterId.trim())}`,
+                    );
+                  }}
+                  className="flex items-center gap-2.5 rounded-lg border-2 border-amber-200 bg-amber-50/50 px-3 py-2.5 text-left transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
                   <BedIcon className="h-5 w-5 shrink-0 text-amber-500" />
                   <span className="text-sm font-semibold text-gray-800">Admit this patient</span>
                 </button>
