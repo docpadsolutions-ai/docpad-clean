@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Pencil } from "lucide-react";
 import { supabase } from "../supabase";
 import type { ClinicalChip, ClinicalLaterality, ClinicalSeverity } from "../lib/clinicalChipTypes";
-import { clinicalChipPrimaryLabel } from "../lib/clinicalChipTypes";
+import { clinicalChipVoiceDisplayLabel } from "../lib/clinicalChipTypes";
 import { incrementDoctorConceptUsage } from "../lib/incrementDoctorConcept";
 import { resnomedAfterClinicalChipEdit } from "../lib/resnomedClinicalChip";
 
@@ -208,10 +208,8 @@ export default function ClinicalEntityChipPopover({
   if (!open) return null;
 
   const displayCode = manualPick?.sctid ?? chip.snomedCode ?? "";
-  const displayTerm =
-    manualPick?.term ??
-    (chip.snomedCode ? chip.snomedTerm : null) ??
-    clinicalChipPrimaryLabel(previewChip);
+  /** Prefer doctor wording; manual SNOMED pick shows that concept's term next to the code. */
+  const displayTerm = manualPick?.term ?? clinicalChipVoiceDisplayLabel(previewChip);
 
   return (
     <form

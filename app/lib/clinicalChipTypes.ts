@@ -1,5 +1,4 @@
 import type { ClinicalFinding } from "../components/VoiceDictationButton";
-import { composeBodySiteLabel } from "./clinicalVoicePipeline";
 
 export type ClinicalLaterality = "left" | "right" | "bilateral" | null;
 
@@ -43,22 +42,24 @@ function normalizeSeverity(v: string | null | undefined): ClinicalSeverity {
   return null;
 }
 
-/** Primary line for chip label (finding + site, SNOMED term when confident). */
-export function clinicalChipPrimaryLabel(c: ClinicalChip): string {
-  const code = c.snomedCode?.trim();
-  const term = c.snomedTerm?.trim();
-  if (code && term && !c.snomedLowConfidence) return term;
+/**
+ * Visible chip / narrative text: always from Gemini (laterality + body site + finding).
+ * SNOMED preferred terms are not shown here (invisible coding).
+ */
+export function clinicalChipVoiceDisplayLabel(c: ClinicalChip): string {
+  const latRaw = c.laterality?.trim().toLowerCase();
+  const latPart =
+    latRaw === "left" || latRaw === "right" || latRaw === "bilateral"
+      ? latRaw.charAt(0).toUpperCase() + latRaw.slice(1)
+      : "";
+  const site = (c.bodySite ?? "").trim();
+  const find = (c.finding ?? "").trim();
+  return [latPart, site, find].filter(Boolean).join(" ");
+}
 
-  const finding = c.finding.trim();
-  const site = c.bodySite?.trim();
-  if (!finding) return site ? site.charAt(0).toUpperCase() + site.slice(1) : "";
-  if (!site) return finding.charAt(0).toUpperCase() + finding.slice(1);
-  const siteLower = site.toLowerCase();
-  if (finding.toLowerCase().includes(siteLower)) {
-    return finding.charAt(0).toUpperCase() + finding.slice(1);
-  }
-  const siteNice = site.charAt(0).toUpperCase() + site.slice(1).toLowerCase();
-  return `${siteNice} ${finding}`.trim();
+/** Alias — display text is always voice/entity fields, never `snomedTerm`. */
+export function clinicalChipPrimaryLabel(c: ClinicalChip): string {
+  return clinicalChipVoiceDisplayLabel(c);
 }
 
 export function clinicalChipFromVoiceFinding(f: ClinicalFinding, id = newClinicalChipId()): ClinicalChip {
@@ -88,12 +89,10 @@ export function clinicalChipFromVoiceFinding(f: ClinicalFinding, id = newClinica
   };
 }
 
-/** Minimal chip when loading from FHIR / legacy text-only rows. */
 /** One line for encounter `quick_exam` / prescription from an examination chip. */
 export function clinicalExamChipPersistLine(c: ClinicalChip): string {
-  const loc = composeBodySiteLabel(c.laterality, c.bodySite);
-  const base = clinicalChipPrimaryLabel(c);
-  return [loc && `[${loc}]`, base, c.negation ? "– Absent" : null].filter(Boolean).join(" ");
+  const base = clinicalChipVoiceDisplayLabel(c);
+  return [base, c.negation ? "– Absent" : null].filter(Boolean).join(" ");
 }
 
 export function clinicalChipFromLegacyDisplay(term: string, snomed: string): ClinicalChip {

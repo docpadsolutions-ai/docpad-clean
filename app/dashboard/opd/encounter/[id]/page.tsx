@@ -42,7 +42,6 @@ import {
   clinicalExamChipPersistLine,
   newClinicalChipId,
 } from "../../../../lib/clinicalChipTypes";
-import { composeBodySiteLabel } from "../../../../lib/clinicalVoicePipeline";
 import ClinicalEntityChipPopover, {
   ClinicalChipEditedMarker,
 } from "../../../../components/ClinicalEntityChipPopover";
@@ -2492,7 +2491,6 @@ export default function EncounterPage() {
               {(examFindings.length > 0 || snomedLinkingExam) && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {examFindings.map((f) => {
-                    const loc = composeBodySiteLabel(f.laterality, f.bodySite);
                     const label = clinicalChipPrimaryLabel(f);
                     const lowOrMissing = !f.snomedCode?.trim() || f.snomedLowConfidence;
                     const examBorder = f.negation
@@ -2536,9 +2534,6 @@ export default function EncounterPage() {
                             <ClinicalChipEditedMarker className="h-3 w-3 shrink-0" aria-hidden />
                           ) : null}
                           <span className={`h-2 w-2 shrink-0 rounded-full ${examDot}`} />
-                          {loc ? (
-                            <span className="text-[11px] font-medium text-blue-600">[{loc}]</span>
-                          ) : null}
                           <span className="text-[12px] font-medium text-gray-900">{label}</span>
                           {f.snomedCode?.trim() && f.snomedLowConfidence && (
                             <span
