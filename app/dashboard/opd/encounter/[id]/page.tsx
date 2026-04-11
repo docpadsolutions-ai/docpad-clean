@@ -34,7 +34,18 @@ import { usePatientOpdEncounters } from "../../../../hooks/usePatientOpdEncounte
 import { usePatientSummaryHighlights } from "../../../../hooks/usePatientSummaryHighlights";
 import { readIndiaRefsetKeyFromEnv } from "../../../../lib/snomedUiConfig";
 import { buildDiagnosesForSync, syncActiveProblemsFromEncounter } from "../../../../lib/syncActiveProblems";
-import { incrementDoctorConceptUsage } from "../../../../lib/incrementDoctorConcept";
+import {
+  type ClinicalChip,
+  clinicalChipFromLegacyDisplay,
+  clinicalChipFromVoiceFinding,
+  clinicalChipPrimaryLabel,
+  clinicalExamChipPersistLine,
+  newClinicalChipId,
+} from "../../../../lib/clinicalChipTypes";
+import { composeBodySiteLabel } from "../../../../lib/clinicalVoicePipeline";
+import ClinicalEntityChipPopover, {
+  ClinicalChipEditedMarker,
+} from "../../../../components/ClinicalEntityChipPopover";
 
 /** Optional India NRC refset filter for all SNOMED pickers (`NEXT_PUBLIC_SNOMED_INDIA_REFSET`). */
 const SNOMED_INDIA_REFSET_UI = readIndiaRefsetKeyFromEnv();
@@ -72,28 +83,6 @@ type FhirCoding = {
   code:   string;
   display: string;
   icd10:  string | null;
-};
-
-// A single voice-extracted complaint enriched with SNOMED and Gemini metadata
-type VoiceComplaint = {
-  term: string;
-  snomed: string;
-  duration: string | null;
-  severity: string | null;
-  negated?: boolean;
-  locationLabel?: string | null;
-  snomedAlternatives?: { term: string; conceptId: string }[];
-};
-
-// A single voice-extracted physical examination finding
-type ExamFinding = {
-  term: string;
-  location: string | null;
-  qualifier: string | null;
-  snomed: string;
-  /** SNOMED concept chosen without body-site confirmation in FSN — verify. */
-  snomedLowConfidence?: boolean;
-  negated?: boolean;
 };
 
 // Working diagnosis chip (manual SNOMED pick or voice + auto-link)
@@ -658,13 +647,16 @@ export default function EncounterPage() {
   const [voiceRxPrefill, setVoiceRxPrefill]         = useState<VoiceRxPrefillRow[]>([]);
 
   // Voice-extracted complaints — each auto-resolved to a SNOMED code
-  const [voiceComplaints, setVoiceComplaints] = useState<VoiceComplaint[]>([]);
+  const [voiceComplaints, setVoiceComplaints] = useState<ClinicalChip[]>([]);
   // True while voice complaint findings are being auto-linked to SNOMED
   const [snomedLinking, setSnomedLinking]     = useState(false);
 
   // Voice-extracted physical examination findings
-  const [examFindings, setExamFindings]         = useState<ExamFinding[]>([]);
+  const [examFindings, setExamFindings]         = useState<ClinicalChip[]>([]);
   const [snomedLinkingExam, setSnomedLinkingExam] = useState(false);
+
+  const [editingChiefChipId, setEditingChiefChipId] = useState<string | null>(null);
+  const [editingExamChipId, setEditingExamChipId] = useState<string | null>(null);
 
   // Voice dictation — controlled query strings fed into each SnomedSearch input
   const [complaintQuery, setComplaintQuery] = useState("");
@@ -708,8 +700,6 @@ export default function EncounterPage() {
   const [doctorPractitionerId, setDoctorPractitionerId] = useState<string | null>(null);
   /** Prefer DB specialty; drives Gemini + Assembly keyterms. */
   const [doctorSpecialty, setDoctorSpecialty] = useState<string>("General Medicine");
-  /** Chief-complaint chip: index showing SNOMED alternatives popover. */
-  const [complaintChipDetail, setComplaintChipDetail] = useState<number | null>(null);
   /** Normalized signed-in practitioner role (in-memory; no routing). */
   const practitionerRoleRef = useRef<UserRole | null>(null);
 
@@ -1030,22 +1020,17 @@ export default function EncounterPage() {
         const allCcFhir = Array.isArray(ccFhirRaw)
           ? (ccFhirRaw as FhirCoding[])
           : parseJsonValue<FhirCoding[]>(ccFhirRaw);
-        let nextVoiceComplaints: VoiceComplaint[] = [];
+        let nextVoiceComplaints: ClinicalChip[] = [];
         if (allCcFhir && allCcFhir.length > 0) {
-          nextVoiceComplaints = allCcFhir.map((f) => ({
-            term: f.display,
-            snomed: f.code ?? "",
-            duration: null,
-            severity: null,
-          }));
+          nextVoiceComplaints = allCcFhir.map((f) =>
+            clinicalChipFromLegacyDisplay(f.display, f.code ?? ""),
+          );
         } else if (enc.chief_complaint) {
           nextVoiceComplaints = [
-            {
-              term: str(enc.chief_complaint),
-              snomed: strN(enc.chief_complaint_snomed) ?? "",
-              duration: null,
-              severity: null,
-            },
+            clinicalChipFromLegacyDisplay(
+              str(enc.chief_complaint),
+              strN(enc.chief_complaint_snomed) ?? "",
+            ),
           ];
         }
         setVoiceComplaints(nextVoiceComplaints);
@@ -1055,12 +1040,12 @@ export default function EncounterPage() {
         if (ccTermDb) {
           setComplaintQuery(ccTermDb);
           setSelectedChiefComplaintConcept({ term: ccTermDb, conceptId: (ccIdDb ?? "").trim() });
-        } else if (nextVoiceComplaints[0]?.term) {
+        } else if (nextVoiceComplaints[0]) {
           const c0 = nextVoiceComplaints[0];
-          setComplaintQuery(c0.term);
+          setComplaintQuery(clinicalChipPrimaryLabel(c0));
           setSelectedChiefComplaintConcept({
-            term: c0.term,
-            conceptId: c0.snomed?.trim() ?? "",
+            term: clinicalChipPrimaryLabel(c0),
+            conceptId: c0.snomedCode?.trim() ?? "",
           });
         } else {
           setComplaintQuery("");
@@ -1349,27 +1334,38 @@ export default function EncounterPage() {
 
   function selectComplaintChip(chip: { label: string; snomed: string }) {
     setVoiceComplaints((prev) => {
-      const idx = prev.findIndex((c) => c.term.toLowerCase() === chip.label.toLowerCase());
+      const idx = prev.findIndex(
+        (c) => c.finding.toLowerCase() === chip.label.toLowerCase(),
+      );
       if (idx >= 0) {
         const removed = prev[idx];
         const next = prev.filter((_, i) => i !== idx);
         setSelectedChiefComplaintConcept((cur) => {
           if (next.length === 0) return null;
-          if (!cur || cur.term.toLowerCase() === removed.term.toLowerCase()) {
-            return { term: next[0].term, conceptId: next[0].snomed?.trim() ?? "" };
+          if (
+            !cur ||
+            cur.term.toLowerCase() === clinicalChipPrimaryLabel(removed).toLowerCase()
+          ) {
+            return {
+              term: clinicalChipPrimaryLabel(next[0]),
+              conceptId: next[0].snomedCode?.trim() ?? "",
+            };
           }
           return cur;
         });
         setComplaintQuery((q) => {
           if (next.length === 0) return "";
-          if (q.trim().toLowerCase() === removed.term.toLowerCase()) return next[0].term;
+          if (q.trim().toLowerCase() === clinicalChipPrimaryLabel(removed).toLowerCase()) {
+            return clinicalChipPrimaryLabel(next[0]);
+          }
           return q;
         });
         return next;
       }
       setSelectedChiefComplaintConcept({ term: chip.label, conceptId: chip.snomed });
       setComplaintQuery(chip.label);
-      return [...prev, { term: chip.label, snomed: chip.snomed, duration: null, severity: null }];
+      const row = clinicalChipFromLegacyDisplay(chip.label, chip.snomed);
+      return [...prev, { ...row, isConfirmed: true, snomedLowConfidence: false }];
     });
   }
 
@@ -1409,33 +1405,61 @@ export default function EncounterPage() {
   function handleComplaintSelect(concept: { term: string; conceptId: string; icd10: string | null }) {
     const newTerm = concept.term.trim();
     // Skip if already in the chip list
-    if (voiceComplaints.some((c) => c.term.toLowerCase() === newTerm.toLowerCase())) return;
+    if (voiceComplaints.some((c) => c.finding.toLowerCase() === newTerm.toLowerCase())) return;
     setSelectedChiefComplaintConcept({
       term: newTerm,
       conceptId: concept.conceptId.trim(),
     });
-    setVoiceComplaints((prev) => [
-      ...prev,
-      { term: newTerm, snomed: concept.conceptId, duration: durationText.trim() || null, severity: null },
-    ]);
+    const row: ClinicalChip = {
+      id: newClinicalChipId(),
+      finding: newTerm,
+      bodySite: null,
+      laterality: null,
+      duration: durationText.trim() || null,
+      severity: null,
+      negation: false,
+      snomedCode: concept.conceptId.trim(),
+      snomedTerm: newTerm,
+      snomedAlternatives: [],
+      isEdited: false,
+      isConfirmed: true,
+      rawText: "",
+      snomedLowConfidence: false,
+    };
+    setVoiceComplaints((prev) => [...prev, row]);
     // Clear both staging inputs — SnomedSearch already clears complaintQuery via onChange("")
     setDurationText("");
   }
 
-  function removeVoiceComplaintAt(index: number) {
+  function removeExamFindingById(id: string) {
+    setExamFindings((prev) => prev.filter((c) => c.id !== id));
+    if (editingExamChipId === id) setEditingExamChipId(null);
+  }
+
+  function removeVoiceComplaintById(id: string) {
     setVoiceComplaints((prev) => {
-      const removed = prev[index];
-      const next = prev.filter((_, j) => j !== index);
+      const removed = prev.find((c) => c.id === id);
+      const next = prev.filter((c) => c.id !== id);
+      if (editingChiefChipId === id) setEditingChiefChipId(null);
       setSelectedChiefComplaintConcept((cur) => {
         if (next.length === 0) return null;
-        if (!cur || cur.term.toLowerCase() === removed.term.toLowerCase()) {
-          return { term: next[0].term, conceptId: next[0].snomed?.trim() ?? "" };
+        if (
+          !removed ||
+          !cur ||
+          cur.term.toLowerCase() === clinicalChipPrimaryLabel(removed).toLowerCase()
+        ) {
+          return {
+            term: clinicalChipPrimaryLabel(next[0]),
+            conceptId: next[0].snomedCode?.trim() ?? "",
+          };
         }
         return cur;
       });
       setComplaintQuery((q) => {
         if (next.length === 0) return "";
-        if (q.trim().toLowerCase() === removed.term.toLowerCase()) return next[0].term;
+        if (removed && q.trim().toLowerCase() === clinicalChipPrimaryLabel(removed).toLowerCase()) {
+          return clinicalChipPrimaryLabel(next[0]);
+        }
         return q;
       });
       return next;
@@ -1641,8 +1665,8 @@ export default function EncounterPage() {
         voiceComplaints.length > 0
           ? voiceComplaints.map((c) => ({
               system:  "http://snomed.info/sct" as const,
-              code:    c.snomed?.trim() ?? "",
-              display: `${c.term}${c.duration ? ` (${c.duration})` : ""}${c.severity ? ` [${c.severity}]` : ""}`,
+              code:    c.snomedCode?.trim() ?? "",
+              display: `${clinicalChipPrimaryLabel(c)}${c.duration ? ` (${c.duration})` : ""}${c.severity ? ` [${c.severity}]` : ""}`,
               icd10:   null,
             }))
           : cq
@@ -1683,16 +1707,20 @@ export default function EncounterPage() {
 
       const chiefComplaintLine =
         voiceComplaints.length > 0
-          ? voiceComplaints.map((c) => c.term.trim()).filter(Boolean).join("; ")
+          ? voiceComplaints.map((c) => clinicalChipPrimaryLabel(c).trim()).filter(Boolean).join("; ")
           : cq || null;
       const cc0 = voiceComplaints[0];
       const chiefComplaintSnomed =
-        cc0?.snomed?.trim() ? cc0.snomed.trim() : selectedChiefComplaintConcept?.conceptId?.trim() || null;
+        cc0?.snomedCode?.trim()
+          ? cc0.snomedCode.trim()
+          : selectedChiefComplaintConcept?.conceptId?.trim() || null;
 
       const persistChiefTerm =
-        selectedChiefComplaintConcept?.term?.trim() || cc0?.term?.trim() || (cq || null);
+        selectedChiefComplaintConcept?.term?.trim() ||
+        (cc0 ? clinicalChipPrimaryLabel(cc0).trim() : "") ||
+        (cq || null);
       const persistChiefConceptRaw =
-        selectedChiefComplaintConcept?.conceptId?.trim() || cc0?.snomed?.trim() || "";
+        selectedChiefComplaintConcept?.conceptId?.trim() || cc0?.snomedCode?.trim() || "";
       const persistChiefConcept = persistChiefConceptRaw || null;
 
       const persistDxTerm =
@@ -1725,14 +1753,10 @@ export default function EncounterPage() {
 
       const finalExam = [
         ...(persistExTerm ? [persistExTerm] : []),
-        ...examFindings.map((f) =>
-          [f.location && `[${f.location}]`, f.term, f.qualifier && `– ${f.qualifier}`]
-            .filter(Boolean)
-            .join(" "),
-        ),
+        ...examFindings.map((f) => clinicalExamChipPersistLine(f)),
         ...planInvestigations.map((inv) => `Investigation: ${inv}`),
       ];
-      const snomedFromFindings = examFindings.map((f) => f.snomed?.trim()).filter(Boolean) as string[];
+      const snomedFromFindings = examFindings.map((f) => f.snomedCode?.trim()).filter(Boolean) as string[];
       const finalExamSnomed = [...new Set([...(persistExSnomed ? [persistExSnomed] : []), ...snomedFromFindings])];
 
       const normalized = String(status).trim().toLowerCase().replace(/\s+/g, "");
@@ -2255,43 +2279,19 @@ export default function EncounterPage() {
                         const findings = raw as ClinicalFinding[];
                         if (!Array.isArray(findings) || findings.length === 0) return;
 
-                        const toVoiceRow = (f: ClinicalFinding): VoiceComplaint => {
-                          const loc = f.location?.trim() ?? "";
-                          const labelBase = f.finding.trim();
-                          const display =
-                            loc && !labelBase.toLowerCase().includes(loc.toLowerCase())
-                              ? `${labelBase} — ${loc}`
-                              : labelBase;
-                          const topTerm = f.snomed?.term?.trim();
-                          const term =
-                            f.snomed?.conceptId && topTerm && !f.snomed?.lowConfidence
-                              ? topTerm
-                              : display;
-                          return {
-                            term,
-                            snomed: f.snomed?.conceptId?.trim() ?? "",
-                            duration: f.duration,
-                            severity: f.severity,
-                            negated: Boolean(f.negation),
-                            locationLabel: loc || null,
-                            snomedAlternatives: (f.snomedAlternatives ?? []).map((a) => ({
-                              term: a.term,
-                              conceptId: a.conceptId,
-                            })),
-                          };
-                        };
+                        const toChip = (f: ClinicalFinding) => clinicalChipFromVoiceFinding(f);
 
                         if (findings.length === 1) {
                           const f = findings[0];
                           setDurationText(f.duration ?? "");
                           setComplaintQuery("");
                           setVoiceComplaints((prev) => {
-                            const row = toVoiceRow(f);
+                            const row = toChip(f);
                             const next = [...prev, row];
                             if (prev.length === 0) {
                               setSelectedChiefComplaintConcept({
-                                term: row.term,
-                                conceptId: row.snomed?.trim() ?? "",
+                                term: clinicalChipPrimaryLabel(row),
+                                conceptId: row.snomedCode?.trim() ?? "",
                               });
                             }
                             return next;
@@ -2301,14 +2301,14 @@ export default function EncounterPage() {
 
                         setSnomedLinking(true);
                         try {
-                          const resolvedItems = findings.map(toVoiceRow);
+                          const resolvedItems = findings.map(toChip);
                           setVoiceComplaints((prev) => {
                             const next = [...prev, ...resolvedItems];
                             if (prev.length === 0 && resolvedItems[0]) {
                               const f0 = resolvedItems[0];
                               setSelectedChiefComplaintConcept({
-                                term: f0.term,
-                                conceptId: f0.snomed?.trim() ?? "",
+                                term: clinicalChipPrimaryLabel(f0),
+                                conceptId: f0.snomedCode?.trim() ?? "",
                               });
                             }
                             return next;
@@ -2325,104 +2325,88 @@ export default function EncounterPage() {
                 {/* ── 1. Chip area — all confirmed complaints ──────────────────── */}
                 {(voiceComplaints.length > 0 || snomedLinking) && (
                   <div className="mb-2 flex flex-wrap gap-1.5">
-                    {voiceComplaints.map((c, i) => (
-                      <span key={`vc-${i}`} className="relative inline-flex max-w-full flex-col">
+                    {voiceComplaints.map((c) => {
+                      const label = clinicalChipPrimaryLabel(c);
+                      const lowOrMissing = !c.snomedCode?.trim() || c.snomedLowConfidence;
+                      const chiefBorder = c.negation
+                        ? "border-red-200 bg-red-50/90 line-through decoration-red-400"
+                        : c.isEdited
+                          ? "border-sky-400 bg-sky-50/50 ring-1 ring-sky-200/80"
+                          : lowOrMissing
+                            ? "border-amber-300 bg-amber-50/70"
+                            : "border-emerald-200/90 bg-emerald-50/50";
+                      const dotClass = c.negation
+                        ? "bg-red-400"
+                        : c.isConfirmed
+                          ? "bg-emerald-400"
+                          : "bg-amber-400";
+                      return (
+                      <span
+                        key={c.id}
+                        data-clinical-chip-anchor={c.id}
+                        className="relative inline-flex max-w-full flex-col"
+                      >
                         <span
-                          className={`inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-sm ${
-                            c.negated
-                              ? "border-red-200 bg-red-50/90 line-through decoration-red-400"
-                              : c.snomed
-                                ? "border-emerald-200/90 bg-emerald-50/50"
-                                : "border-amber-200 bg-amber-50/70"
-                          }`}
-                          role="button"
-                          tabIndex={0}
-                          title={
-                            c.snomed
-                              ? `SNOMED ${c.snomed} — click for alternatives`
-                              : "Low confidence — click for details"
-                          }
-                          onClick={() => setComplaintChipDetail((x) => (x === i ? null : i))}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setComplaintChipDetail((x) => (x === i ? null : i));
-                            }
-                          }}
+                          className={`inline-flex max-w-full items-stretch overflow-hidden rounded-full border shadow-sm ${chiefBorder}`}
                         >
-                          <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${
-                              c.negated ? "bg-red-400" : c.snomed ? "bg-emerald-400" : "bg-amber-400"
-                            }`}
-                          />
-                          <span className="min-w-0 text-[12px] font-medium text-gray-900">{c.term}</span>
-                          {(c.duration || c.severity) && (
-                            <span className="shrink-0 text-[11px] text-gray-500">
-                              {[c.duration, c.severity].filter(Boolean).join(" · ")}
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            className="inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left outline-none ring-0 focus-visible:ring-2 focus-visible:ring-sky-300"
+                            title={
+                              c.snomedCode
+                                ? `SNOMED ${c.snomedCode} — click to edit`
+                                : "No SNOMED match — click to edit"
+                            }
+                            disabled={isEncounterReadOnly}
+                            onClick={() => {
+                              if (isEncounterReadOnly) return;
+                              setEditingChiefChipId((x) => (x === c.id ? null : c.id));
+                            }}
+                          >
+                            {c.isEdited ? (
+                              <ClinicalChipEditedMarker className="h-3 w-3 shrink-0" aria-hidden />
+                            ) : null}
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+                            <span className="min-w-0 text-[12px] font-medium text-gray-900">{label}</span>
+                            {(c.duration || c.severity) && (
+                              <span className="shrink-0 text-[11px] text-gray-500">
+                                {[c.duration, c.severity].filter(Boolean).join(" · ")}
+                              </span>
+                            )}
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              removeVoiceComplaintAt(i);
-                              setComplaintChipDetail(null);
+                              removeVoiceComplaintById(c.id);
                             }}
-                            className="ml-0.5 shrink-0 rounded p-0.5 text-gray-300 transition hover:bg-red-50 hover:text-red-400"
-                            aria-label={`Remove ${c.term}`}
+                            className="shrink-0 border-0 border-l border-gray-200/80 bg-transparent px-2 py-1.5 text-gray-300 transition hover:bg-red-50 hover:text-red-400"
+                            aria-label={`Remove ${label}`}
                           >
                             <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                               <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
                             </svg>
                           </button>
                         </span>
-                        {complaintChipDetail === i && (
-                          <div className="absolute left-0 top-full z-30 mt-1 min-w-[240px] max-w-[min(100vw-2rem,320px)] rounded-lg border border-gray-200 bg-white p-2.5 shadow-xl">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">SNOMED concept</p>
-                            <p className="break-all font-mono text-[11px] text-gray-800">{c.snomed || "—"}</p>
-                            {(c.snomedAlternatives ?? []).length > 0 && (
-                              <div className="mt-2 space-y-1">
-                                <p className="text-[10px] font-semibold text-gray-500">Alternatives</p>
-                                {(c.snomedAlternatives ?? []).map((alt) => (
-                                  <button
-                                    key={alt.conceptId}
-                                    type="button"
-                                    className="block w-full rounded-md border border-gray-100 px-2 py-1.5 text-left text-[11px] text-gray-800 hover:bg-gray-50"
-                                    onClick={() => {
-                                      setVoiceComplaints((prev) =>
-                                        prev.map((row, j) =>
-                                          j === i ? { ...row, term: alt.term, snomed: alt.conceptId } : row,
-                                        ),
-                                      );
-                                      setComplaintChipDetail(null);
-                                    }}
-                                  >
-                                    {alt.term}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                            {doctorPractitionerId && c.snomed ? (
-                              <button
-                                type="button"
-                                className="mt-2 w-full rounded-lg bg-emerald-600 px-2 py-2 text-[11px] font-semibold text-white transition hover:bg-emerald-700"
-                                onClick={() => {
-                                  void incrementDoctorConceptUsage(supabase, {
-                                    doctorId: doctorPractitionerId,
-                                    sctid: c.snomed,
-                                    displayTerm: c.term,
-                                    contextType: "chief_complaint",
-                                  });
-                                  setComplaintChipDetail(null);
-                                }}
-                              >
-                                Confirm for my shortcuts
-                              </button>
-                            ) : null}
-                          </div>
-                        )}
+                        <ClinicalEntityChipPopover
+                          chip={c}
+                          open={editingChiefChipId === c.id}
+                          onClose={() => setEditingChiefChipId(null)}
+                          onSaved={(next) => {
+                            setVoiceComplaints((prev) => prev.map((row) => (row.id === next.id ? next : row)));
+                            setSelectedChiefComplaintConcept({
+                              term: clinicalChipPrimaryLabel(next),
+                              conceptId: next.snomedCode?.trim() ?? "",
+                            });
+                          }}
+                          hierarchy="complaint"
+                          contextType="chief_complaint"
+                          doctorSpecialty={doctorSpecialty || department}
+                          doctorId={doctorPractitionerId ?? null}
+                          indiaRefset={SNOMED_INDIA_REFSET_UI ?? null}
+                        />
                       </span>
-                    ))}
+                    );})}
                     {snomedLinking && (
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-100 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-500">
                         <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
@@ -2467,7 +2451,7 @@ export default function EncounterPage() {
                     <Chip
                       key={chip.label}
                       label={chip.label}
-                      selected={voiceComplaints.some((c) => c.term.toLowerCase() === chip.label.toLowerCase())}
+                      selected={voiceComplaints.some((c) => c.finding.toLowerCase() === chip.label.toLowerCase())}
                       onToggle={() => selectComplaintChip(chip)}
                     />
                   ))}
@@ -2495,20 +2479,7 @@ export default function EncounterPage() {
                     if (!Array.isArray(findings) || findings.length === 0) return;
                     setSnomedLinkingExam(true);
                     try {
-                      const resolvedItems: ExamFinding[] = findings.map((f) => {
-                        const top = f.snomed;
-                        const findingLabel = f.finding.trim();
-                        const hasCode = Boolean(top?.conceptId?.trim());
-                        const lowConf = Boolean(hasCode && top?.lowConfidence);
-                        return {
-                          term: lowConf ? findingLabel : (top?.term ?? findingLabel),
-                          location: f.location,
-                          qualifier: f.qualifier,
-                          snomed: top?.conceptId ?? "",
-                          snomedLowConfidence: lowConf,
-                          negated: Boolean(f.negation),
-                        };
-                      });
+                      const resolvedItems = findings.map((f) => clinicalChipFromVoiceFinding(f));
                       setExamFindings((prev) => [...prev, ...resolvedItems]);
                     } finally {
                       setSnomedLinkingExam(false);
@@ -2520,64 +2491,96 @@ export default function EncounterPage() {
               {/* Voice-extracted exam finding chips */}
               {(examFindings.length > 0 || snomedLinkingExam) && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
-                  {examFindings.map((f, i) => (
+                  {examFindings.map((f) => {
+                    const loc = composeBodySiteLabel(f.laterality, f.bodySite);
+                    const label = clinicalChipPrimaryLabel(f);
+                    const lowOrMissing = !f.snomedCode?.trim() || f.snomedLowConfidence;
+                    const examBorder = f.negation
+                      ? "border-red-200 bg-red-50/90 line-through decoration-red-400"
+                      : f.isEdited
+                        ? "border-sky-400 bg-sky-50/50 ring-1 ring-sky-200/80"
+                        : lowOrMissing
+                          ? "border-amber-300 bg-amber-50/70"
+                          : "border-emerald-200/90 bg-emerald-50/50";
+                    const examDot = f.negation
+                      ? "bg-red-400"
+                      : f.isConfirmed
+                        ? "bg-emerald-400"
+                        : "bg-amber-400";
+                    return (
                     <span
-                      key={`ef-${i}`}
-                      title={
-                        f.snomed?.trim() && !f.snomedLowConfidence
-                          ? `SNOMED: ${f.snomed}`
-                          : f.snomed?.trim()
-                            ? `SNOMED: ${f.snomed} — verify match for [${f.location ?? "site"}]`
-                            : "No SNOMED code"
-                      }
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-sm ${
-                        f.negated
-                          ? "border-red-200 bg-red-50/90 line-through decoration-red-400"
-                          : f.snomed?.trim() && !f.snomedLowConfidence
-                            ? "border-emerald-200/90 bg-emerald-50/50"
-                            : f.snomed?.trim()
-                              ? "border-amber-200 bg-amber-50/70"
-                              : "border-gray-200 bg-white"
-                      }`}
+                      key={f.id}
+                      data-clinical-chip-anchor={f.id}
+                      className="relative inline-flex max-w-full flex-col"
                     >
                       <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${
-                          f.negated
-                            ? "bg-red-400"
-                            : f.snomed?.trim() && !f.snomedLowConfidence
-                              ? "bg-emerald-400"
-                              : f.snomed?.trim()
-                                ? "bg-amber-400"
-                                : "bg-gray-300"
-                        }`}
-                      />
-                      {f.location && (
-                        <span className="text-[11px] font-medium text-blue-600">[{f.location}]</span>
-                      )}
-                      <span className="text-[12px] font-medium capitalize text-gray-900">{f.term}</span>
-                      {f.snomed?.trim() && f.snomedLowConfidence && (
-                        <span
-                          className="rounded bg-amber-100 px-1.5 py-px text-[9px] font-semibold text-amber-900"
-                          title="SNOMED code may not match the recorded body site; please confirm."
-                        >
-                          Review SNOMED
-                        </span>
-                      )}
-                      {f.qualifier && (
-                        <span className="text-[11px] text-gray-400">– {f.qualifier}</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setExamFindings((prev) => prev.filter((_, j) => j !== i))}
-                        className="ml-0.5 shrink-0 rounded p-0.5 text-gray-300 transition hover:bg-red-50 hover:text-red-400"
-                        aria-label={`Remove ${f.term}`}
+                        className={`inline-flex max-w-full items-stretch overflow-hidden rounded-full border shadow-sm ${examBorder}`}
                       >
-                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
-                          <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
-                        </svg>
-                      </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                          title={
+                            f.snomedCode && !f.snomedLowConfidence
+                              ? `SNOMED: ${f.snomedCode}`
+                              : f.snomedCode
+                                ? `SNOMED: ${f.snomedCode} — verify body site`
+                                : "No SNOMED code — click to edit"
+                          }
+                          disabled={isEncounterReadOnly}
+                          onClick={() => {
+                            if (isEncounterReadOnly) return;
+                            setEditingExamChipId((x) => (x === f.id ? null : f.id));
+                          }}
+                        >
+                          {f.isEdited ? (
+                            <ClinicalChipEditedMarker className="h-3 w-3 shrink-0" aria-hidden />
+                          ) : null}
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${examDot}`} />
+                          {loc ? (
+                            <span className="text-[11px] font-medium text-blue-600">[{loc}]</span>
+                          ) : null}
+                          <span className="text-[12px] font-medium text-gray-900">{label}</span>
+                          {f.snomedCode?.trim() && f.snomedLowConfidence && (
+                            <span
+                              className="rounded bg-amber-100 px-1.5 py-px text-[9px] font-semibold text-amber-900"
+                              title="SNOMED code may not match the recorded body site; please confirm."
+                            >
+                              Review SNOMED
+                            </span>
+                          )}
+                          {f.negation && (
+                            <span className="text-[11px] text-gray-400">– Absent</span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeExamFindingById(f.id);
+                          }}
+                          className="shrink-0 border-0 border-l border-gray-200/80 bg-transparent px-2 py-1.5 text-gray-300 transition hover:bg-red-50 hover:text-red-400"
+                          aria-label={`Remove ${label}`}
+                        >
+                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                            <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                      </span>
+                      <ClinicalEntityChipPopover
+                        chip={f}
+                        open={editingExamChipId === f.id}
+                        onClose={() => setEditingExamChipId(null)}
+                        onSaved={(next) => {
+                          setExamFindings((prev) => prev.map((row) => (row.id === next.id ? next : row)));
+                        }}
+                        hierarchy="finding"
+                        contextType="examination"
+                        doctorSpecialty={doctorSpecialty || department}
+                        doctorId={doctorPractitionerId ?? null}
+                        indiaRefset={SNOMED_INDIA_REFSET_UI ?? null}
+                      />
                     </span>
-                  ))}
+                  );})}
                   {snomedLinkingExam && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-100 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-500">
                       <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
@@ -3367,8 +3370,8 @@ export default function EncounterPage() {
             : undefined
         }
         chiefComplaints={voiceComplaints.map((c) => ({
-          display: c.term,
-          code:    c.snomed || undefined,
+          display: clinicalChipPrimaryLabel(c),
+          code:    c.snomedCode || undefined,
         }))}
         vitals={{
           weight:        weight        || undefined,
@@ -3385,10 +3388,7 @@ export default function EncounterPage() {
           : []}
         quickExam={[
           (selectedExaminationConcept?.term ?? "").trim(),
-          ...examFindings.map((f) =>
-            [f.location && `[${f.location}]`, f.term, f.qualifier && `– ${f.qualifier}`]
-              .filter(Boolean).join(" ")
-          ),
+          ...examFindings.map((f) => clinicalExamChipPersistLine(f)),
           ...planInvestigations.map((inv) => `Investigation: ${inv}`),
         ].filter(Boolean).join("; ") || undefined}
         procedures={(procedureText ?? "").trim()

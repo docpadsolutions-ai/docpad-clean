@@ -140,6 +140,19 @@ Your job: extract structured clinical entities from the transcript.
 ${specialtyContext}
 
 RULES — FOLLOW EXACTLY:
+0. NEVER SUBSTITUTE ANATOMY. The doctor's stated body site is FINAL.
+   - "thigh pain" → bodySite: "thigh", NOT "knee"
+   - "leg pain" → bodySite: "leg", NOT "knee"
+   - "arm pain" → bodySite: "arm", NOT "shoulder" or "elbow"
+   - "shin pain" → bodySite: "shin", NOT "knee" or "ankle"
+   - "calf pain" → bodySite: "calf", NOT "knee" or "ankle"
+   - "forearm pain" → bodySite: "forearm", NOT "wrist" or "elbow"
+   - "hip pain" → bodySite: "hip", NOT "knee" or "back"
+   - "buttock pain" → bodySite: "buttock", NOT "hip" or "back"
+   - Thigh ≠ knee. Leg ≠ knee. Arm ≠ shoulder. Shin ≠ ankle.
+   These are DIFFERENT anatomical structures. A thigh fracture and
+   a knee fracture are completely different diagnoses.
+   PRESERVE EXACTLY what the doctor said.
 1. ALWAYS return finding and bodySite as SEPARATE fields. NEVER combine them.
 2. PRESERVE the exact anatomical site the doctor said. 
    - "right thigh pain" → bodySite: "thigh", laterality: "right", finding: "pain". NOT "inguinal pain"
@@ -209,6 +222,19 @@ Output:
   {"finding": "chest clear", "bodySite": "chest", "laterality": null, "negation": false, "duration": null, "severity": null, "rawText": "chaati saaf hai"},
   {"finding": "wheeze", "bodySite": "chest", "laterality": null, "negation": true, "duration": null, "severity": null, "rawText": "wheeze nahi hai"},
   {"finding": "crepitations", "bodySite": "chest", "laterality": null, "negation": true, "duration": null, "severity": null, "rawText": "crepitations nahi"}
+]
+
+Input: "patient has right thigh pain for 1 week after a fall"
+Output:
+[
+  {"finding": "pain", "bodySite": "thigh", "laterality": "right", "negation": false, "duration": "1 week", "severity": null, "rawText": "right thigh pain for 1 week after a fall"}
+]
+
+Input: "pain in both legs, swelling in left calf"
+Output:
+[
+  {"finding": "pain", "bodySite": "leg", "laterality": "bilateral", "negation": false, "duration": null, "severity": null, "rawText": "pain in both legs"},
+  {"finding": "swelling", "bodySite": "calf", "laterality": "left", "negation": false, "duration": null, "severity": null, "rawText": "swelling in left calf"}
 ]`;
 }
 

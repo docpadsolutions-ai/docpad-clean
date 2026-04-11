@@ -124,7 +124,7 @@ async function extractStructuredClinicalEntities(
       mapVoiceContextToGeminiContext(contextType),
     ),
     generationConfig: {
-      temperature: 0.1,
+      temperature: 0.05,
       responseMimeType: "application/json",
     },
   });
@@ -157,27 +157,34 @@ function toClinicalFinding(
 
 async function saveClinicalExtractionSafe(
   encounterId: string | undefined,
+  doctorId: string | undefined,
   contextType: string,
   rawTranscript: string,
   entities: unknown[],
 ) {
   if (!encounterId?.trim()) return;
+  const standardizedText = (entities as { rawText?: string | null }[])
+    .map((x) => x.rawText)
+    .filter(Boolean)
+    .join("; ");
   try {
     const { data: txn, error: txErr } = await supabase
       .from("transcriptions")
       .insert({
-        session_id: encounterId.trim(),
+        session_id: null,
+        encounter_id: encounterId.trim(),
+        doctor_id: doctorId?.trim() || null,
+        context_type: contextType,
         raw_transcript: rawTranscript,
-        standardized_text: (entities as { rawText?: string | null }[])
-          .map((x) => x.rawText)
-          .filter(Boolean)
-          .join("; "),
+        standardized_text: standardizedText,
       })
       .select("id")
       .single();
     if (txErr || !txn?.id) return;
     await supabase.from("clinical_extractions").insert({
       transcription_id: txn.id,
+      encounter_id: encounterId.trim(),
+      doctor_id: doctorId?.trim() || null,
       context_type: contextType,
       extraction_json: entities,
       doctor_confirmed: false,
@@ -507,7 +514,7 @@ export default function VoiceDictationButton({
             }));
             console.log(`STT→ [4/4] Results (${Date.now() - start}ms):`, merged);
 
-            void saveClinicalExtractionSafe(encounterIdProp, contextType, fullText, merged);
+            void saveClinicalExtractionSafe(encounterIdProp, doctorIdProp, contextType, fullText, merged);
 
             const output = merged.map(toClinicalFinding);
             if (output.length > 0) {
