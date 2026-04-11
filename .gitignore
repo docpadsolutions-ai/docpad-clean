@@ -18,3 +18,9 @@ stems_*.txt
 _pending_brands.txt
 
 app/snomed/
+
+# Local / IDE / build noise
+.DS_Store
+**/.DS_Store
+.cursor/
+tsconfig.tsbuildinfo
