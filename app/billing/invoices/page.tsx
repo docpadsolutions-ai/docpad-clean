@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 
 const PAGE_SIZE = 20;
 
-const STATUS_OPTIONS = ["all", "draft", "issued", "balanced", "cancelled"] as const;
+const STATUS_OPTIONS = ["all", "draft", "issued", "balanced", "cancelled", "voided"] as const;
 
 function num(v: unknown): number {
   const x = typeof v === "number" ? v : Number(v);
@@ -37,7 +37,8 @@ function formatDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { dateStyle: "medium" });
 }
 
-function invoiceTypeLabel(status: string | null): string {
+/** Document / billing type badge (derived from workflow status). */
+function invoiceTypeBadgeLabel(status: string | null): string {
   switch (status) {
     case "draft":
       return "Proforma";
@@ -46,6 +47,7 @@ function invoiceTypeLabel(status: string | null): string {
     case "balanced":
       return "Paid";
     case "cancelled":
+    case "voided":
       return "Void";
     default:
       return "Invoice";
@@ -54,8 +56,24 @@ function invoiceTypeLabel(status: string | null): string {
 
 function balanceForRow(row: InvoiceListRow): number {
   const b = num(row.balance_due);
-  if (b > 0) return b;
+  if (Number.isFinite(b)) return Math.max(0, b);
   return Math.max(0, num(row.total_gross) - num(row.amount_paid));
+}
+
+function lineItemCount(row: InvoiceListRow): number {
+  const li = row.invoice_line_items as unknown;
+  if (Array.isArray(li) && li[0] != null && typeof (li[0] as { count?: number }).count === "number") {
+    return (li[0] as { count: number }).count;
+  }
+  if (li && typeof li === "object" && !Array.isArray(li) && "count" in li && typeof (li as { count: number }).count === "number") {
+    return (li as { count: number }).count;
+  }
+  return 0;
+}
+
+function statusBadgeLabel(status: string | null): string {
+  if (!status) return "—";
+  return status.replace(/_/g, " ");
 }
 
 type PatientOpt = { id: string; full_name: string | null; docpad_id: string | null };
@@ -87,6 +105,8 @@ type InvoiceListRow = {
   balance_due: number | string | null;
   patient_id: string | null;
   patient: PatientEmbed;
+  invoice_line_items?: { count?: number }[] | { count?: number } | null;
+  payments?: { amount?: number | string | null }[] | null;
 };
 
 function patientNameFromRow(row: InvoiceListRow): string {
@@ -103,17 +123,24 @@ function endOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999));
 }
 
+/** Desktop grid: #, Patient, Date, Type, Status, Gross, Paid, Balance, Lines, Actions */
+const DESKTOP_INVOICE_COLS =
+  "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_72px_88px_88px_88px_88px_52px_132px]";
+
 function TableLoadingSkeleton() {
   return (
     <div className="space-y-0 p-4">
-      <div className="mb-3 hidden md:grid md:grid-cols-[1fr_1fr_100px_80px_88px_88px_88px_100px_140px] md:gap-3">
-        {Array.from({ length: 9 }).map((_, i) => (
+      <div className={`mb-3 hidden md:grid ${DESKTOP_INVOICE_COLS} md:gap-3`}>
+        {Array.from({ length: 10 }).map((_, i) => (
           <Skeleton key={i} className="h-4 w-full" />
         ))}
       </div>
       {Array.from({ length: 8 }).map((_, r) => (
-        <div key={r} className="mb-3 hidden border-b border-slate-100 pb-3 last:mb-0 dark:border-slate-800 md:grid md:grid-cols-[1fr_1fr_100px_80px_88px_88px_88px_100px_140px] md:gap-3 md:items-center">
-          {Array.from({ length: 9 }).map((__, c) => (
+        <div
+          key={r}
+          className={`mb-3 hidden border-b border-gray-100 pb-3 last:mb-0 dark:border-slate-800 md:grid ${DESKTOP_INVOICE_COLS} md:gap-3 md:items-center`}
+        >
+          {Array.from({ length: 10 }).map((__, c) => (
             <Skeleton key={c} className="h-9 w-full" />
           ))}
         </div>
@@ -129,9 +156,11 @@ function TableLoadingSkeleton() {
 
 export default function InvoicesListPage() {
   const [hospitalId, setHospitalId] = useState<string | null>(null);
+  const [hospitalReady, setHospitalReady] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [patientIdFilter, setPatientIdFilter] = useState<string | null>(null);
   const [patientSearchLabel, setPatientSearchLabel] = useState("");
+  const [patientSearchDebounced, setPatientSearchDebounced] = useState("");
   const [patientQuery, setPatientQuery] = useState("");
   const [patientOptions, setPatientOptions] = useState<PatientOpt[]>([]);
   const [patientOpen, setPatientOpen] = useState(false);
@@ -149,12 +178,56 @@ export default function InvoicesListPage() {
     void (async () => {
       const { hospitalId: hid } = await fetchHospitalIdFromPractitionerAuthId();
       setHospitalId(hid);
+      setHospitalReady(true);
     })();
   }, []);
 
+  useEffect(() => {
+    const t = window.setTimeout(() => setPatientSearchDebounced(patientSearchLabel), 350);
+    return () => window.clearTimeout(t);
+  }, [patientSearchLabel]);
+
   const fetchInvoices = useCallback(async () => {
+    if (!hospitalReady) {
+      return;
+    }
+    if (!hospitalId) {
+      setLoading(false);
+      setRows([]);
+      setTotalCount(0);
+      setError("No hospital linked to your profile. Invoices are scoped by hospital.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
+
+    let patientIdsFromName: string[] | null = null;
+    const nameTerm = patientSearchDebounced.trim();
+    if (!patientIdFilter && nameTerm.length >= 2) {
+      const { data: pats, error: pErr } = await supabase
+        .from("patients")
+        .select("id")
+        .eq("hospital_id", hospitalId)
+        .ilike("full_name", `%${nameTerm}%`)
+        .limit(250);
+
+      if (pErr) {
+        setError(pErr.message);
+        setRows([]);
+        setTotalCount(0);
+        setLoading(false);
+        return;
+      }
+      patientIdsFromName = (pats ?? []).map((p) => String((p as { id: unknown }).id));
+      if (patientIdsFromName.length === 0) {
+        setRows([]);
+        setTotalCount(0);
+        setLoading(false);
+        return;
+      }
+    }
+
     const startIndex = page * PAGE_SIZE;
     const endIndex = startIndex + PAGE_SIZE - 1;
 
@@ -162,18 +235,14 @@ export default function InvoicesListPage() {
       .from("invoices")
       .select(
         `
-        id,
-        invoice_number,
-        invoice_date,
-        status,
-        total_gross,
-        amount_paid,
-        balance_due,
-        patient_id,
+        *,
+        invoice_line_items(count),
+        payments(amount),
         patient:patients(full_name, docpad_id)
       `,
         { count: "exact" },
       )
+      .eq("hospital_id", hospitalId)
       .order("invoice_date", { ascending: false, nullsFirst: false })
       .range(startIndex, endIndex);
 
@@ -182,6 +251,8 @@ export default function InvoicesListPage() {
     }
     if (patientIdFilter) {
       q = q.eq("patient_id", patientIdFilter);
+    } else if (patientIdsFromName) {
+      q = q.in("patient_id", patientIdsFromName);
     }
     if (dateRange?.from) {
       q = q.gte("invoice_date", startOfUtcDay(dateRange.from).toISOString());
@@ -209,7 +280,7 @@ export default function InvoicesListPage() {
       setTotalCount(count ?? 0);
     }
     setLoading(false);
-  }, [page, statusFilter, patientIdFilter, dateRange]);
+  }, [page, statusFilter, patientIdFilter, patientSearchDebounced, dateRange, hospitalId, hospitalReady]);
 
   useEffect(() => {
     void fetchInvoices();
@@ -217,7 +288,7 @@ export default function InvoicesListPage() {
 
   useEffect(() => {
     setPage(0);
-  }, [statusFilter, patientIdFilter, dateRange]);
+  }, [statusFilter, patientIdFilter, dateRange, patientSearchDebounced]);
 
   useEffect(() => {
     if (!patientOpen) return;
@@ -266,25 +337,27 @@ export default function InvoicesListPage() {
   const detailHref = (id: string) => `/billing/invoices/${id}`;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8 dark:bg-slate-950">
+    <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-4 md:p-6 lg:p-8 dark:bg-slate-950">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">Invoices</h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Hospital-scoped list (RLS). Default sort: newest invoice first.</p>
-            <Link href="/billing" className="mt-2 inline-block text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-slate-50">Invoices</h1>
+            <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">Hospital-scoped list (RLS). Default sort: newest invoice first.</p>
+            <Link href="/billing" className="mt-2 inline-block text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
               ← Billing dashboard
             </Link>
           </div>
-          <Button asChild variant="default" className="w-full shrink-0 sm:w-auto">
+          <Button asChild variant="default" className="w-full shrink-0 shadow-sm sm:w-auto">
             <Link href="/billing/invoice/new">New invoice</Link>
           </Button>
         </header>
 
-        <Card>
+        <Card className="border border-gray-200 bg-white shadow-sm">
           <CardHeader className="pb-4">
-            <CardTitle className="text-base">Filters</CardTitle>
-            <CardDescription>Stack on small screens; refine by status, patient name, or date range.</CardDescription>
+            <CardTitle className="text-base text-gray-900">Filters</CardTitle>
+            <CardDescription className="text-gray-600">
+              Stack on small screens. Status and date range apply directly; type at least two letters in Patient to filter the list by full name (or pick a patient from suggestions).
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end">
             <div className="grid w-full gap-2 md:w-48">
@@ -391,16 +464,16 @@ export default function InvoicesListPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border border-gray-200 bg-white shadow-sm">
           <CardContent className="p-0 md:p-0">
-            {loading ? (
+            {!hospitalReady || loading ? (
               <TableLoadingSkeleton />
             ) : error ? (
               <div className="p-6 text-sm text-red-600 dark:text-red-400">{error}</div>
             ) : rows.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
-                <p className="text-base font-medium text-slate-700 dark:text-slate-300">No invoices found</p>
-                <p className="max-w-sm text-sm text-slate-500 dark:text-slate-400">Create an invoice to see it here, or adjust your filters.</p>
+                <p className="text-base font-medium text-gray-900 dark:text-slate-300">No invoices found</p>
+                <p className="max-w-sm text-sm text-gray-600 dark:text-slate-400">Create an invoice to see it here, or adjust your filters.</p>
                 <Button asChild>
                   <Link href="/billing/invoice/new">Create Invoice</Link>
                 </Button>
@@ -408,26 +481,30 @@ export default function InvoicesListPage() {
             ) : (
               <>
                 {/* Desktop table */}
-                <div className="hidden overflow-x-auto md:block">
-                  <Table>
+                <div className="hidden overflow-x-auto border-t border-gray-200 md:block">
+                  <Table className="bg-white">
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Invoice #</TableHead>
-                        <TableHead>Patient</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead className="text-right">Gross</TableHead>
-                        <TableHead className="text-right">Paid</TableHead>
-                        <TableHead className="text-right">Balance</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                      <TableRow className="border-gray-200 bg-gray-50 hover:bg-gray-50 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:bg-slate-900/40">
+                        <TableHead className="text-gray-500 dark:text-slate-400">Invoice #</TableHead>
+                        <TableHead className="text-gray-500 dark:text-slate-400">Patient</TableHead>
+                        <TableHead className="text-gray-500 dark:text-slate-400">Date</TableHead>
+                        <TableHead className="text-gray-500 dark:text-slate-400">Type</TableHead>
+                        <TableHead className="text-gray-500 dark:text-slate-400">Status</TableHead>
+                        <TableHead className="text-right text-gray-500 dark:text-slate-400">Gross</TableHead>
+                        <TableHead className="text-right text-gray-500 dark:text-slate-400">Paid</TableHead>
+                        <TableHead className="text-right text-gray-500 dark:text-slate-400">Balance</TableHead>
+                        <TableHead className="text-right text-gray-500 dark:text-slate-400">Lines</TableHead>
+                        <TableHead className="text-right text-gray-500 dark:text-slate-400">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {rows.map((row) => {
                         const bal = balanceForRow(row);
                         return (
-                          <TableRow key={row.id}>
+                          <TableRow
+                            key={row.id}
+                            className="border-gray-200 bg-white hover:bg-gray-100 dark:hover:bg-slate-800/50"
+                          >
                             <TableCell className="font-medium">
                               <Link href={detailHref(row.id)} className="text-blue-600 hover:underline dark:text-blue-400">
                                 {row.invoice_number ?? row.id.slice(0, 8)}
@@ -435,15 +512,20 @@ export default function InvoicesListPage() {
                             </TableCell>
                             <TableCell>{patientNameFromRow(row)}</TableCell>
                             <TableCell className="tabular-nums text-slate-600 dark:text-slate-400">{formatDate(row.invoice_date)}</TableCell>
-                            <TableCell className="text-slate-600 dark:text-slate-400">{invoiceTypeLabel(row.status)}</TableCell>
+                            <TableCell>
+                              <span className="inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-900 dark:bg-violet-950/60 dark:text-violet-100">
+                                {invoiceTypeBadgeLabel(row.status)}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium capitalize text-slate-800 dark:bg-slate-800 dark:text-slate-100">
+                                {statusBadgeLabel(row.status)}
+                              </span>
+                            </TableCell>
                             <TableCell className="text-right tabular-nums">{formatInr(num(row.total_gross))}</TableCell>
                             <TableCell className="text-right tabular-nums">{formatInr(num(row.amount_paid))}</TableCell>
                             <TableCell className="text-right font-medium tabular-nums">{formatInr(bal)}</TableCell>
-                            <TableCell>
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize dark:bg-slate-800">
-                                {row.status ?? "—"}
-                              </span>
-                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-slate-600 dark:text-slate-400">{lineItemCount(row)}</TableCell>
                             <TableCell className="text-right">
                               <div className="flex flex-wrap justify-end gap-1">
                                 <Button variant="outline" size="sm" asChild>
@@ -477,9 +559,14 @@ export default function InvoicesListPage() {
                             </Link>
                             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{patientNameFromRow(row)}</p>
                           </div>
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize dark:bg-slate-800">
-                            {row.status ?? "—"}
-                          </span>
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <span className="inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-900 dark:bg-violet-950/60 dark:text-violet-100">
+                              {invoiceTypeBadgeLabel(row.status)}
+                            </span>
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium capitalize text-slate-800 dark:bg-slate-800 dark:text-slate-100">
+                              {statusBadgeLabel(row.status)}
+                            </span>
+                          </div>
                         </div>
                         <dl className="grid grid-cols-2 gap-2 text-sm">
                           <div>
@@ -487,8 +574,8 @@ export default function InvoicesListPage() {
                             <dd className="tabular-nums text-slate-800 dark:text-slate-200">{formatDate(row.invoice_date)}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs text-slate-500">Type</dt>
-                            <dd className="text-slate-800 dark:text-slate-200">{invoiceTypeLabel(row.status)}</dd>
+                            <dt className="text-xs text-slate-500">Lines</dt>
+                            <dd className="tabular-nums text-slate-800 dark:text-slate-200">{lineItemCount(row)}</dd>
                           </div>
                           <div>
                             <dt className="text-xs text-slate-500">Gross</dt>
@@ -516,18 +603,30 @@ export default function InvoicesListPage() {
                   })}
                 </div>
 
-                <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row dark:border-slate-700">
-                  <p className="text-xs text-slate-500">
+                <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 sm:flex-row dark:border-slate-700">
+                  <p className="text-xs text-gray-600">
                     Showing {rows.length ? page * PAGE_SIZE + 1 : 0}–{Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount}
                   </p>
                   <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto">
-                    <Button variant="outline" size="sm" disabled={page <= 0} onClick={() => setPage((p) => p - 1)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                      disabled={page <= 0}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
                       Previous
                     </Button>
-                    <span className="text-xs tabular-nums text-slate-600 dark:text-slate-400">
+                    <span className="text-xs tabular-nums text-gray-700 dark:text-slate-400">
                       Page {page + 1} / {totalPages}
                     </span>
-                    <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
                       Next
                     </Button>
                   </div>

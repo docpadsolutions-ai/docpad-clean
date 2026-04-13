@@ -46,9 +46,45 @@ const btnSecondary =
 const btnDanger =
   "inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition hover:bg-rose-100";
 
+const btnPrimarySm =
+  "inline-flex flex-1 items-center justify-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-40 sm:flex-none";
+
 function norm(s: string | null | undefined): string {
   return (s ?? "").trim();
 }
+
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+type ChargeItemPriceRow = {
+  id: string;
+  unit_price: number | null;
+  unit_price_snapshot: number | null;
+  net_amount: number | null;
+  quantity_value: number | null;
+  source_id: string | null;
+};
+
+type PendingPriceItem = {
+  investigationId: string;
+  testName: string;
+  chargeItemId: string | null;
+  quantityValue: number;
+};
+
+function needsManualPrice(ci: ChargeItemPriceRow | null | undefined): boolean {
+  if (!ci) return true;
+  const up = ci.unit_price != null ? Number(ci.unit_price) : NaN;
+  if (Number.isFinite(up) && up > 0) return false;
+  const snap = ci.unit_price_snapshot != null ? Number(ci.unit_price_snapshot) : NaN;
+  if (Number.isFinite(snap) && snap > 0) return false;
+  const net = ci.net_amount != null ? Number(ci.net_amount) : NaN;
+  if (Number.isFinite(net) && net > 0) return false;
+  return true;
+}
+
+const SOURCE_SERVICE_REQUEST = "service_request";
 
 export default function InvestigationPlanPage() {
   const params = useParams();
@@ -73,6 +109,10 @@ export default function InvestigationPlanPage() {
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
   const [placing, setPlacing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  const [pendingPricing, setPendingPricing] = useState<PendingPriceItem[]>([]);
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [pricingBusyId, setPricingBusyId] = useState<string | null>(null);
 
   const orderedIds = useMemo(() => new Set(orderLines.map((l) => l.catalogueId)), [orderLines]);
 
@@ -226,6 +266,127 @@ export default function InvestigationPlanPage() {
     );
   }
 
+  const removePendingPricing = useCallback((investigationId: string) => {
+    setPendingPricing((prev) => prev.filter((p) => p.investigationId !== investigationId));
+    setPriceDrafts((d) => {
+      const next = { ...d };
+      delete next[investigationId];
+      return next;
+    });
+  }, []);
+
+  async function handleSetPendingPrice(item: PendingPriceItem) {
+    const raw = priceDrafts[item.investigationId] ?? "";
+    const n = Number.parseFloat(raw);
+    if (!Number.isFinite(n) || n < 0) {
+      showToast("Enter a valid price (INR, 0 or more).");
+      return;
+    }
+    if (!hospitalId || !patientId || !encounterId) {
+      showToast("Missing context.");
+      return;
+    }
+
+    setPricingBusyId(item.investigationId);
+    try {
+      const qty = item.quantityValue > 0 ? item.quantityValue : 1;
+      const net = roundMoney(n * qty);
+
+      if (item.chargeItemId) {
+        const { error: upErr } = await supabase
+          .from("charge_items")
+          .update({
+            unit_price: n,
+            unit_price_snapshot: n,
+            net_amount: net,
+          })
+          .eq("id", item.chargeItemId);
+        if (upErr) {
+          showToast(upErr.message);
+          return;
+        }
+      } else {
+        const { data: defRow } = await supabase
+          .from("charge_item_definitions")
+          .select("id")
+          .eq("hospital_id", hospitalId)
+          .eq("category", "lab_test")
+          .eq("status", "active")
+          .order("display_name", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        const defId = defRow?.id != null ? String(defRow.id) : null;
+        if (!defId) {
+          showToast("No lab_test charge definition for this hospital. Add one in the charge master.");
+          return;
+        }
+
+        const label = item.testName.trim() || "Lab test";
+        const { error: insErr } = await supabase.from("charge_items").insert({
+          hospital_id: hospitalId,
+          patient_id: patientId,
+          encounter_id: encounterId,
+          definition_id: defId,
+          charge_code: `opd-lab-${item.investigationId.replace(/-/g, "").slice(0, 12)}`,
+          charge_code_system: "http://docpad.health/lab-order",
+          charge_code_display: label,
+          category: "lab_test",
+          display_label: label,
+          unit_price_snapshot: n,
+          unit_price: n,
+          currency: "INR",
+          quantity_value: qty,
+          net_amount: net,
+          source_type: SOURCE_SERVICE_REQUEST,
+          source_id: item.investigationId,
+        });
+        if (insErr) {
+          showToast(insErr.message);
+          return;
+        }
+      }
+
+      removePendingPricing(item.investigationId);
+    } finally {
+      setPricingBusyId(null);
+    }
+  }
+
+  async function handleSkipPendingBilling(item: PendingPriceItem) {
+    setPricingBusyId(item.investigationId);
+    try {
+      const { error: invErr } = await supabase
+        .from("investigations")
+        .update({ billing_status: "not-billable" })
+        .eq("id", item.investigationId);
+      if (invErr) {
+        showToast(invErr.message);
+        return;
+      }
+
+      if (item.chargeItemId) {
+        const { error: ciErr } = await supabase
+          .from("charge_items")
+          .update({
+            unit_price: 0,
+            unit_price_snapshot: 0,
+            net_amount: 0,
+            override_reason: "SKIP_BILLING_NOT_PRICED",
+          })
+          .eq("id", item.chargeItemId);
+        if (ciErr) {
+          showToast(ciErr.message);
+          return;
+        }
+      }
+
+      removePendingPricing(item.investigationId);
+    } finally {
+      setPricingBusyId(null);
+    }
+  }
+
   async function placeOrder() {
     if (!encounterId || !patientId || !hospitalId || !encounterDoctorId) {
       showToast("Missing encounter, patient, hospital, or doctor.");
@@ -263,7 +424,7 @@ export default function InvestigationPlanPage() {
       };
     });
 
-    const { error } = await supabase.from("investigations").insert(rows);
+    const { data: inserted, error } = await supabase.from("investigations").insert(rows).select("id, test_name");
     setPlacing(false);
 
     if (error) {
@@ -271,7 +432,53 @@ export default function InvestigationPlanPage() {
       return;
     }
 
-    showToast(`Placed ${rows.length} investigation order(s).`);
+    const invRows = (inserted ?? []) as { id: string; test_name: string | null }[];
+    const invIds = invRows.map((r) => r.id).filter(Boolean);
+
+    const ciByInv = new Map<string, ChargeItemPriceRow>();
+    if (invIds.length > 0) {
+      const { data: ciRows, error: ciErr } = await supabase
+        .from("charge_items")
+        .select("id, unit_price, unit_price_snapshot, net_amount, quantity_value, source_id")
+        .eq("source_type", SOURCE_SERVICE_REQUEST)
+        .in("source_id", invIds);
+
+      if (!ciErr && ciRows) {
+        for (const row of ciRows as ChargeItemPriceRow[]) {
+          if (row.source_id) ciByInv.set(String(row.source_id), row);
+        }
+      }
+    }
+
+    const pending: PendingPriceItem[] = [];
+    for (const inv of invRows) {
+      const ci = ciByInv.get(inv.id) ?? null;
+      if (!needsManualPrice(ci)) continue;
+      const qv = ci?.quantity_value != null && Number(ci.quantity_value) > 0 ? Number(ci.quantity_value) : 1;
+      pending.push({
+        investigationId: inv.id,
+        testName: norm(inv.test_name) || "Test",
+        chargeItemId: ci?.id ?? null,
+        quantityValue: qv,
+      });
+    }
+
+    if (pending.length > 0) {
+      setPendingPricing((prev) => [...prev, ...pending]);
+      setPriceDrafts((prev) => {
+        const next = { ...prev };
+        for (const p of pending) {
+          if (next[p.investigationId] === undefined) next[p.investigationId] = "";
+        }
+        return next;
+      });
+    }
+
+    const placedMsg =
+      pending.length > 0
+        ? `Placed ${rows.length} investigation order(s). Enter a price below or skip billing where needed.`
+        : `Placed ${rows.length} investigation order(s).`;
+    showToast(placedMsg);
     setOrderLines([]);
   }
 
@@ -387,8 +594,69 @@ export default function InvestigationPlanPage() {
             <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
               <div className="border-b border-gray-100 px-4 py-3">
                 <h2 className="text-sm font-semibold text-gray-900">Order list</h2>
-                <p className="text-xs text-gray-500">{orderLines.length} test(s) selected</p>
+                <p className="text-xs text-gray-500">
+                  {orderLines.length} test(s) selected
+                  {pendingPricing.length > 0 ? ` · ${pendingPricing.length} need price` : ""}
+                </p>
               </div>
+              {pendingPricing.length > 0 ? (
+                <div className="max-h-[min(40vh,360px)] space-y-3 overflow-y-auto border-b border-amber-100 bg-amber-50/50 px-4 py-3">
+                  <p className="text-xs font-semibold text-amber-900">Pricing required</p>
+                  <ul className="space-y-3">
+                    {pendingPricing.map((p) => {
+                      const busy = pricingBusyId === p.investigationId;
+                      return (
+                        <li
+                          key={p.investigationId}
+                          className="rounded-xl border border-amber-200 bg-white p-3 shadow-sm"
+                        >
+                          <p className="text-sm text-gray-800">
+                            No price found for <span className="font-semibold">{p.testName}</span>. Enter price to bill:
+                          </p>
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                            <div className="min-w-0 flex-1">
+                              <label className={labelCls} htmlFor={`price-${p.investigationId}`}>
+                                Price (INR)
+                              </label>
+                              <input
+                                id={`price-${p.investigationId}`}
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                className={inputCls}
+                                value={priceDrafts[p.investigationId] ?? ""}
+                                onChange={(e) =>
+                                  setPriceDrafts((d) => ({ ...d, [p.investigationId]: e.target.value }))
+                                }
+                                disabled={busy}
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <div className="flex shrink-0 gap-2">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className={btnPrimarySm}
+                                onClick={() => void handleSetPendingPrice(p)}
+                              >
+                                {busy ? "…" : "Set price"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className={btnSecondary}
+                                onClick={() => void handleSkipPendingBilling(p)}
+                              >
+                                Skip billing
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
               <div className="max-h-[min(56vh,520px)] overflow-y-auto p-3">
                 {orderLines.length === 0 ? (
                   <p className="py-8 text-center text-sm text-gray-500">Select tests from the catalogue.</p>

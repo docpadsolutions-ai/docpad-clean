@@ -1,5 +1,7 @@
 "use client";
 
+import { DiagnosisWithIcd } from "@/app/components/clinical/DiagnosisWithIcd";
+
 function formatSinceMonthYear(isoDate: string | null | undefined): string | null {
   if (isoDate == null || String(isoDate).trim() === "") return null;
   const raw = String(isoDate).trim();
@@ -28,6 +30,8 @@ export type ProblemCardRow = {
   status: string;
   onset_date: string | null;
   snomed_code: string | null;
+  /** ICD-10 when known (e.g. from encounter fallback). */
+  diagnosis_icd10?: string | null;
   created_at?: string | null;
   /** When set (e.g. encounter-derived fallback), shown as subtle italic hint under the title. */
   sourceLabel?: string | null;
@@ -41,7 +45,9 @@ export default function ProblemCard({ row }: { row: ProblemCardRow }) {
     <article className="rounded-lg border border-gray-100 bg-white px-3 py-3 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-bold text-gray-900">{row.condition_name}</h4>
+          <h4 className="text-sm text-gray-900">
+            <DiagnosisWithIcd text={row.condition_name} icd10={row.diagnosis_icd10 ?? null} />
+          </h4>
           {row.sourceLabel ? (
             <p className="mt-0.5 text-[11px] italic text-gray-500">{row.sourceLabel}</p>
           ) : null}

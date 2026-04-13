@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
+  { href: "/admin/wards", label: "Wards & Beds", match: (p: string) => p === "/admin/wards" || p.startsWith("/admin/wards/") },
+  { href: "/admin/pricing", label: "Pricing", match: (p: string) => p === "/admin/pricing" || p.startsWith("/admin/pricing/") },
   { href: "/admin/dashboard/templates", label: "OPD Templates", match: (p: string) => p.startsWith("/admin/dashboard/templates") },
   {
     href: "/admin/dashboard/consent-templates",
@@ -15,6 +17,11 @@ const ITEMS = [
     href: "/admin/dashboard/investigation-panels",
     label: "Investigation Panels",
     match: (p: string) => p.startsWith("/admin/dashboard/investigation-panels"),
+  },
+  {
+    href: "/admin/tests",
+    label: "Test catalogue",
+    match: (p: string) => p === "/admin/tests" || p.startsWith("/admin/tests/"),
   },
 ] as const;
 

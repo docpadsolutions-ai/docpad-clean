@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Mic, MicOff } from "lucide-react";
 import { StreamingTranscriber } from "assemblyai";
 import { geminiFlashClient } from "../lib/geminiFlashClient";
 import type { TurnEvent } from "assemblyai";
@@ -59,6 +60,11 @@ export type PlanExtractionResult = {
 
 type Status = "idle" | "recording" | "error";
 
+/** AssemblyAI streaming + IPD-style base text merge (plain text, no Gemini). */
+function isIpdStreamingVoiceContext(contextType: string): boolean {
+  return contextType === "ipd_progress_note" || contextType === "ipd_consult_request";
+}
+
 type Props = {
   contextType: string;
   /**
@@ -87,7 +93,7 @@ type Props = {
    */
   geminiScreenContextAppend?: string;
   /**
-   * When `contextType === "ipd_progress_note"`, stream the full textarea value as:
+   * When `contextType` is `ipd_progress_note` or `ipd_consult_request`, stream the full textarea value as:
    * this base (usually current field text) + newly spoken words. Same AssemblyAI pipeline as OPD.
    */
   ipdVoiceBaseText?: string;
@@ -100,6 +106,13 @@ type Props = {
   variant?: "default" | "slate";
   /** Fires when recording starts (true) or stops / resets (false). */
   onRecordingStateChange?: (recording: boolean) => void;
+  /**
+   * `lucide`: Mic (pulsing red while recording) / MicOff (idle) — e.g. IPD consult modal.
+   * Default: built-in SVG mic.
+   */
+  micVisual?: "default" | "lucide";
+  /** Hide the floating interim transcript chip; stream only via `onTranscriptUpdate` (e.g. textarea). */
+  hideLiveTranscriptPill?: boolean;
 };
 
 // ─── Gemini extraction ────────────────────────────────────────────────────────
@@ -447,6 +460,8 @@ export default function VoiceDictationButton({
   ipdVoiceField,
   variant = "default",
   onRecordingStateChange,
+  micVisual = "default",
+  hideLiveTranscriptPill = false,
 }: Props) {
   const [status, setStatus]         = useState<Status>("idle");
   const [errorMsg, setErrorMsg]     = useState<string | null>(null);
@@ -473,6 +488,11 @@ export default function VoiceDictationButton({
       : "text-red-500 hover:bg-red-50";
   const micErrorClass =
     variant === "slate" ? "text-red-400 hover:bg-red-950/30 hover:text-red-300" : "text-red-400 hover:bg-red-50 hover:text-red-600";
+
+  const lucideIdleClass =
+    variant === "slate"
+      ? "text-slate-400 hover:bg-slate-700/80 hover:text-slate-100"
+      : "text-gray-400 hover:bg-gray-100 hover:text-gray-600";
 
   useEffect(() => {
     if (status === "idle" || status === "error") {
@@ -518,7 +538,7 @@ export default function VoiceDictationButton({
     setErrorMsg(null);
     setLiveText("");
     finalTranscriptRef.current = "";
-    if (contextType === "ipd_progress_note") {
+    if (isIpdStreamingVoiceContext(contextType)) {
       ipdBaseSnapshotRef.current = (ipdVoiceBaseText ?? "").trim();
     }
 
@@ -562,7 +582,7 @@ export default function VoiceDictationButton({
         if (!text) return;
         const isFinal = Boolean(msg.end_of_turn);
         setLiveText(text);
-        if (contextType === "ipd_progress_note") {
+        if (isIpdStreamingVoiceContext(contextType)) {
           const base = ipdBaseSnapshotRef.current;
           const acc = finalTranscriptRef.current;
           const combined = [base, acc, text].filter((p) => p && String(p).trim() !== "").join(" ").replace(/\s+/g, " ").trim();
@@ -659,12 +679,12 @@ export default function VoiceDictationButton({
       return;
     }
 
-    if (contextType === "ipd_progress_note") {
+    if (contextType === "ipd_progress_note" || contextType === "ipd_consult_request") {
       setIsExtracting(true);
       void (async () => {
         const base = ipdBaseSnapshotRef.current;
         try {
-          if (!ipdVoiceField) {
+          if (!ipdVoiceField || contextType === "ipd_consult_request") {
             onTranscriptUpdate(mergeIpdFieldText(base, fullText), true);
             return;
           }
@@ -780,7 +800,7 @@ export default function VoiceDictationButton({
           aria-label="Retry voice dictation"
           className={cn("inline-flex items-center justify-center rounded-lg p-1.5 transition", micErrorClass)}
         >
-          <MicIcon className="h-4 w-4" />
+          {micVisual === "lucide" ? <MicOff className="h-4 w-4" aria-hidden /> : <MicIcon className="h-4 w-4" />}
         </button>
         {errorMsg && (
           <div className="absolute left-0 top-8 z-20 w-64 rounded-xl border border-red-200 bg-red-50 p-3 shadow-xl">
@@ -801,10 +821,10 @@ export default function VoiceDictationButton({
   if (status === "recording") {
     return (
       <div className={`relative inline-flex flex-col items-end ${className}`}>
-        {liveText && (
+        {liveText && !hideLiveTranscriptPill && (
           <div
             aria-live="polite"
-            className="absolute bottom-full mb-1.5 right-0 z-20 max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap rounded-lg bg-gray-800/90 px-2.5 py-1 text-[11px] leading-tight text-white shadow-lg"
+            className="absolute bottom-full mb-1.5 right-0 z-20 max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap rounded-lg bg-gray-800/90 px-2.5 py-1 text-[11px] leading-tight text-white shadow-lg dark:bg-slate-800/95"
           >
             {liveText}
           </div>
@@ -814,10 +834,19 @@ export default function VoiceDictationButton({
           onClick={handleMicClick}
           title="Click to stop recording"
           aria-label="Stop recording"
-          className={cn("relative inline-flex items-center justify-center rounded-lg p-1.5 transition", micRecordingClass)}
+          className={cn(
+            "relative inline-flex items-center justify-center rounded-lg p-1.5 transition",
+            micVisual === "lucide" ? "text-red-500 hover:bg-red-950/30 dark:hover:bg-red-950/40" : micRecordingClass,
+          )}
         >
-          <span className="absolute inset-0 animate-ping rounded-lg bg-red-400 opacity-30" aria-hidden />
-          <MicIcon className="relative h-4 w-4" />
+          {micVisual === "lucide" ? (
+            <Mic className="relative h-4 w-4 animate-pulse text-red-500" aria-hidden />
+          ) : (
+            <>
+              <span className="absolute inset-0 animate-ping rounded-lg bg-red-400 opacity-30" aria-hidden />
+              <MicIcon className="relative h-4 w-4" />
+            </>
+          )}
         </button>
       </div>
     );
@@ -830,9 +859,12 @@ export default function VoiceDictationButton({
         onClick={handleMicClick}
         title={`Voice dictation — ${contextType}`}
         aria-label={`Start voice dictation for ${contextType}`}
-        className={cn("inline-flex items-center justify-center rounded-lg p-1.5 transition", micIdleClass)}
+        className={cn(
+          "inline-flex items-center justify-center rounded-lg p-1.5 transition",
+          micVisual === "lucide" ? lucideIdleClass : micIdleClass,
+        )}
       >
-        <MicIcon className="h-4 w-4" />
+        {micVisual === "lucide" ? <MicOff className="h-4 w-4" aria-hidden /> : <MicIcon className="h-4 w-4" />}
       </button>
       {isExtracting && (
         <span

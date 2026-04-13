@@ -11,6 +11,9 @@ import {
 import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
 import { supabase } from "../../supabase";
 import ClinicalCommandCenterQueue from "./ClinicalCommandCenterQueue";
+import { DashboardHeaderNotificationBell } from "@/app/components/dashboard/DashboardHeaderNotificationBell";
+import { DashboardNotificationsPanel } from "@/app/components/dashboard/DashboardNotificationsPanel";
+import { useNotificationCounts } from "@/app/hooks/useNotifications";
 
 export default function OpdDashboardPage() {
   const [hospitalName, setHospitalName] = useState<string | null>(null);
@@ -98,6 +101,8 @@ export default function OpdDashboardPage() {
     };
   }, []);
 
+  const notificationCounts = useNotificationCounts();
+
   const todayLabel = useMemo(
     () =>
       new Intl.DateTimeFormat("en-IN", {
@@ -122,6 +127,7 @@ export default function OpdDashboardPage() {
               </div>
             </div>
             <div className="flex w-full items-center justify-center gap-3 sm:justify-end lg:justify-end">
+              <DashboardHeaderNotificationBell total={notificationCounts.total} />
               <div className="text-right">
                 <p className="text-sm font-semibold text-slate-900">
                   {headerLoading ? "…" : headerTitle || "Signed in"}
@@ -201,35 +207,10 @@ export default function OpdDashboardPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-2">
-                <svg
-                  className="h-5 w-5 text-slate-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  aria-hidden
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                  />
-                </svg>
-                <h3 className="text-base font-bold text-slate-900">Notifications</h3>
-              </div>
-              <ul className="mt-4 space-y-3">
-                <li className="rounded-lg border border-rose-100 bg-rose-50/80 px-3 py-2.5 text-sm text-rose-900">
-                  <p className="font-medium">Lab results ready</p>
-                  <p className="text-xs text-rose-800/80">Vikram Singh · 10 mins ago</p>
-                </li>
-                <li className="rounded-lg border border-amber-100 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-950">
-                  <p className="font-medium">New OPD appointment booked</p>
-                  <p className="text-xs text-amber-900/80">Neha Shah · 2:30 PM</p>
-                </li>
-              </ul>
-            </div>
+            <DashboardNotificationsPanel
+              counts={{ OPD: notificationCounts.OPD, IPD: notificationCounts.IPD }}
+              onInvalidate={() => void notificationCounts.refetch()}
+            />
           </aside>
         </div>
     </div>

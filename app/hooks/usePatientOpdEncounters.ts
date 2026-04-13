@@ -13,21 +13,29 @@ export type OpdEncounterRow = {
   chief_complaint: string | null;
   chief_complaint_term: string | null;
   diagnosis_term: string | null;
+  diagnosis_icd10?: string | null;
   encounter_number: string | null;
 };
 
-/** Timeline headline: readable at a glance (no encounter / OPD id). */
-function rowToDisplayLabel(row: OpdEncounterRow): string {
+/** Timeline headline: readable at a glance (no encounter / OPD id). ICD-10 only when headline comes from working diagnosis. */
+function rowToDisplayParts(row: OpdEncounterRow): { label: string; icd10: string | null } {
   const ccTerm = row.chief_complaint_term?.trim();
-  if (ccTerm) return ccTerm;
+  if (ccTerm) return { label: ccTerm, icd10: null };
   const cc = row.chief_complaint?.trim();
-  if (cc) return cc.length > 48 ? `${cc.slice(0, 45)}…` : cc;
+  if (cc) return { label: cc.length > 48 ? `${cc.slice(0, 45)}…` : cc, icd10: null };
   const dx = row.diagnosis_term?.trim();
-  if (dx) return dx;
-  return "Routine OPD Visit";
+  if (dx) {
+    const icd =
+      row.diagnosis_icd10 != null && String(row.diagnosis_icd10).trim() !== ""
+        ? String(row.diagnosis_icd10).trim()
+        : null;
+    return { label: dx, icd10: icd };
+  }
+  return { label: "Routine OPD Visit", icd10: null };
 }
 
 function mapRowToTimelineNode(row: OpdEncounterRow): HealthTimelineNode {
+  const { label: headline, icd10: headlineIcd } = rowToDisplayParts(row);
   const start = row.created_at ?? row.updated_at ?? new Date().toISOString();
   return {
     resourceType: "Encounter",
@@ -41,7 +49,7 @@ function mapRowToTimelineNode(row: OpdEncounterRow): HealthTimelineNode {
     period: { start, end: row.status === "completed" ? start : undefined },
     reasonCode: [
       {
-        text: rowToDisplayLabel(row),
+        text: headline,
         coding: row.chief_complaint_term
           ? [{ system: "http://snomed.info/sct", display: row.chief_complaint_term }]
           : undefined,
@@ -49,7 +57,8 @@ function mapRowToTimelineNode(row: OpdEncounterRow): HealthTimelineNode {
     ],
     _source: "live",
     _kind: "opd",
-    _displayLabel: rowToDisplayLabel(row),
+    _displayLabel: headline,
+    _displayIcd10: headlineIcd,
     _opdEncounterId: row.id,
   };
 }
@@ -71,7 +80,7 @@ export function usePatientOpdEncounters(patientId: string | null) {
     const { data, error: qErr } = await supabase
       .from("opd_encounters")
       .select(
-        "id, updated_at, created_at, encounter_date, status, chief_complaint, chief_complaint_term, diagnosis_term, encounter_number",
+        "id, updated_at, created_at, encounter_date, status, chief_complaint, chief_complaint_term, diagnosis_term, diagnosis_icd10, encounter_number",
       )
       .eq("patient_id", pid)
       .order("created_at", { ascending: true });

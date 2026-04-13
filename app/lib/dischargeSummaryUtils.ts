@@ -118,3 +118,26 @@ export function buildHospitalCourseFromNotes(notes: Array<Record<string, unknown
 
   return blocks.join("\n\n");
 }
+
+/** Split Anthropic plain-text discharge output into course vs investigations sections. */
+export function parseDischargeAiSections(raw: string): { hospitalCourse: string; investigationsSummary: string } {
+  const t = raw.trim();
+  const re = /INVESTIGATIONS\s+SUMMARY\s*:?/i;
+  const m = t.match(re);
+  if (!m || m.index == null) {
+    return { hospitalCourse: stripHospitalCoursePrefix(t), investigationsSummary: "" };
+  }
+  const coursePart = t.slice(0, m.index).trim();
+  const invPart = t.slice(m.index + m[0].length).trim();
+  return {
+    hospitalCourse: stripHospitalCoursePrefix(coursePart),
+    investigationsSummary: invPart,
+  };
+}
+
+function stripHospitalCoursePrefix(s: string): string {
+  return s
+    .replace(/^1\.\s*HOSPITAL\s+COURSE\s*:?/im, "")
+    .replace(/^HOSPITAL\s+COURSE\s*:?/im, "")
+    .trim();
+}

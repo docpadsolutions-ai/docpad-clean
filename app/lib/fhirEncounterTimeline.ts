@@ -41,6 +41,8 @@ export interface HealthTimelineNode extends FhirEncounterTimelineNode {
   _kind: TimelineEncounterKind;
   /** Short label: chief complaint, then working diagnosis, else routine visit (live OPD). */
   _displayLabel: string;
+  /** When the headline is driven by working diagnosis, optional ICD-10 for secondary label styling. */
+  _displayIcd10?: string | null;
   /** Live OPD row id — navigate + scroll when set */
   _opdEncounterId?: string;
 }

@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileCheck,
   Hospital,
+  IndianRupee,
   Pill,
   Shield,
   UserPlus,
@@ -63,6 +64,12 @@ export default function AdminDashboardPage() {
           title="Pharmacy"
           description="Drug master, vendors, pricing"
           icon={<Pill className="h-5 w-5" aria-hidden />}
+        />
+        <NavCard
+          href="/admin/pricing"
+          title="Pricing"
+          description="Charge master: room rates, registration fees, and service prices."
+          icon={<IndianRupee className="h-5 w-5" aria-hidden />}
         />
         <NavCard
           href="/admin/dashboard/templates"

@@ -77,10 +77,14 @@ export default function HealthTimeline({
             const cx = padX + slotW * i + slotW / 2;
             const colors = DOT[node._kind];
             const isLive = node._source === "live" && node._opdEncounterId;
+            const icd = node._displayIcd10?.trim();
+            const main =
+              node._displayLabel.length > 22 ? `${node._displayLabel.slice(0, 20)}…` : node._displayLabel;
             return (
               <g key={node.id}>
                 <title>
-                  {node._displayLabel} — {node.class.display} — {node.period.start ?? ""}
+                  {node._displayLabel}
+                  {icd ? ` · ${icd}` : ""} — {node.class.display} — {node.period.start ?? ""}
                 </title>
                 <text
                   x={cx}
@@ -89,9 +93,10 @@ export default function HealthTimeline({
                   className="fill-gray-800"
                   style={{ fontSize: 11, fontWeight: 600 }}
                 >
-                  {node._displayLabel.length > 22
-                    ? `${node._displayLabel.slice(0, 20)}…`
-                    : node._displayLabel}
+                  {main}
+                  {icd ? (
+                    <tspan fill="#9ca3af" style={{ fontSize: 9, fontWeight: 400 }}>{` · ${icd}`}</tspan>
+                  ) : null}
                 </text>
                 <text
                   x={cx}

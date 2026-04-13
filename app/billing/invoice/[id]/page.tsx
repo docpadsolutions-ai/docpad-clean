@@ -225,44 +225,39 @@ export default function InvoiceDetailPage() {
   );
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8 dark:bg-slate-950">
+    <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-2xl space-y-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <Link href="/billing" className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400">
+          <Link href="/billing" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
             ← Billing
           </Link>
-          <Link
-            href="/billing/invoice/new"
-            className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
-          >
+          <Link href="/billing/invoice/new" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
             New invoice
           </Link>
         </div>
 
         {loading ? (
-          <p className="text-sm text-slate-500">Loading…</p>
+          <p className="text-sm text-gray-600">Loading…</p>
         ) : error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
             {error}
           </div>
         ) : !row ? (
-          <p className="text-sm text-slate-500">Invoice not found.</p>
+          <p className="text-sm text-gray-600">Invoice not found.</p>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50">
-                    {row.invoice_number ?? "Invoice"}
-                  </h1>
-                  <p className="mt-1 text-sm text-slate-500">Status: {row.status ?? "—"}</p>
+                  <h1 className="text-xl font-semibold text-gray-900">{row.invoice_number ?? "Invoice"}</h1>
+                  <p className="mt-1 text-sm text-gray-600">Status: {row.status ?? "—"}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={!pdfData}
                     onClick={() => pdfData && void downloadInvoicePdf(pdfData)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-50"
                   >
                     Download PDF
                   </button>
@@ -270,7 +265,7 @@ export default function InvoiceDetailPage() {
                     type="button"
                     disabled={!pdfData}
                     onClick={() => pdfData && openInvoicePdfInNewTab(pdfData)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-50"
                   >
                     Print / preview
                   </button>
@@ -278,21 +273,21 @@ export default function InvoiceDetailPage() {
                     type="button"
                     disabled={balanceDue <= 0}
                     onClick={() => setPaymentOpen(true)}
-                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
                   >
                     Record payment
                   </button>
                 </div>
               </div>
 
-              <p className="mt-4 text-2xl font-semibold tabular-nums text-blue-700 dark:text-blue-300">
+              <p className="mt-4 text-2xl font-semibold tabular-nums text-blue-700">
                 {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(
                   gross,
                 )}
               </p>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+              <p className="mt-2 text-sm text-gray-600">
                 Balance due:{" "}
-                <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                <span className="font-semibold tabular-nums text-gray-900">
                   {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(
                     balanceDue,
                   )}
@@ -300,9 +295,9 @@ export default function InvoiceDetailPage() {
               </p>
 
               {row.notes ? (
-                <p className="mt-4 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-400">{row.notes}</p>
+                <p className="mt-4 whitespace-pre-wrap text-sm text-gray-600">{row.notes}</p>
               ) : null}
-              <p className="mt-6 text-xs text-slate-400">Patient: {row.patient_id ?? "—"}</p>
+              <p className="mt-6 text-xs text-gray-500">Patient: {row.patient_id ?? "—"}</p>
             </div>
           </div>
         )}

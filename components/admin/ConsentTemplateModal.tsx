@@ -1,8 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { FileText, Loader2, X } from "lucide-react";
 import { supabase } from "@/app/supabase";
+import {
+  extractConsentFormTextFromFile,
+  inferConsentCategoryFromText,
+  inferConsentDisplayNameFromText,
+  isAllowedConsentOcrFile,
+} from "@/app/lib/consentTemplateOcr";
 import { consentCodeFromDisplayName } from "@/app/lib/ipdConsentTypes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,8 +89,13 @@ export function ConsentTemplateModal({
   const [fileName, setFileName] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const codeTouchedRef = useRef(false);
+  const consentOcrInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [consentOcrLoading, setConsentOcrLoading] = useState(false);
+  const [consentOcrSuccess, setConsentOcrSuccess] = useState(false);
+  const [consentOcrZoneError, setConsentOcrZoneError] = useState<string | null>(null);
+  const [consentOcrDragOver, setConsentOcrDragOver] = useState(false);
 
   const resetFromSource = useCallback(() => {
     const row = asRec(sourceRow);
@@ -122,7 +133,45 @@ export function ConsentTemplateModal({
     if (!open) return;
     resetFromSource();
     setError(null);
+    setConsentOcrLoading(false);
+    setConsentOcrSuccess(false);
+    setConsentOcrZoneError(null);
+    setConsentOcrDragOver(false);
+    if (consentOcrInputRef.current) consentOcrInputRef.current.value = "";
   }, [open, resetFromSource]);
+
+  const runConsentOcrOnFile = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return;
+      if (!isAllowedConsentOcrFile(file)) {
+        setConsentOcrZoneError("Please use JPG, PNG, or PDF.");
+        return;
+      }
+      setConsentOcrLoading(true);
+      setConsentOcrSuccess(false);
+      setConsentOcrZoneError(null);
+      try {
+        const extracted = await extractConsentFormTextFromFile(file);
+        setTemplateBody(extracted);
+        const title = inferConsentDisplayNameFromText(extracted);
+        if (title) {
+          setDisplayName(title);
+          if (!codeTouchedRef.current && (mode === "create" || mode === "customize")) {
+            setCode(consentCodeFromDisplayName(title));
+          }
+        }
+        const cat = inferConsentCategoryFromText(extracted);
+        if (cat) setCategory(cat);
+        setConsentOcrSuccess(true);
+      } catch {
+        setConsentOcrZoneError("Could not extract text — please type manually");
+        if (consentOcrInputRef.current) consentOcrInputRef.current.value = "";
+      } finally {
+        setConsentOcrLoading(false);
+      }
+    },
+    [mode],
+  );
 
   const close = () => {
     onOpenChange(false);
@@ -329,11 +378,89 @@ export function ConsentTemplateModal({
             </div>
 
             <div className="space-y-2">
+              {mode === "create" ? (
+                <>
+                  <input
+                    ref={consentOcrInputRef}
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,application/pdf,.pdf"
+                    className="sr-only"
+                    aria-hidden
+                    tabIndex={-1}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      void runConsentOcrOnFile(f);
+                    }}
+                  />
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      disabled={consentOcrLoading}
+                      onClick={() => consentOcrInputRef.current?.click()}
+                      onDragEnter={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setConsentOcrDragOver(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setConsentOcrDragOver(false);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setConsentOcrDragOver(false);
+                        const f = e.dataTransfer.files?.[0];
+                        void runConsentOcrOnFile(f);
+                      }}
+                      className={cn(
+                        "flex w-full flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-6 text-center transition",
+                        consentOcrDragOver
+                          ? "border-blue-400 bg-blue-50/80"
+                          : "border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50/80",
+                        consentOcrLoading && "pointer-events-none opacity-80",
+                      )}
+                    >
+                      {consentOcrLoading ? (
+                        <>
+                          <Loader2 className="h-8 w-8 animate-spin text-gray-500" aria-hidden />
+                          <span className="text-sm font-medium text-gray-700">Extracting text…</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-8 w-8 text-gray-500" aria-hidden />
+                          <span className="text-sm font-semibold text-gray-900">Upload existing consent form</span>
+                          <span className="text-xs text-gray-500">Drag &amp; drop or click to upload</span>
+                          <span className="text-xs text-gray-400">JPG, PNG or PDF</span>
+                        </>
+                      )}
+                    </button>
+                    {consentOcrZoneError ? (
+                      <p className="text-xs text-red-600" role="alert">
+                        {consentOcrZoneError}
+                      </p>
+                    ) : null}
+                  </div>
+                  {consentOcrSuccess ? (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900">
+                      Text extracted — please review before saving
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
               <Label htmlFor="ct-body">Template body</Label>
               <Textarea
                 id="ct-body"
                 value={templateBody}
-                onChange={(e) => setTemplateBody(e.target.value)}
+                onChange={(e) => {
+                  setTemplateBody(e.target.value);
+                  if (consentOcrSuccess) setConsentOcrSuccess(false);
+                }}
                 rows={8}
                 placeholder="Paste or type the full consent text here. Use {patient_name}, {doctor_name}, {procedure_name} as placeholders."
                 className="min-h-[160px] resize-y font-mono text-[13px]"

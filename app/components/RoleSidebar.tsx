@@ -3,12 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { useCallback, useId, useLayoutEffect, useState, type ReactNode } from "react";
+import { Stethoscope } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useState, type ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
+import { unwrapRpcArray } from "../lib/ipdConsults";
 import { DocPadLogoMark } from "./DocPadLogoMark";
-import { sidebarItemsForRole, isActiveHref } from "../lib/navConfig";
+import { NotificationBell } from "./NotificationBell";
+import { sidebarItemsForRole, isActiveHref, type NavItem } from "../lib/navConfig";
 import type { AppRole } from "../lib/userRole";
+import { cn } from "@/lib/utils";
 
 const SIDEBAR_EXPANDED_KEY = "docpad-sidebar-expanded";
+
+function navS(v: unknown): string {
+  if (v == null) return "";
+  return String(v).trim();
+}
 
 function ChevronLeftIcon({ className }: { className?: string }) {
   return (
@@ -61,6 +71,9 @@ function navIconForLabel(label: string): ReactNode {
       </svg>
     );
   }
+  if (key === "consult inbox") {
+    return <Stethoscope className={`${box} fill-none`} strokeWidth={1.75} aria-hidden />;
+  }
   if (key === "patients") {
     return (
       <svg className={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
@@ -95,10 +108,36 @@ function navIconForLabel(label: string): ReactNode {
       </svg>
     );
   }
+  if (key === "bed management") {
+    return (
+      <svg className={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+        <path d="M3 10h18M5 10V7a2 2 0 012-2h10a2 2 0 012 2v3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 10v9a2 2 0 002 2h6a2 2 0 002-2v-9" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 14h6M9 18h6" strokeLinecap="round" />
+      </svg>
+    );
+  }
   if (key === "pharmacy") {
     return (
       <svg className={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
         <path d="M10 6h4v4h-4V6zM6 10h4v4H6v-4zM14 10h4v4h-4v-4zM10 14h4v4h-4v-4z" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (key === "lab") {
+    return (
+      <svg className={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+        <path d="M9 3v18M15 3v18M4 9h16M4 15h16" strokeLinecap="round" />
+        <path d="M7 3v4M17 3v4M7 17v4M17 17v4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (key === "nursing") {
+    return (
+      <svg className={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+        <path d="M12 4v4M10 6h4" strokeLinecap="round" />
+        <path d="M8 10h8v10a2 2 0 01-2 2h-4a2 2 0 01-2-2V10z" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8 14h8M9 18h6" strokeLinecap="round" />
       </svg>
     );
   }
@@ -165,6 +204,80 @@ function SidebarNavLink({
   );
 }
 
+function ConsultInboxNavItem({
+  item,
+  active,
+  expanded,
+}: {
+  item: NavItem;
+  active: boolean;
+  expanded: boolean;
+}) {
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data, error } = await supabase.rpc("get_my_pending_consults");
+      if (cancelled || error) return;
+      const rows = unwrapRpcArray<Record<string, unknown>>(data);
+      const n = rows.filter((r) => navS(r.status).toLowerCase() === "requested").length;
+      setPendingCount(n);
+    }
+    void load();
+    const t = window.setInterval(() => void load(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, []);
+
+  return (
+    <div className="group/item relative">
+      <Link
+        href={item.href}
+        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+          active
+            ? "bg-blue-600 text-white shadow-sm"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+        } ${expanded ? "justify-start" : "justify-center px-0"}`}
+      >
+        <span
+          className={cn(
+            "relative inline-flex shrink-0",
+            active ? "text-white" : "text-slate-500 group-hover/item:text-slate-700 dark:text-slate-400 dark:group-hover/item:text-slate-200",
+          )}
+        >
+          <Stethoscope className="h-5 w-5 stroke-[1.75]" aria-hidden />
+          {!expanded && pendingCount > 0 ? (
+            <span className="absolute -right-1.5 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[9px] font-bold leading-none text-white">
+              {pendingCount > 9 ? "9+" : pendingCount}
+            </span>
+          ) : null}
+        </span>
+        {expanded ? (
+          <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
+            <span className="min-w-0 truncate">{item.label}</span>
+            {pendingCount > 0 ? (
+              <span className="shrink-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                {pendingCount > 99 ? "99+" : pendingCount}
+              </span>
+            ) : null}
+          </span>
+        ) : null}
+      </Link>
+      {!expanded ? (
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute left-[calc(100%+12px)] top-1/2 z-[100] -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover/item:opacity-100 group-focus-within/item:opacity-100"
+        >
+          {item.label}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function RoleSidebar({
   role,
   showAdminConsoleLink = false,
@@ -224,14 +337,17 @@ export function RoleSidebar({
       }}
     >
       <div
-        className={`flex h-[4.25rem] shrink-0 items-center border-b border-slate-100 dark:border-slate-800 ${
-          wide ? "gap-3 px-4" : "justify-center px-2"
+        className={`flex h-[4.25rem] shrink-0 items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 ${
+          wide ? "px-4" : "px-2"
         }`}
       >
-        <DocPadLogoMark className={wide ? "" : "h-9 w-9"} />
-        {wide ? (
-          <span className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">DocPad</span>
-        ) : null}
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <DocPadLogoMark className={wide ? "" : "h-9 w-9"} />
+          {wide ? (
+            <span className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">DocPad</span>
+          ) : null}
+        </div>
+        <NotificationBell />
       </div>
 
       <nav
@@ -244,6 +360,9 @@ export function RoleSidebar({
         </span>
         {items.map((item) => {
           const active = isActiveHref(pathname, item.href);
+          if (item.consultPendingBadge) {
+            return <ConsultInboxNavItem key={item.href + item.label} item={item} active={active} expanded={wide} />;
+          }
           return (
             <SidebarNavLink key={item.href + item.label} href={item.href} label={item.label} active={active} expanded={wide} />
           );

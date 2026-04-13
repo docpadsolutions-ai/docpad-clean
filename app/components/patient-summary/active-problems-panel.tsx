@@ -11,6 +11,7 @@ type EncounterDxRow = {
   diagnosis_term?: unknown;
   diagnosis_snomed?: unknown;
   diagnosis_sctid?: unknown;
+  diagnosis_icd10?: unknown;
   encounter_date?: unknown;
 };
 
@@ -26,7 +27,7 @@ function stableFallbackId(term: string, snomed: string | null): string {
 
 /** Mirrors DISTINCT + GROUP BY diagnosis_term, diagnosis_snomed with MIN(encounter_date). */
 function aggregateEncounterDiagnoses(raw: EncounterDxRow[]): ProblemCardRow[] {
-  type Agg = { term: string; snomed: string | null; minDate: string | null };
+  type Agg = { term: string; snomed: string | null; icd10: string | null; minDate: string | null };
   const map = new Map<string, Agg>();
 
   for (const r of raw) {
@@ -35,6 +36,9 @@ function aggregateEncounterDiagnoses(raw: EncounterDxRow[]): ProblemCardRow[] {
     const snRaw = r.diagnosis_snomed ?? r.diagnosis_sctid;
     const snomed =
       snRaw != null && String(snRaw).trim() !== "" ? String(snRaw).trim() : null;
+    const icdRaw = r.diagnosis_icd10;
+    const icd10 =
+      icdRaw != null && String(icdRaw).trim() !== "" ? String(icdRaw).trim() : null;
     const key = `${term}\u0000${snomed ?? ""}`;
     const dRaw = r.encounter_date;
     const encDate =
@@ -42,22 +46,26 @@ function aggregateEncounterDiagnoses(raw: EncounterDxRow[]): ProblemCardRow[] {
 
     const prev = map.get(key);
     if (!prev) {
-      map.set(key, { term, snomed, minDate: encDate });
+      map.set(key, { term, snomed, icd10, minDate: encDate });
     } else {
       if (encDate && (!prev.minDate || encDate < prev.minDate)) {
         prev.minDate = encDate;
+      }
+      if (!prev.icd10 && icd10) {
+        prev.icd10 = icd10;
       }
     }
   }
 
   const out: ProblemCardRow[] = [];
-  for (const { term, snomed, minDate } of map.values()) {
+  for (const { term, snomed, icd10, minDate } of map.values()) {
     out.push({
       id: stableFallbackId(term, snomed),
       condition_name: term,
       status: "Active",
       onset_date: minDate,
       snomed_code: snomed,
+      diagnosis_icd10: icd10,
       sourceLabel: ENCOUNTER_FALLBACK_HINT,
     });
   }
@@ -76,6 +84,7 @@ async function fetchEncounterDiagnosisFallback(patientId: string): Promise<{
   error: string | null;
 }> {
   const selectAttempts = [
+    "diagnosis_term, diagnosis_snomed, diagnosis_sctid, diagnosis_icd10, encounter_date",
     "diagnosis_term, diagnosis_snomed, diagnosis_sctid, encounter_date",
     "diagnosis_term, diagnosis_snomed, encounter_date",
     "diagnosis_term, encounter_date",

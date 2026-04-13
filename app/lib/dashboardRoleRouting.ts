@@ -61,11 +61,12 @@ export function normalizeDashboardRoleKey(raw: string | null | undefined): strin
 
 export function nurseDashboardRouting(): DashboardRoleRouting {
   return {
-    homePath: "/reception",
+    homePath: "/dashboard",
     allowedPrefixes: [
-      "/reception",
+      "/nursing",
       "/dashboard/settings",
       "/dashboard/opd",
+      "/dashboard/opd/patients",
       "/dashboard/patients",
       "/dashboard",
       "/opd",
@@ -94,6 +95,8 @@ const ADMIN_WORKSPACE_PREFIXES: string[] = [
   "/dashboard/patients",
   "/dashboard/settings",
   "/dashboard",
+  "/lab",
+  "/nursing",
   "/reception",
   "/opd",
   "/pharmacy",
@@ -148,7 +151,27 @@ export function resolveDashboardRoutingFromRoleRaw(raw: string | null | undefine
   if (s.includes("reception")) {
     return {
       homePath: "/reception",
-      allowedPrefixes: ["/reception", "/billing", "/dashboard/settings"],
+      allowedPrefixes: [
+        "/reception",
+        "/billing",
+        "/dashboard",
+        "/dashboard/opd/patients",
+        "/dashboard/settings",
+      ],
+    };
+  }
+
+  if (/\blab\b/i.test(s) && (s.includes("tech") || s.includes("technician") || s.includes("scientist"))) {
+    return {
+      homePath: "/lab",
+      allowedPrefixes: [
+        "/lab",
+        "/dashboard",
+        "/dashboard/opd/patients",
+        "/dashboard/patients",
+        "/dashboard/settings",
+        "/opd",
+      ],
     };
   }
 

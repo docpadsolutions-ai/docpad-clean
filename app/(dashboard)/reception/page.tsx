@@ -5,13 +5,23 @@
  * Reads: `reception_today_queue` (no client-side status filter); writes: `reception_queue`.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import NewPatientModal from "../../components/NewPatientModal";
+import { AdmissionBillingSheet, type PendingAdmissionRow } from "../../components/reception/AdmissionBillingSheet";
+import { PendingLabPaymentsSection } from "../../components/reception/PendingLabPayments";
 import { fetchHospitalIdFromPractitionerAuthId } from "../../lib/authOrg";
+import { unwrapRpcArray } from "../../lib/ipdConsults";
 import { fetchDoctorAssignmentOptions } from "../../lib/doctorAssignmentOptions";
 import { enqueueReceptionWalkIn } from "../../lib/receptionEnqueue";
 import type { RegisteredPatientRow } from "../../lib/registerNewPatient";
 import { supabase } from "../../supabase";
+
+const AdmitPatientModal = dynamic(
+  () => import("@/app/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
+  { ssr: false },
+);
 
 type ReceptionTodayQueueRow = {
   id: string;
@@ -142,7 +152,60 @@ function TableSkeleton() {
   );
 }
 
-export default function ReceptionPage() {
+function sv(v: unknown): string {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function pendingAdmissionNo(row: PendingAdmissionRow): string {
+  return sv(row.admission_number ?? row.admission_no ?? row.ipd_number ?? row.ipd_admission_number);
+}
+
+function pendingPatientName(row: PendingAdmissionRow): string {
+  return sv(row.patient_name ?? row.full_name);
+}
+
+function pendingAgeSex(row: PendingAdmissionRow): string {
+  const age =
+    row.age_years != null && Number.isFinite(Number(row.age_years))
+      ? String(Math.round(Number(row.age_years)))
+      : "—";
+  const sex = sv(row.sex ?? row.gender) || "—";
+  return `${age} · ${sex}`;
+}
+
+function pendingWardBed(row: PendingAdmissionRow): string {
+  const w = sv(row.ward_name);
+  const b = sv(row.bed_number);
+  const parts: string[] = [];
+  if (w) parts.push(w);
+  if (b) parts.push(`Bed ${b}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+function pendingDoctor(row: PendingAdmissionRow): string {
+  return sv(row.doctor_name ?? row.admitting_doctor_name);
+}
+
+function pendingDiagnosis(row: PendingAdmissionRow): string {
+  return sv(row.primary_diagnosis_display ?? row.diagnosis_display ?? row.diagnosis);
+}
+
+function pendingTimeDisplay(row: PendingAdmissionRow): string {
+  const raw = row.created_at ?? row.pending_since ?? row.admission_requested_at ?? row.updated_at;
+  if (raw == null) return "—";
+  const d = new Date(String(raw));
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
+function pendingAdmissionId(row: PendingAdmissionRow): string {
+  return sv(row.admission_id ?? row.id);
+}
+
+function ReceptionPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [orgError, setOrgError] = useState<string | null>(null);
 
@@ -161,6 +224,16 @@ export default function ReceptionPage() {
   const [practitionersLoading, setPractitionersLoading] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
+
+  const [admitModalOpen, setAdmitModalOpen] = useState(false);
+  const [admitBedPrefill, setAdmitBedPrefill] = useState<{ wardId: string; bedId: string } | null>(null);
+
+  const [receptionSection, setReceptionSection] = useState<"opd" | "pending" | "lab_payments">("opd");
+  const [pendingRows, setPendingRows] = useState<PendingAdmissionRow[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  const [billingSheetOpen, setBillingSheetOpen] = useState(false);
+  const [billingSheetRow, setBillingSheetRow] = useState<PendingAdmissionRow | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -208,6 +281,30 @@ export default function ReceptionPage() {
     setPractitionersLoading(false);
   }, []);
 
+  const loadPendingAdmissions = useCallback(async (hid: string | null, opts?: { silent?: boolean }) => {
+    if (!hid) {
+      setPendingRows([]);
+      setPendingLoading(false);
+      return;
+    }
+    const silent = opts?.silent === true;
+    if (!silent) {
+      setPendingLoading(true);
+      setPendingError(null);
+    }
+    const { data, error } = await supabase.rpc("get_pending_admissions", { p_hospital_id: hid });
+    if (error) {
+      if (!silent) {
+        setPendingError(error.message);
+        setPendingRows([]);
+      }
+    } else {
+      setPendingRows(unwrapRpcArray<PendingAdmissionRow>(data));
+      if (!silent) setPendingError(null);
+    }
+    if (!silent) setPendingLoading(false);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -238,6 +335,37 @@ export default function ReceptionPage() {
       void supabase.removeChannel(channel);
     };
   }, [hospitalId, loadQueue]);
+
+  useEffect(() => {
+    if (!hospitalId || receptionSection !== "pending") return;
+    void loadPendingAdmissions(hospitalId);
+  }, [hospitalId, receptionSection, loadPendingAdmissions]);
+
+  useEffect(() => {
+    if (!hospitalId) return;
+    const channel = supabase
+      .channel("ipd-admissions-pending-rt")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ipd_admissions", filter: `hospital_id=eq.${hospitalId}` },
+        () => {
+          void loadPendingAdmissions(hospitalId, { silent: true });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [hospitalId, loadPendingAdmissions]);
+
+  useEffect(() => {
+    const w = searchParams.get("wardId")?.trim();
+    const b = searchParams.get("bedId")?.trim();
+    if (!w || !b || !hospitalId) return;
+    setAdmitBedPrefill({ wardId: w, bedId: b });
+    setAdmitModalOpen(true);
+    router.replace("/reception", { scroll: false });
+  }, [searchParams, hospitalId, router]);
 
   useEffect(() => {
     if (!queueDrawerOpen || !hospitalId) return;
@@ -358,7 +486,9 @@ export default function ReceptionPage() {
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-gray-900">Reception</h1>
-            <p className="mt-1 text-sm text-gray-600">Today&apos;s OPD queue and check-in.</p>
+            <p className="mt-1 text-sm text-gray-600">
+              OPD queue, check-in, and IPD admissions awaiting deposit collection.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" className={btnPrimary} onClick={() => setNewPatientModalOpen(true)}>
@@ -376,134 +506,229 @@ export default function ReceptionPage() {
           </div>
         ) : null}
 
-        {loading && queue.length === 0 && !fetchError ? (
-          <StatsSkeleton />
-        ) : (
-          <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {(
-              [
-                ["Total today", stats.total],
-                ["Waiting", stats.waiting],
-                ["With doctor", stats.withDoc],
-                ["Completed", stats.completed],
-                ["No-show", stats.noShow],
-              ] as const
-            ).map(([label, n]) => (
-              <div key={label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{n}</p>
+        <div className="mb-6 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={receptionSection === "opd" ? btnPrimary : btnSecondary}
+            onClick={() => setReceptionSection("opd")}
+          >
+            OPD queue
+          </button>
+          <button
+            type="button"
+            className={receptionSection === "pending" ? btnPrimary : btnSecondary}
+            onClick={() => setReceptionSection("pending")}
+          >
+            Pending admissions
+          </button>
+          <button
+            type="button"
+            className={receptionSection === "lab_payments" ? btnPrimary : btnSecondary}
+            onClick={() => setReceptionSection("lab_payments")}
+          >
+            Pending lab payments
+          </button>
+        </div>
+
+        {receptionSection === "opd" ? (
+          <>
+            {loading && queue.length === 0 && !fetchError ? (
+              <StatsSkeleton />
+            ) : (
+              <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {(
+                  [
+                    ["Total today", stats.total],
+                    ["Waiting", stats.waiting],
+                    ["With doctor", stats.withDoc],
+                    ["Completed", stats.completed],
+                    ["No-show", stats.noShow],
+                  ] as const
+                ).map(([label, n]) => (
+                  <div key={label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{n}</p>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 px-4 py-3">
+                <h2 className="text-sm font-semibold text-gray-900">Today&apos;s queue</h2>
+                <p className="text-xs text-gray-500">Updates live from the queue.</p>
               </div>
-            ))}
-          </section>
-        )}
 
-        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-100 px-4 py-3">
-            <h2 className="text-sm font-semibold text-gray-900">Today&apos;s queue</h2>
-            <p className="text-xs text-gray-500">Updates live from the queue.</p>
-          </div>
-
-          {fetchError ? (
-            <div className="px-4 py-10 text-center text-sm text-red-600">{fetchError}</div>
-          ) : loading && queue.length === 0 ? (
-            <TableSkeleton />
-          ) : queue.length === 0 ? (
-            <div className="px-4 py-12 text-center text-sm text-gray-500">No entries in the queue today.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="border-b border-gray-100 bg-gray-50/90 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2.5">Token</th>
-                    <th className="px-3 py-2.5">Patient</th>
-                    <th className="px-3 py-2.5">Doctor</th>
-                    <th className="px-3 py-2.5">Status</th>
-                    <th className="px-3 py-2.5">Waiting</th>
-                    <th className="px-3 py-2.5">Bill</th>
-                    <th className="px-3 py-2.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {queue.map((row) => {
-                    const busy = updatingId === row.id;
-                    const actions = queueRowActions(row.queue_status);
-                    const tokenLabel = row.token_display?.trim() || (row.token_number != null ? String(row.token_number) : "—");
-                    return (
-                      <tr key={row.id} className="hover:bg-gray-50/80">
-                        <td className="px-3 py-3 font-mono font-semibold text-gray-900">{tokenLabel}</td>
-                        <td className="px-3 py-3 text-gray-800">
-                          <div className="font-medium">{row.patient_name?.trim() || "—"}</div>
-                          <div className="text-xs text-gray-500">{row.docpad_id?.trim() || "—"}</div>
-                        </td>
-                        <td className="px-3 py-3 text-gray-700">
-                          <div>{row.doctor_name?.trim() || "—"}</div>
-                          {row.doctor_specialty?.trim() ? (
-                            <div className="text-xs text-gray-500">{row.doctor_specialty}</div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${statusBadgeClass(row.queue_status)}`}
-                          >
-                            {row.queue_status.replace(/_/g, " ")}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 tabular-nums text-gray-600">
-                          {formatWaitingMinutesDisplay(row.queue_status, row)}
-                        </td>
-                        <td className="px-3 py-3 text-gray-700">
-                          <div>{formatMoney(row.bill_amount)}</div>
-                          <div className="text-xs text-gray-500">{row.billing_status?.trim() || "—"}</div>
-                          {row.payment_method?.trim() ? (
-                            <div className="text-xs text-gray-400">{row.payment_method}</div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {actions.callNext || actions.complete || actions.noShow ? (
-                            <div className="flex flex-wrap justify-end gap-2">
-                              {actions.callNext ? (
-                                <button
-                                  type="button"
-                                  className={btnGhost}
-                                  disabled={busy}
-                                  onClick={() => callNext(row)}
-                                >
-                                  Call Next
-                                </button>
-                              ) : null}
-                              {actions.complete ? (
-                                <button
-                                  type="button"
-                                  className={btnSecondary}
-                                  disabled={busy}
-                                  onClick={() => completeVisit(row)}
-                                >
-                                  Complete
-                                </button>
-                              ) : null}
-                              {actions.noShow ? (
-                                <button
-                                  type="button"
-                                  className={btnDanger}
-                                  disabled={busy}
-                                  onClick={() => markNoShow(row)}
-                                >
-                                  No Show
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
+              {fetchError ? (
+                <div className="px-4 py-10 text-center text-sm text-red-600">{fetchError}</div>
+              ) : loading && queue.length === 0 ? (
+                <TableSkeleton />
+              ) : queue.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm text-gray-500">No entries in the queue today.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50/90 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-3 py-2.5">Token</th>
+                        <th className="px-3 py-2.5">Patient</th>
+                        <th className="px-3 py-2.5">Doctor</th>
+                        <th className="px-3 py-2.5">Status</th>
+                        <th className="px-3 py-2.5">Waiting</th>
+                        <th className="px-3 py-2.5">Bill</th>
+                        <th className="px-3 py-2.5 text-right">Actions</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {queue.map((row) => {
+                        const busy = updatingId === row.id;
+                        const actions = queueRowActions(row.queue_status);
+                        const tokenLabel =
+                          row.token_display?.trim() || (row.token_number != null ? String(row.token_number) : "—");
+                        return (
+                          <tr key={row.id} className="hover:bg-gray-50/80">
+                            <td className="px-3 py-3 font-mono font-semibold text-gray-900">{tokenLabel}</td>
+                            <td className="px-3 py-3 text-gray-800">
+                              <div className="font-medium">{row.patient_name?.trim() || "—"}</div>
+                              <div className="text-xs text-gray-500">{row.docpad_id?.trim() || "—"}</div>
+                            </td>
+                            <td className="px-3 py-3 text-gray-700">
+                              <div>{row.doctor_name?.trim() || "—"}</div>
+                              {row.doctor_specialty?.trim() ? (
+                                <div className="text-xs text-gray-500">{row.doctor_specialty}</div>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-3">
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${statusBadgeClass(row.queue_status)}`}
+                              >
+                                {row.queue_status.replace(/_/g, " ")}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 tabular-nums text-gray-600">
+                              {formatWaitingMinutesDisplay(row.queue_status, row)}
+                            </td>
+                            <td className="px-3 py-3 text-gray-700">
+                              <div>{formatMoney(row.bill_amount)}</div>
+                              <div className="text-xs text-gray-500">{row.billing_status?.trim() || "—"}</div>
+                              {row.payment_method?.trim() ? (
+                                <div className="text-xs text-gray-400">{row.payment_method}</div>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              {actions.callNext || actions.complete || actions.noShow ? (
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  {actions.callNext ? (
+                                    <button
+                                      type="button"
+                                      className={btnGhost}
+                                      disabled={busy}
+                                      onClick={() => callNext(row)}
+                                    >
+                                      Call Next
+                                    </button>
+                                  ) : null}
+                                  {actions.complete ? (
+                                    <button
+                                      type="button"
+                                      className={btnSecondary}
+                                      disabled={busy}
+                                      onClick={() => completeVisit(row)}
+                                    >
+                                      Complete
+                                    </button>
+                                  ) : null}
+                                  {actions.noShow ? (
+                                    <button
+                                      type="button"
+                                      className={btnDanger}
+                                      disabled={busy}
+                                      onClick={() => markNoShow(row)}
+                                    >
+                                      No Show
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
+        ) : receptionSection === "pending" ? (
+          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <h2 className="text-sm font-semibold text-gray-900">Pending admissions</h2>
+              <p className="text-xs text-gray-500">Awaiting deposit — updates live.</p>
             </div>
-          )}
-        </section>
+            {pendingError ? (
+              <div className="px-4 py-10 text-center text-sm text-red-600">{pendingError}</div>
+            ) : pendingLoading && pendingRows.length === 0 ? (
+              <TableSkeleton />
+            ) : pendingRows.length === 0 ? (
+              <div className="px-4 py-12 text-center text-sm text-gray-500">No pending admissions.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b border-gray-100 bg-gray-50/90 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2.5">Admission no</th>
+                      <th className="px-3 py-2.5">Patient</th>
+                      <th className="px-3 py-2.5">Age / sex</th>
+                      <th className="px-3 py-2.5">Ward &amp; bed</th>
+                      <th className="px-3 py-2.5">Doctor</th>
+                      <th className="px-3 py-2.5">Diagnosis</th>
+                      <th className="px-3 py-2.5">Time</th>
+                      <th className="px-3 py-2.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {pendingRows.map((prow) => {
+                      const pid = pendingAdmissionId(prow);
+                      return (
+                        <tr key={pid || JSON.stringify(prow)} className="hover:bg-gray-50/80">
+                          <td className="px-3 py-3 font-mono font-semibold text-gray-900">
+                            {pendingAdmissionNo(prow) || "—"}
+                          </td>
+                          <td className="px-3 py-3 font-medium text-gray-900">{pendingPatientName(prow) || "—"}</td>
+                          <td className="px-3 py-3 text-gray-700">{pendingAgeSex(prow)}</td>
+                          <td className="px-3 py-3 text-gray-700">{pendingWardBed(prow)}</td>
+                          <td className="px-3 py-3 text-gray-700">{pendingDoctor(prow) || "—"}</td>
+                          <td className="max-w-[200px] truncate px-3 py-3 text-gray-700" title={pendingDiagnosis(prow)}>
+                            {pendingDiagnosis(prow) || "—"}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-gray-600">{pendingTimeDisplay(prow)}</td>
+                          <td className="px-3 py-3 text-right">
+                            <button
+                              type="button"
+                              className={btnSecondary}
+                              disabled={!pid}
+                              onClick={() => {
+                                setBillingSheetRow(prow);
+                                setBillingSheetOpen(true);
+                              }}
+                            >
+                              Collect &amp; confirm
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        ) : (
+          <PendingLabPaymentsSection hospitalId={hospitalId} />
+        )}
       </div>
 
       <NewPatientModal
@@ -511,6 +736,38 @@ export default function ReceptionPage() {
         onClose={() => setNewPatientModalOpen(false)}
         orgId={hospitalId}
         onSuccess={onNewPatientRegistered}
+      />
+
+      {hospitalId ? (
+        <AdmitPatientModal
+          open={admitModalOpen}
+          onClose={() => {
+            setAdmitModalOpen(false);
+            setAdmitBedPrefill(null);
+          }}
+          patientId={null}
+          hospitalId={hospitalId}
+          prefillWardId={admitBedPrefill?.wardId ?? null}
+          prefillBedId={admitBedPrefill?.bedId ?? null}
+          onSuccess={() => {
+            setAdmitModalOpen(false);
+            setAdmitBedPrefill(null);
+          }}
+        />
+      ) : null}
+
+      <AdmissionBillingSheet
+        open={billingSheetOpen}
+        row={billingSheetRow}
+        hospitalId={hospitalId}
+        onClose={() => {
+          setBillingSheetOpen(false);
+          setBillingSheetRow(null);
+        }}
+        onConfirmed={() => {
+          if (hospitalId) void loadPendingAdmissions(hospitalId, { silent: true });
+        }}
+        showToast={showToast}
       />
 
       {queueDrawerOpen && pendingQueuePatient ? (
@@ -592,5 +849,23 @@ export default function ReceptionPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ReceptionPageFallback() {
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 md:p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl">
+        <StatsSkeleton />
+      </div>
+    </div>
+  );
+}
+
+export default function ReceptionPage() {
+  return (
+    <Suspense fallback={<ReceptionPageFallback />}>
+      <ReceptionPageContent />
+    </Suspense>
   );
 }

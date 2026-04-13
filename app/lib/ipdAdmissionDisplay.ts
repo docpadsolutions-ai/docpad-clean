@@ -173,6 +173,8 @@ export type AdmissionCardViewModel = {
   hpi: string;
   symptomCategory: string;
   diagnosis: string;
+  /** ICD-10 for primary diagnosis when stored (shown next to diagnosis text). */
+  diagnosisIcd10: string | null;
   baselineExam: string;
   hasAllergies: boolean;
   allergyLabels: string[];
@@ -206,6 +208,8 @@ export function buildAdmissionCardView(
   const symptomCategory = symptomCategoryDisplay(pa, specialtyBadge);
   const diagnosis =
     str(pa?.primary_diagnosis_display) || str(adm?.primary_diagnosis_display) || "—";
+  const diagnosisIcd10Raw = str(pa?.primary_diagnosis_icd10) || str(adm?.primary_diagnosis_icd10);
+  const diagnosisIcd10 = diagnosisIcd10Raw || null;
   const baselineExam = baselineExamDisplay(pa);
 
   const allergyLabels = allergiesListFromPatient(patient);
@@ -220,6 +224,7 @@ export function buildAdmissionCardView(
     hpi,
     symptomCategory,
     diagnosis,
+    diagnosisIcd10,
     baselineExam,
     hasAllergies: allergyLabels.length > 0,
     allergyLabels,

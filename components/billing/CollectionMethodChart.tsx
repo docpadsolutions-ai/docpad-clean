@@ -98,7 +98,7 @@ export function CollectionMethodChart({
 
   if (!hospitalId) {
     return (
-      <div className="flex h-[320px] items-center justify-center rounded-xl border border-slate-200 bg-white text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+      <div className="flex h-[320px] items-center justify-center rounded-xl border border-slate-200 bg-white text-sm text-slate-500">
         Sign in as a practitioner to load collection mix.
       </div>
     );
@@ -106,7 +106,7 @@ export function CollectionMethodChart({
 
   if (loading) {
     return (
-      <div className="flex h-[320px] items-center justify-center rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+      <div className="flex h-[320px] items-center justify-center rounded-xl border border-slate-200 bg-white">
         <p className="text-sm text-slate-500">Loading collection mix…</p>
       </div>
     );
@@ -114,23 +114,23 @@ export function CollectionMethodChart({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
         {error}
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">Collection by method</h2>
-      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Confirmed payments in the report range (cash / UPI / card / other).</p>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700">Collection by method</h2>
+      <p className="mb-3 text-xs text-slate-500">Confirmed payments in the report range (cash / UPI / card / other).</p>
       {chartData.length === 0 ? (
-        <p className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">No confirmed payments in this range.</p>
+        <p className="py-12 text-center text-sm text-slate-500">No confirmed payments in this range.</p>
       ) : (
         <div className="h-[260px] w-full min-w-0">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-700" horizontal={false} />
+              <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200" horizontal={false} />
               <XAxis type="number" tickFormatter={(v) => formatInr(Number(v))} className="text-[10px]" tick={{ fill: "currentColor" }} />
               <YAxis type="category" dataKey="label" width={72} className="text-[10px]" tick={{ fill: "currentColor" }} />
               <Tooltip
@@ -138,10 +138,10 @@ export function CollectionMethodChart({
                   if (!active || !payload?.[0]) return null;
                   const p = payload[0].payload as (typeof chartData)[0];
                   return (
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-slate-600 dark:bg-slate-800">
-                      <p className="font-semibold capitalize text-slate-800 dark:text-slate-100">{p.label}</p>
-                      <p className="mt-0.5 text-slate-600 dark:text-slate-300">{formatInr(p.total_collected)}</p>
-                      <p className="text-slate-500 dark:text-slate-400">
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
+                      <p className="font-semibold capitalize text-slate-800">{p.label}</p>
+                      <p className="mt-0.5 text-slate-600">{formatInr(p.total_collected)}</p>
+                      <p className="text-slate-500">
                         {p.share_pct.toFixed(1)}% of total · {p.transaction_count} txns
                       </p>
                     </div>

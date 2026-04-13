@@ -25,6 +25,8 @@ export type SnomedResult = SnomedRow;
 const CSIRO_TIMEOUT_MS = 4000;
 const CACHE_LIMIT = 25;
 
+type CacheFilterMode = "finding_diagnosis" | "procedure";
+
 function sanitizeIlikeFragment(q: string): string {
   return q.trim().replace(/[%_,]/g, "").slice(0, 80);
 }
@@ -80,6 +82,123 @@ async function trySearchSnomedCached(params: {
   }
 }
 
+function rowFromSnomedCacheTable(row: {
+  concept_id: unknown;
+  term: unknown;
+  display_term?: unknown;
+}): SnomedResult | null {
+  const conceptId = String(row.concept_id ?? "").trim();
+  const term =
+    String(row.term ?? "").trim() ||
+    String(row.display_term ?? "").trim();
+  if (!conceptId || !term) return null;
+  return { conceptId, term, icd10: null };
+}
+
+async function searchSnomedCacheTable(params: {
+  frag: string;
+  hierarchy: string;
+  cacheFilter: CacheFilterMode | null;
+  limit: number;
+}): Promise<SnomedResult[]> {
+  const pattern = `%${params.frag}%`;
+  let q = supabase
+    .from("snomed_cache")
+    .select("concept_id, term, display_term, category, usage_count")
+    .order("usage_count", { ascending: false })
+    .limit(params.limit);
+
+  if (params.cacheFilter === "finding_diagnosis") {
+    q = q.or("category.eq.finding,category.eq.disorder").ilike("term", pattern);
+  } else if (params.cacheFilter === "procedure") {
+    q = q.eq("category", "procedure").or(`term.ilike.${pattern},display_term.ilike.${pattern}`);
+  } else {
+    q = q.eq("category", params.hierarchy).ilike("term", pattern);
+  }
+
+  const { data, error } = await q;
+  if (error) {
+    console.error("[SNOMED] snomed_cache table:", error.message);
+    return [];
+  }
+  const mapped = (data ?? [])
+    .map((row) =>
+      rowFromSnomedCacheTable(row as { concept_id: unknown; term: unknown; display_term?: unknown }),
+    )
+    .filter(Boolean) as SnomedResult[];
+  return dedupeByConceptIdPreserveOrder(mapped);
+}
+
+async function searchSnomedConceptCacheTable(params: {
+  frag: string;
+  conceptType: "finding" | "procedure";
+  limit: number;
+}): Promise<SnomedResult[]> {
+  const pattern = `%${params.frag}%`;
+  const { data, error } = await supabase
+    .from("snomed_concept_cache")
+    .select("sctid, pt_term, icd10_map, concept_type")
+    .eq("concept_type", params.conceptType)
+    .ilike("pt_term", pattern)
+    .limit(params.limit);
+
+  if (error) {
+    console.warn("[SNOMED] snomed_concept_cache:", error.message);
+    return [];
+  }
+
+  const out: SnomedResult[] = [];
+  for (const row of data ?? []) {
+    const r = row as Record<string, unknown>;
+    const conceptId = String(r.sctid ?? r.concept_id ?? "").trim();
+    const term = String(r.pt_term ?? "").trim();
+    if (!conceptId || !term) continue;
+    const icdRaw = r.icd10_map;
+    const icd10 = icdRaw != null && String(icdRaw).trim() !== "" ? String(icdRaw).trim() : null;
+    out.push({ conceptId, term, icd10 });
+  }
+  return dedupeByConceptIdPreserveOrder(out);
+}
+
+async function collectTieredSnomedResults(params: {
+  frag: string;
+  hierarchy: string;
+  cacheFilter: CacheFilterMode | null;
+  conceptCacheType: "finding" | "procedure" | null;
+  eclForExpand: string;
+}): Promise<{ rows: SnomedResult[]; usedLocalCache: boolean }> {
+  let merged: SnomedResult[] = await searchSnomedCacheTable({
+    frag: params.frag,
+    hierarchy: params.hierarchy,
+    cacheFilter: params.cacheFilter,
+    limit: CACHE_LIMIT,
+  });
+
+  if (params.conceptCacheType && merged.length < 3) {
+    const tier2 = await searchSnomedConceptCacheTable({
+      frag: params.frag,
+      conceptType: params.conceptCacheType,
+      limit: CACHE_LIMIT,
+    });
+    const seen = new Set(merged.map((r) => r.conceptId));
+    for (const r of tier2) {
+      if (seen.has(r.conceptId)) continue;
+      seen.add(r.conceptId);
+      merged.push(r);
+    }
+    merged = dedupeByConceptIdPreserveOrder(merged);
+  }
+
+  if (merged.length > 0) {
+    return { rows: merged, usedLocalCache: true };
+  }
+
+  const fromCsiro = dedupeByConceptIdPreserveOrder(
+    await expandValueSetFromCsiro(params.eclForExpand, params.frag, 15, CSIRO_TIMEOUT_MS),
+  );
+  return { rows: fromCsiro, usedLocalCache: false };
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const query = searchParams.get("q");
@@ -92,6 +211,15 @@ export async function GET(req: NextRequest) {
   const indiaRefsetKey = searchParams.get("indiaRefset");
   const specialtyParam = searchParams.get("specialty");
   const doctorIdParam = searchParams.get("doctorId");
+
+  const eclRaw = searchParams.get("ecl");
+  const decodedEcl = eclRaw ? decodeURIComponent(eclRaw).trim() : "";
+  const cacheFilterRaw = searchParams.get("cacheFilter");
+  const cacheFilter: CacheFilterMode | null =
+    cacheFilterRaw === "finding_diagnosis" || cacheFilterRaw === "procedure" ? cacheFilterRaw : null;
+  const conceptCacheTypeRaw = searchParams.get("conceptCacheType");
+  const conceptCacheType: "finding" | "procedure" | null =
+    conceptCacheTypeRaw === "finding" || conceptCacheTypeRaw === "procedure" ? conceptCacheTypeRaw : null;
 
   if (!query) return NextResponse.json({ results: [] });
   const frag = sanitizeIlikeFragment(query);
@@ -113,6 +241,11 @@ export async function GET(req: NextRequest) {
 
   const constrained = hasActiveConstraints(constraintInput);
 
+  const skipRpc = Boolean(decodedEcl || cacheFilter);
+
+  const baseHierarchyEcl = HIERARCHY_ECL[hierarchy] ?? HIERARCHY_ECL.diagnosis;
+  const eclForExpand = decodedEcl || baseHierarchyEcl;
+
   try {
     let candidates: SnomedResult[] = [];
     let usedCache = false;
@@ -122,6 +255,16 @@ export async function GET(req: NextRequest) {
       candidates = dedupeByConceptIdPreserveOrder(
         await expandValueSetFromCsiro(ecl, frag, 22, CSIRO_TIMEOUT_MS),
       );
+    } else if (skipRpc) {
+      const tiered = await collectTieredSnomedResults({
+        frag,
+        hierarchy,
+        cacheFilter,
+        conceptCacheType,
+        eclForExpand,
+      });
+      candidates = tiered.rows;
+      usedCache = tiered.usedLocalCache;
     } else {
       const rpcFirst = await trySearchSnomedCached({
         query: frag,
@@ -161,9 +304,8 @@ export async function GET(req: NextRequest) {
           candidates = fromCache;
           usedCache = true;
         } else {
-          const baseEcl = HIERARCHY_ECL[hierarchy] ?? HIERARCHY_ECL.diagnosis;
           candidates = dedupeByConceptIdPreserveOrder(
-            await expandValueSetFromCsiro(baseEcl, frag, 15, CSIRO_TIMEOUT_MS),
+            await expandValueSetFromCsiro(baseHierarchyEcl, frag, 15, CSIRO_TIMEOUT_MS),
           );
         }
       }

@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import VoiceDictationButton, { type ClinicalFinding } from "../VoiceDictationButton";
-import SnomedSearch from "../SnomedSearch";
+import SnomedSearch, { buildSnomedSearchQueryString } from "../SnomedSearch";
+import {
+  SNOMED_ECL_CLINICAL_FINDING,
+  SNOMED_ECL_MSK_FINDING,
+  isOrthopedicsSpecialty,
+} from "../../lib/ipdSnomedEcl";
 import ClinicalEntityChipPopover, { ClinicalChipEditedMarker } from "../ClinicalEntityChipPopover";
 import {
   clinicalChipFromVoiceFinding,
@@ -14,11 +19,11 @@ import type { IpdDiagnosisEntry } from "../../lib/ipdProgressNoteSnomed";
 import { cn } from "@/lib/utils";
 
 const IPD_CHIP_WRAP =
-  "inline-flex max-w-full items-stretch overflow-hidden rounded-full border border-sky-200 bg-sky-50 shadow-sm dark:border-sky-900/40 dark:bg-[#1e3a5f]";
+  "inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-sm text-blue-700 shadow-sm";
 const IPD_CHIP_MAIN =
-  "inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left text-[12px] font-medium text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-sky-400 dark:text-white";
+  "inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 border-0 bg-transparent py-0 text-left text-sm font-medium text-blue-700 outline-none focus-visible:ring-2 focus-visible:ring-blue-400";
 const IPD_CHIP_REMOVE =
-  "shrink-0 border-0 border-l border-slate-200 bg-transparent px-2 py-1.5 text-slate-400 transition hover:bg-red-100 hover:text-red-700 dark:border-white/20 dark:text-white/50 dark:hover:bg-red-900/40 dark:hover:text-white";
+  "shrink-0 border-0 border-l border-blue-200 bg-transparent px-2 py-1 text-blue-400 transition hover:text-blue-600";
 
 function DiagnosisEditOverlay({
   open,
@@ -46,37 +51,37 @@ function DiagnosisEditOverlay({
       <div
         role="dialog"
         aria-modal
-        className="relative z-10 w-full max-w-md rounded-xl border border-slate-600 bg-[#0f172a] p-4 shadow-2xl"
+        className="relative z-10 w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-sm font-bold text-white">Edit diagnosis</h3>
+        <h3 className="text-sm font-bold text-gray-900">Edit diagnosis</h3>
         <label className="mt-3 block">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Display term</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">Display term</span>
           <input
-            className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-sky-500"
             value={term}
             onChange={(e) => setTerm(e.target.value)}
           />
         </label>
-        <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2">
-          <p className="text-[10px] font-semibold text-slate-500">SNOMED CT</p>
-          <p className="mt-0.5 font-mono text-[12px] text-slate-200">{entry.snomed?.trim() || "—"}</p>
+        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          <p className="text-[10px] font-semibold text-gray-500">SNOMED CT</p>
+          <p className="mt-0.5 font-mono text-[12px] text-gray-800">{entry.snomed?.trim() || "—"}</p>
         </div>
-        <div className="mt-2 rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2">
-          <p className="text-[10px] font-semibold text-slate-500">ICD-10</p>
-          <p className="mt-0.5 text-[12px] text-slate-200">{entry.icd10?.trim() || "—"}</p>
+        <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          <p className="text-[10px] font-semibold text-gray-500">ICD-10</p>
+          <p className="mt-0.5 text-[12px] text-gray-800">{entry.icd10?.trim() || "—"}</p>
         </div>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
             type="button"
-            className="rounded-lg border border-slate-600 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-800"
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
             onClick={onClose}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="rounded-lg border border-red-800/80 bg-red-950/40 px-3 py-1.5 text-[11px] font-semibold text-red-200 hover:bg-red-950/70"
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-semibold text-red-800 hover:bg-red-100"
             onClick={() => {
               onRemove(index);
               onClose();
@@ -159,30 +164,32 @@ export function IpdSubjectiveSnomedBlock({
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Patient complaints</span>
-        <VoiceDictationButton
-          contextType="complaint"
-          specialty={specialty}
-          doctorId={practitionerId ?? undefined}
-          indiaRefset={indiaRefset ?? undefined}
-          variant="slate"
-          onTranscriptUpdate={(text, isFinal) => {
-            onComplaintQuery(text);
-            if (isFinal) onComplaintQuery("");
-          }}
-          onExtractionComplete={(raw) => {
-            const findings = raw as ClinicalFinding[];
-            if (!Array.isArray(findings) || findings.length === 0) return;
-            setSnomedLinking(true);
-            try {
-              const resolved = findings.map((f) => clinicalChipFromVoiceFinding(f));
-              onSetChips((prev) => [...prev, ...resolved]);
-              onComplaintQuery("");
-            } finally {
-              setSnomedLinking(false);
-            }
-          }}
-          className="scale-90"
-        />
+        <div className={cn(signed && "pointer-events-none opacity-50")}>
+          <VoiceDictationButton
+            contextType="complaint"
+            specialty={specialty}
+            doctorId={practitionerId ?? undefined}
+            indiaRefset={indiaRefset ?? undefined}
+            variant="slate"
+            onTranscriptUpdate={(text, isFinal) => {
+              onComplaintQuery(text);
+              if (isFinal) onComplaintQuery("");
+            }}
+            onExtractionComplete={(raw) => {
+              const findings = raw as ClinicalFinding[];
+              if (!Array.isArray(findings) || findings.length === 0) return;
+              setSnomedLinking(true);
+              try {
+                const resolved = findings.map((f) => clinicalChipFromVoiceFinding(f));
+                onSetChips((prev) => [...prev, ...resolved]);
+                onComplaintQuery("");
+              } finally {
+                setSnomedLinking(false);
+              }
+            }}
+            className="scale-90"
+          />
+        </div>
       </div>
       {(chips.length > 0 || snomedLinking) && (
         <div className="mb-2 flex flex-wrap gap-1.5">
@@ -201,13 +208,15 @@ export function IpdSubjectiveSnomedBlock({
                       setEditingId((x) => (x === c.id ? null : c.id));
                     }}
                   >
-                    {c.isEdited ? <ClinicalChipEditedMarker className="h-3 w-3 shrink-0 text-sky-200" /> : null}
+                    {c.isEdited ? <ClinicalChipEditedMarker className="h-3 w-3 shrink-0 text-blue-300" /> : null}
                     <span className="min-w-0">{label}</span>
                   </button>
                   <button
                     type="button"
+                    disabled={signed}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (signed) return;
                       removeById(c.id);
                     }}
                     className={IPD_CHIP_REMOVE}
@@ -233,7 +242,7 @@ export function IpdSubjectiveSnomedBlock({
             );
           })}
           {snomedLinking && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-900 dark:border-purple-500/40 dark:bg-purple-950/50 dark:text-purple-200">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-900">
               <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                 <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
               </svg>
@@ -243,22 +252,31 @@ export function IpdSubjectiveSnomedBlock({
         </div>
       )}
       <p className="mb-1 text-[10px] font-medium text-slate-500">+ Add complaint (SNOMED)</p>
-      <SnomedSearch
-        placeholder="Search complaint (e.g. knee pain)…"
-        hierarchy="complaint"
-        allowFreeTextNoCode
-        variant="slate"
-        value={complaintQuery}
-        onChange={onComplaintQuery}
-        onSelect={handleComplaintSelect}
-        indiaRefset={indiaRefset ?? undefined}
-      />
+      <div className={cn(signed && "pointer-events-none opacity-50")}>
+        <SnomedSearch
+          placeholder="Search complaint (e.g. knee pain)…"
+          hierarchy="complaint"
+          allowFreeTextNoCode
+          ecl={SNOMED_ECL_CLINICAL_FINDING}
+          cacheFilter="finding_diagnosis"
+          conceptCacheType="finding"
+          value={complaintQuery}
+          onChange={onComplaintQuery}
+          onSelect={handleComplaintSelect}
+          indiaRefset={indiaRefset ?? undefined}
+          specialty={specialty}
+          doctorId={practitionerId ?? undefined}
+        />
+      </div>
       <textarea
-        disabled={signed}
+        readOnly={signed}
         value={freeText}
         onChange={(e) => onFreeText(e.target.value)}
         placeholder="Additional free-text complaints…"
-        className="mt-3 min-h-[72px] w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:border-slate-600/80 dark:bg-slate-800/40 dark:text-white dark:placeholder:text-slate-600"
+        className={cn(
+          "mt-3 min-h-[72px] w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500",
+          signed && "cursor-default bg-slate-100 focus-visible:ring-0",
+        )}
       />
     </div>
   );
@@ -289,6 +307,8 @@ export function IpdExaminationSnomedBlock({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [snomedLinking, setSnomedLinking] = useState(false);
+
+  const examFindingEcl = isOrthopedicsSpecialty(specialty) ? SNOMED_ECL_MSK_FINDING : SNOMED_ECL_CLINICAL_FINDING;
 
   const handleExamSelect = (concept: { term: string; conceptId: string; icd10: string | null }) => {
     const newTerm = concept.term.trim();
@@ -322,30 +342,32 @@ export function IpdExaminationSnomedBlock({
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Examination findings</span>
-        <VoiceDictationButton
-          contextType="examination"
-          specialty={specialty}
-          doctorId={practitionerId ?? undefined}
-          indiaRefset={indiaRefset ?? undefined}
-          variant="slate"
-          onTranscriptUpdate={(text, isFinal) => {
-            onExamQuery(text);
-            if (isFinal) onExamQuery("");
-          }}
-          onExtractionComplete={(raw) => {
-            const findings = raw as ClinicalFinding[];
-            if (!Array.isArray(findings) || findings.length === 0) return;
-            setSnomedLinking(true);
-            try {
-              const resolved = findings.map((f) => clinicalChipFromVoiceFinding(f));
-              onSetChips((prev) => [...prev, ...resolved]);
-              onExamQuery("");
-            } finally {
-              setSnomedLinking(false);
-            }
-          }}
-          className="scale-90"
-        />
+        <div className={cn(signed && "pointer-events-none opacity-50")}>
+          <VoiceDictationButton
+            contextType="examination"
+            specialty={specialty}
+            doctorId={practitionerId ?? undefined}
+            indiaRefset={indiaRefset ?? undefined}
+            variant="slate"
+            onTranscriptUpdate={(text, isFinal) => {
+              onExamQuery(text);
+              if (isFinal) onExamQuery("");
+            }}
+            onExtractionComplete={(raw) => {
+              const findings = raw as ClinicalFinding[];
+              if (!Array.isArray(findings) || findings.length === 0) return;
+              setSnomedLinking(true);
+              try {
+                const resolved = findings.map((f) => clinicalChipFromVoiceFinding(f));
+                onSetChips((prev) => [...prev, ...resolved]);
+                onExamQuery("");
+              } finally {
+                setSnomedLinking(false);
+              }
+            }}
+            className="scale-90"
+          />
+        </div>
       </div>
       {(chips.length > 0 || snomedLinking) && (
         <div className="mb-2 flex flex-wrap gap-1.5">
@@ -364,13 +386,15 @@ export function IpdExaminationSnomedBlock({
                       setEditingId((x) => (x === c.id ? null : c.id));
                     }}
                   >
-                    {c.isEdited ? <ClinicalChipEditedMarker className="h-3 w-3 shrink-0 text-sky-200" /> : null}
+                    {c.isEdited ? <ClinicalChipEditedMarker className="h-3 w-3 shrink-0 text-blue-300" /> : null}
                     <span className="min-w-0">{label}</span>
                   </button>
                   <button
                     type="button"
+                    disabled={signed}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (signed) return;
                       removeById(c.id);
                     }}
                     className={IPD_CHIP_REMOVE}
@@ -396,7 +420,7 @@ export function IpdExaminationSnomedBlock({
             );
           })}
           {snomedLinking && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-900 dark:border-purple-500/40 dark:bg-purple-950/50 dark:text-purple-200">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-900">
               <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                 <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
               </svg>
@@ -406,22 +430,31 @@ export function IpdExaminationSnomedBlock({
         </div>
       )}
       <p className="mb-1 text-[10px] font-medium text-slate-500">+ Add finding (SNOMED)</p>
-      <SnomedSearch
-        placeholder="Search examination finding…"
-        hierarchy="finding"
-        allowFreeTextNoCode
-        variant="slate"
-        value={examQuery}
-        onChange={onExamQuery}
-        onSelect={handleExamSelect}
-        indiaRefset={indiaRefset ?? undefined}
-      />
+      <div className={cn(signed && "pointer-events-none opacity-50")}>
+        <SnomedSearch
+          placeholder="Search examination finding…"
+          hierarchy="finding"
+          allowFreeTextNoCode
+          ecl={examFindingEcl}
+          cacheFilter="finding_diagnosis"
+          conceptCacheType="finding"
+          value={examQuery}
+          onChange={onExamQuery}
+          onSelect={handleExamSelect}
+          indiaRefset={indiaRefset ?? undefined}
+          specialty={specialty}
+          doctorId={practitionerId ?? undefined}
+        />
+      </div>
       <textarea
-        disabled={signed}
+        readOnly={signed}
         value={freeText}
         onChange={(e) => onFreeText(e.target.value)}
         placeholder="Additional free-text examination notes…"
-        className="mt-3 min-h-[72px] w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:border-slate-600/80 dark:bg-slate-800/40 dark:text-white dark:placeholder:text-slate-600"
+        className={cn(
+          "mt-3 min-h-[72px] w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500",
+          signed && "cursor-default bg-slate-100 focus-visible:ring-0",
+        )}
       />
     </div>
   );
@@ -461,8 +494,17 @@ export function IpdAssessmentSnomedBlock({
         const label = (r.diagnosis ?? "").trim();
         if (!label) continue;
         try {
-          const ir = indiaRefset ? `&indiaRefset=${encodeURIComponent(indiaRefset)}` : "";
-          const res = await fetch(`/api/snomed/search?q=${encodeURIComponent(label)}&hierarchy=diagnosis${ir}`);
+          const qs = buildSnomedSearchQueryString({
+            q: label,
+            hierarchy: "diagnosis",
+            ecl: SNOMED_ECL_CLINICAL_FINDING,
+            cacheFilter: "finding_diagnosis",
+            conceptCacheType: "finding",
+            indiaRefset: indiaRefset ?? undefined,
+            specialty,
+            doctorId: practitionerId ?? undefined,
+          });
+          const res = await fetch(`/api/snomed/search?${qs}`);
           const data = (await res.json()) as {
             results?: Array<{ term: string; conceptId: string; icd10: string | null }>;
           };
@@ -489,7 +531,7 @@ export function IpdAssessmentSnomedBlock({
         return next;
       });
     },
-    [indiaRefset, onSetEntries],
+    [indiaRefset, onSetEntries, practitionerId, specialty],
   );
 
   const handleDiagnosisSelect = (concept: { term: string; conceptId: string; icd10: string | null }) => {
@@ -512,28 +554,30 @@ export function IpdAssessmentSnomedBlock({
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Assessment</span>
-        <VoiceDictationButton
-          contextType="diagnosis"
-          specialty={specialty}
-          doctorId={practitionerId ?? undefined}
-          indiaRefset={indiaRefset ?? undefined}
-          variant="slate"
-          onTranscriptUpdate={(text, isFinal) => {
-            onDiagnosisQuery(text);
-            if (isFinal) onDiagnosisQuery("");
-          }}
-          onExtractionComplete={async (payload) => {
-            const rows = payload as { diagnosis?: string }[];
-            if (!Array.isArray(rows) || rows.length === 0) return;
-            setSnomedLinkingDx(true);
-            try {
-              await resolveVoiceDiagnoses(rows);
-            } finally {
-              setSnomedLinkingDx(false);
-            }
-          }}
-          className="scale-90"
-        />
+        <div className={cn(signed && "pointer-events-none opacity-50")}>
+          <VoiceDictationButton
+            contextType="diagnosis"
+            specialty={specialty}
+            doctorId={practitionerId ?? undefined}
+            indiaRefset={indiaRefset ?? undefined}
+            variant="slate"
+            onTranscriptUpdate={(text, isFinal) => {
+              onDiagnosisQuery(text);
+              if (isFinal) onDiagnosisQuery("");
+            }}
+            onExtractionComplete={async (payload) => {
+              const rows = payload as { diagnosis?: string }[];
+              if (!Array.isArray(rows) || rows.length === 0) return;
+              setSnomedLinkingDx(true);
+              try {
+                await resolveVoiceDiagnoses(rows);
+              } finally {
+                setSnomedLinkingDx(false);
+              }
+            }}
+            className="scale-90"
+          />
+        </div>
       </div>
       {(entries.length > 0 || snomedLinkingDx) && (
         <div className="mb-2 flex flex-wrap gap-1.5">
@@ -553,8 +597,10 @@ export function IpdAssessmentSnomedBlock({
               </button>
               <button
                 type="button"
+                disabled={signed}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (signed) return;
                   removeAt(i);
                 }}
                 className={IPD_CHIP_REMOVE}
@@ -567,7 +613,7 @@ export function IpdAssessmentSnomedBlock({
             </span>
           ))}
           {snomedLinkingDx && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-900 dark:border-purple-500/40 dark:bg-purple-950/50 dark:text-purple-200">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-[11px] font-medium text-purple-900">
               <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                 <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
               </svg>
@@ -577,22 +623,31 @@ export function IpdAssessmentSnomedBlock({
         </div>
       )}
       <p className="mb-1 text-[10px] font-medium text-slate-500">+ Add diagnosis (SNOMED)</p>
-      <SnomedSearch
-        placeholder="Search diagnosis (e.g. osteoarthritis of knee)…"
-        hierarchy="diagnosis"
-        allowFreeTextNoCode
-        variant="slate"
-        value={diagnosisQuery}
-        onChange={onDiagnosisQuery}
-        onSelect={handleDiagnosisSelect}
-        indiaRefset={indiaRefset ?? undefined}
-      />
+      <div className={cn(signed && "pointer-events-none opacity-50")}>
+        <SnomedSearch
+          placeholder="Search diagnosis (e.g. osteoarthritis of knee)…"
+          hierarchy="diagnosis"
+          allowFreeTextNoCode
+          ecl={SNOMED_ECL_CLINICAL_FINDING}
+          cacheFilter="finding_diagnosis"
+          conceptCacheType="finding"
+          value={diagnosisQuery}
+          onChange={onDiagnosisQuery}
+          onSelect={handleDiagnosisSelect}
+          indiaRefset={indiaRefset ?? undefined}
+          specialty={specialty}
+          doctorId={practitionerId ?? undefined}
+        />
+      </div>
       <textarea
-        disabled={signed}
+        readOnly={signed}
         value={freeText}
         onChange={(e) => onFreeText(e.target.value)}
         placeholder="Additional free-text assessment…"
-        className="mt-3 min-h-[72px] w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500 dark:border-slate-600/80 dark:bg-slate-800/40 dark:text-white dark:placeholder:text-slate-600"
+        className={cn(
+          "mt-3 min-h-[72px] w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500",
+          signed && "cursor-default bg-slate-100 focus-visible:ring-0",
+        )}
       />
       <DiagnosisEditOverlay
         open={editIdx != null && editingEntry != null}

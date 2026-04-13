@@ -4,8 +4,6 @@ import type { DashboardRoleRouting } from "./app/lib/dashboardRoleRouting";
 import {
   fetchEffectiveRoleRawFromDb,
   isPathAllowedByPrefixes,
-  normalizeDashboardRoleKey,
-  nurseDashboardRouting,
   resolveDashboardRoutingFromRoleRaw,
 } from "./app/lib/dashboardRoleRouting";
 import { rawRoleHasAdminPrivileges } from "./app/lib/userRole";
@@ -25,6 +23,8 @@ function isProtectedPath(pathname: string): boolean {
   if (pathname === "/reception" || pathname.startsWith("/reception/")) return true;
   if (pathname === "/opd" || pathname.startsWith("/opd/")) return true;
   if (pathname === "/billing" || pathname.startsWith("/billing/")) return true;
+  if (pathname === "/nursing" || pathname.startsWith("/nursing/")) return true;
+  if (pathname === "/lab" || pathname.startsWith("/lab/")) return true;
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
@@ -85,19 +85,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const { effectiveRoleRaw: roleRaw } = await fetchEffectiveRoleRawFromDb(supabase, user.id);
-  const roleKeyLower = normalizeDashboardRoleKey(roleRaw);
-
-  let routing: DashboardRoleRouting;
-  switch (roleKeyLower) {
-    case "nurse":
-    case "nursing":
-    case "rn":
-      routing = nurseDashboardRouting();
-      break;
-    default:
-      routing = resolveDashboardRoutingFromRoleRaw(roleRaw);
-      break;
-  }
+  const routing: DashboardRoleRouting = resolveDashboardRoutingFromRoleRaw(roleRaw);
 
   const isAdminHubPath =
     pathname === "/dashboard/admin" ||
@@ -112,9 +100,7 @@ export async function middleware(request: NextRequest) {
   const isDashboardRoot = pathname === "/dashboard" || pathname === "/dashboard/";
 
   if (isDashboardRoot) {
-    const literalNurse =
-      roleKeyLower === "nurse" || roleKeyLower === "nursing" || roleKeyLower === "rn";
-    const hubTarget = literalNurse ? "/reception" : routing.homePath;
+    const hubTarget = routing.homePath;
     if (hubTarget !== "/dashboard") {
       const to = new URL(hubTarget, request.url);
       return NextResponse.redirect(to);
@@ -146,5 +132,13 @@ export const config = {
     "/admin/:path*",
     "/billing",
     "/billing/:path*",
+    "/nursing",
+    "/nursing/:path*",
+    "/lab",
+    "/lab/:path*",
+    "/reception",
+    "/reception/:path*",
+    "/opd",
+    "/opd/:path*",
   ],
 };

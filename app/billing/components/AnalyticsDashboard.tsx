@@ -99,7 +99,7 @@ export function CategoryBreakdownPie({
           <CardTitle>Revenue by category</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Sign in as a practitioner to load this report.</p>
+          <p className="text-sm text-slate-500">Sign in as a practitioner to load this report.</p>
         </CardContent>
       </Card>
     );
@@ -125,7 +125,7 @@ export function CategoryBreakdownPie({
           <CardTitle>Revenue by category</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <p className="text-sm text-red-600">{error}</p>
         </CardContent>
       </Card>
     );
@@ -138,20 +138,20 @@ export function CategoryBreakdownPie({
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">No line-item revenue in this range.</p>
+          <p className="text-sm text-slate-500">No line-item revenue in this range.</p>
         ) : (
           <div className="space-y-3">
             {data.map((item, idx) => (
               <div key={item.category} className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="h-4 w-4 shrink-0 rounded" style={{ backgroundColor: CATEGORY_COLORS[idx % CATEGORY_COLORS.length] }} />
-                  <span className="truncate capitalize text-slate-800 dark:text-slate-200">{item.category.replace(/_/g, " ")}</span>
+                  <span className="truncate capitalize text-slate-800">{item.category.replace(/_/g, " ")}</span>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="font-semibold tabular-nums text-slate-900 dark:text-slate-50">
+                  <div className="font-semibold tabular-nums text-slate-900">
                     ₹{item.revenue.toLocaleString("en-IN")}
                   </div>
-                  <div className="text-sm text-slate-500 dark:text-slate-400">{item.percentage.toFixed(1)}%</div>
+                  <div className="text-sm text-slate-500">{item.percentage.toFixed(1)}%</div>
                 </div>
               </div>
             ))}
@@ -231,7 +231,7 @@ export function ServiceUtilizationTable({
           <CardTitle>Top services by revenue</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Sign in as a practitioner to load this report.</p>
+          <p className="text-sm text-slate-500">Sign in as a practitioner to load this report.</p>
         </CardContent>
       </Card>
     );
@@ -257,7 +257,7 @@ export function ServiceUtilizationTable({
           <CardTitle>Top services by revenue</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <p className="text-sm text-red-600">{error}</p>
         </CardContent>
       </Card>
     );
@@ -270,29 +270,29 @@ export function ServiceUtilizationTable({
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">No service-linked line items in this range.</p>
+          <p className="text-sm text-slate-500">No service-linked line items in this range.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-left dark:border-slate-700">
-                  <th className="py-2 pr-2 font-semibold text-slate-700 dark:text-slate-300">Service</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">Usage</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">Revenue</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">Avg price</th>
-                  <th className="py-2 text-right font-semibold text-slate-700 dark:text-slate-300">Margin %</th>
+                <tr className="border-b border-slate-200 text-left">
+                  <th className="py-2 pr-2 font-semibold text-slate-700">Service</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">Usage</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">Revenue</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">Avg price</th>
+                  <th className="py-2 text-right font-semibold text-slate-700">Margin %</th>
                 </tr>
               </thead>
               <tbody>
                 {data.map((s, i) => (
-                  <tr key={s.service_id ?? `unlinked-${i}-${s.service_name}`} className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="py-2 pr-2 text-slate-900 dark:text-slate-100">{s.service_name}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">{s.usage_count}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                  <tr key={s.service_id ?? `unlinked-${i}-${s.service_name}`} className="border-b border-slate-100">
+                    <td className="py-2 pr-2 text-slate-900">{s.service_name}</td>
+                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700">{s.usage_count}</td>
+                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700">
                       ₹{s.total_revenue.toLocaleString("en-IN")}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">₹{s.avg_price.toFixed(0)}</td>
-                    <td className="py-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700">₹{s.avg_price.toFixed(0)}</td>
+                    <td className="py-2 text-right tabular-nums text-slate-700">
                       {s.margin_percent != null ? `${s.margin_percent.toFixed(1)}%` : "—"}
                     </td>
                   </tr>
@@ -367,7 +367,7 @@ export function OutstandingAgingGrid({ hospitalId }: { hospitalId: string | null
           <CardTitle>Outstanding by department (aging)</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Sign in as a practitioner to load this report.</p>
+          <p className="text-sm text-slate-500">Sign in as a practitioner to load this report.</p>
         </CardContent>
       </Card>
     );
@@ -393,7 +393,7 @@ export function OutstandingAgingGrid({ hospitalId }: { hospitalId: string | null
           <CardTitle>Outstanding by department (aging)</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <p className="text-sm text-red-600">{error}</p>
         </CardContent>
       </Card>
     );
@@ -406,40 +406,40 @@ export function OutstandingAgingGrid({ hospitalId }: { hospitalId: string | null
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">No open balances.</p>
+          <p className="text-sm text-slate-500">No open balances.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700">
-                  <th className="py-2 pr-2 text-left font-semibold text-slate-700 dark:text-slate-300">Department</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">0–30 days</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">31–60 days</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">61–90 days</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-red-600 dark:text-red-400">90+ days</th>
-                  <th className="py-2 text-right font-bold text-slate-900 dark:text-slate-100">Total</th>
+                <tr className="border-b border-slate-200">
+                  <th className="py-2 pr-2 text-left font-semibold text-slate-700">Department</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">0–30 days</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">31–60 days</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">61–90 days</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-red-600">90+ days</th>
+                  <th className="py-2 text-right font-bold text-slate-900">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {data.map((d) => (
                   <tr
                     key={d.department_id ?? `unassigned-${d.department_name}`}
-                    className="border-b border-slate-100 dark:border-slate-800"
+                    className="border-b border-slate-100"
                   >
-                    <td className="py-2 pr-2 text-slate-900 dark:text-slate-100">{d.department_name}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                    <td className="py-2 pr-2 text-slate-900">{d.department_name}</td>
+                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700">
                       ₹{d.outstanding_0_30.toLocaleString("en-IN")}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700">
                       ₹{d.outstanding_31_60.toLocaleString("en-IN")}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700">
                       ₹{d.outstanding_61_90.toLocaleString("en-IN")}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-red-600 dark:text-red-400">
+                    <td className="py-2 pr-2 text-right tabular-nums text-red-600">
                       ₹{d.outstanding_90_plus.toLocaleString("en-IN")}
                     </td>
-                    <td className="py-2 text-right font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                    <td className="py-2 text-right font-bold tabular-nums text-slate-900">
                       ₹{d.total_outstanding.toLocaleString("en-IN")}
                     </td>
                   </tr>
@@ -516,7 +516,7 @@ export function TopDefaulters({ hospitalId }: { hospitalId: string | null }) {
           <CardTitle>Top 10 outstanding patients</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Sign in as a practitioner to load this report.</p>
+          <p className="text-sm text-slate-500">Sign in as a practitioner to load this report.</p>
         </CardContent>
       </Card>
     );
@@ -542,7 +542,7 @@ export function TopDefaulters({ hospitalId }: { hospitalId: string | null }) {
           <CardTitle>Top 10 outstanding patients</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <p className="text-sm text-red-600">{error}</p>
         </CardContent>
       </Card>
     );
@@ -555,27 +555,27 @@ export function TopDefaulters({ hospitalId }: { hospitalId: string | null }) {
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">No open balances.</p>
+          <p className="text-sm text-slate-500">No open balances.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-sm">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700">
-                  <th className="py-2 pr-2 text-left font-semibold text-slate-700 dark:text-slate-300">Patient</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">Amount due</th>
-                  <th className="py-2 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300">Invoices</th>
-                  <th className="py-2 text-right font-semibold text-slate-700 dark:text-slate-300">Oldest invoice</th>
+                <tr className="border-b border-slate-200">
+                  <th className="py-2 pr-2 text-left font-semibold text-slate-700">Patient</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">Amount due</th>
+                  <th className="py-2 pr-2 text-right font-semibold text-slate-700">Invoices</th>
+                  <th className="py-2 text-right font-semibold text-slate-700">Oldest invoice</th>
                 </tr>
               </thead>
               <tbody>
                 {data.map((p) => (
-                  <tr key={p.patient_id} className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="py-2 pr-2 text-slate-900 dark:text-slate-100">{p.patient_name}</td>
-                    <td className="py-2 pr-2 text-right font-semibold tabular-nums text-red-600 dark:text-red-400">
+                  <tr key={p.patient_id} className="border-b border-slate-100">
+                    <td className="py-2 pr-2 text-slate-900">{p.patient_name}</td>
+                    <td className="py-2 pr-2 text-right font-semibold tabular-nums text-red-600">
                       ₹{p.total_outstanding.toLocaleString("en-IN")}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">{p.invoice_count}</td>
-                    <td className="py-2 text-right text-slate-600 dark:text-slate-400">
+                    <td className="py-2 pr-2 text-right tabular-nums text-slate-700">{p.invoice_count}</td>
+                    <td className="py-2 text-right text-slate-600">
                       {p.oldest_invoice_date ? formatDay(p.oldest_invoice_date) : "—"}
                     </td>
                   </tr>
@@ -642,7 +642,7 @@ export function DateRangePicker({
         </PopoverContent>
       </Popover>
 
-      <span className="text-sm text-slate-500 dark:text-slate-400">to</span>
+      <span className="text-sm text-slate-500">to</span>
 
       <Popover open={endOpen} onOpenChange={setEndOpen}>
         <PopoverTrigger asChild>
@@ -684,7 +684,7 @@ export function BillingAnalyticsSection({
     <div className="space-y-6">
       {showDatePicker && onStartDateChange && onEndDateChange ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Analytics date range</p>
+          <p className="text-sm font-medium text-slate-700">Analytics date range</p>
           <DateRangePicker
             startDate={startDate}
             endDate={endDate}

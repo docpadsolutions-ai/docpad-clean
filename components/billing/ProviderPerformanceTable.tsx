@@ -81,7 +81,7 @@ export function ProviderPerformanceTable({
 
   if (!hospitalId) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
         Sign in as a practitioner to load provider revenue.
       </div>
     );
@@ -89,7 +89,7 @@ export function ProviderPerformanceTable({
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="text-sm text-slate-500">Loading provider performance…</p>
       </div>
     );
@@ -97,25 +97,25 @@ export function ProviderPerformanceTable({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
         {error}
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">Provider performance</h2>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700">Provider performance</h2>
+      <p className="mb-4 text-xs text-slate-500">
         Billed gross by attending doctor (from linked OPD encounter). Invoices without an encounter appear as Unassigned.
       </p>
       {data.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">No invoices in this range.</p>
+        <p className="py-8 text-center text-sm text-slate-500">No invoices in this range.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-600 dark:text-slate-400">
+              <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="py-2 pr-4">Provider</th>
                 <th className="py-2 pr-4 text-right">Revenue</th>
                 <th className="py-2 pr-4 text-right">Patients</th>
@@ -126,12 +126,12 @@ export function ProviderPerformanceTable({
               {data.map((row) => (
                 <tr
                   key={row.practitioner_id ?? `unassigned-${row.practitioner_name}`}
-                  className="border-b border-slate-100 dark:border-slate-800"
+                  className="border-b border-slate-100"
                 >
-                  <td className="py-2.5 pr-4 font-medium text-slate-900 dark:text-slate-100">{row.practitioner_name}</td>
-                  <td className="py-2.5 pr-4 text-right tabular-nums text-slate-800 dark:text-slate-200">{formatInr(row.total_revenue)}</td>
-                  <td className="py-2.5 pr-4 text-right tabular-nums text-slate-600 dark:text-slate-400">{row.patient_count}</td>
-                  <td className="py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400">{row.invoice_count}</td>
+                  <td className="py-2.5 pr-4 font-medium text-slate-900">{row.practitioner_name}</td>
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-slate-800">{formatInr(row.total_revenue)}</td>
+                  <td className="py-2.5 pr-4 text-right tabular-nums text-slate-600">{row.patient_count}</td>
+                  <td className="py-2.5 text-right tabular-nums text-slate-600">{row.invoice_count}</td>
                 </tr>
               ))}
             </tbody>

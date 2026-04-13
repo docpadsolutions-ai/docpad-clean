@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
+const CODE_SYSTEM = "http://snomed.info/sct";
+
 export type DepartmentRow = {
   id: string;
   name: string;
@@ -20,6 +22,12 @@ export type DepartmentRow = {
   consultation_fee: number;
   is_active: boolean;
   type: string;
+};
+
+/** Consultation charge linked via `charge_item_definitions.applicability_rules.department_id`. */
+export type DeptConsultCharge = {
+  id: string;
+  base_price: number;
 };
 
 function parseDepartmentRow(r: Record<string, unknown>): DepartmentRow {
@@ -38,6 +46,45 @@ function parseDepartmentRow(r: Record<string, unknown>): DepartmentRow {
     is_active: Boolean(r.is_active),
     type: String(r.type ?? ""),
   };
+}
+
+function getDepartmentIdFromRules(rules: unknown): string | null {
+  if (!rules || typeof rules !== "object" || Array.isArray(rules)) return null;
+  const rid = (rules as Record<string, unknown>).department_id;
+  if (rid == null) return null;
+  const s = String(rid).trim();
+  return s || null;
+}
+
+function buildConsultChargeByDept(
+  chargeRows: Record<string, unknown>[],
+): Record<string, DeptConsultCharge> {
+  const parsed = chargeRows
+    .map((r) => {
+      const deptId = getDepartmentIdFromRules(r.applicability_rules);
+      if (!deptId) return null;
+      const bp = r.base_price;
+      const basePrice = typeof bp === "number" ? bp : bp != null ? Number(bp) : 0;
+      return {
+        deptId,
+        id: String(r.id ?? ""),
+        base_price: Number.isFinite(basePrice) ? basePrice : 0,
+        status: String(r.status ?? ""),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x != null && Boolean(x.id));
+
+  parsed.sort((a, b) => {
+    if (a.status === "active" && b.status !== "active") return -1;
+    if (b.status === "active" && a.status !== "active") return 1;
+    return 0;
+  });
+
+  const map: Record<string, DeptConsultCharge> = {};
+  for (const p of parsed) {
+    if (!map[p.deptId]) map[p.deptId] = { id: p.id, base_price: p.base_price };
+  }
+  return map;
 }
 
 /** Normalize Postgres time to `HH:MM` for `<input type="time" />`. */
@@ -69,6 +116,47 @@ function formatFeeInr(n: number): string {
   }
 }
 
+const HIDDEN_DEPARTMENT_NAMES = new Set([
+  "Administration",
+  "Pharmacy",
+  "Diagnostics",
+  "Accounts",
+  "HR",
+  "IT",
+  "Housekeeping",
+]);
+
+function looksLikeSupportDepartmentName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  const patterns = [
+    /\badmin(istration)?\b/,
+    /\bpharmacy\b/,
+    /\bdiagnostic\b/,
+    /\baccount(s)?\b/,
+    /\bhr\b/,
+    /\bit\b/,
+    /\bhousekeeping\b/,
+    /\bbilling\b/,
+    /\bfinance\b/,
+    /\breception\b/,
+    /\bsecurity\b/,
+    /\bmaintenance\b/,
+    /\bcanteen\b/,
+    /\bstores?\b/,
+    /\bpurchase(s)?\b/,
+    /\bmarketing\b/,
+  ];
+  return patterns.some((p) => p.test(n));
+}
+
+function isClinicalDepartment(row: DepartmentRow): boolean {
+  const name = row.name.trim();
+  if (HIDDEN_DEPARTMENT_NAMES.has(name)) return false;
+  const hasSpecialty = row.specialty != null && row.specialty.trim() !== "";
+  if (hasSpecialty) return true;
+  return !looksLikeSupportDepartmentName(name);
+}
+
 type ModalMode = "create" | "edit";
 
 type FormFields = {
@@ -77,7 +165,6 @@ type FormFields = {
   opd_hours_start: string;
   opd_hours_end: string;
   slot_duration_minutes: string;
-  consultation_fee: string;
 };
 
 const defaultForm = (): FormFields => ({
@@ -86,7 +173,6 @@ const defaultForm = (): FormFields => ({
   opd_hours_start: "09:00",
   opd_hours_end: "17:00",
   slot_duration_minutes: "15",
-  consultation_fee: "0",
 });
 
 function rowToForm(row: DepartmentRow): FormFields {
@@ -96,7 +182,6 @@ function rowToForm(row: DepartmentRow): FormFields {
     opd_hours_start: toTimeInputValue(row.opd_hours_start) || "09:00",
     opd_hours_end: toTimeInputValue(row.opd_hours_end) || "17:00",
     slot_duration_minutes: String(row.slot_duration_minutes),
-    consultation_fee: String(row.consultation_fee),
   };
 }
 
@@ -104,6 +189,7 @@ export default function DepartmentsAdminPage() {
   const dialogTitleId = useId();
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [rows, setRows] = useState<DepartmentRow[]>([]);
+  const [chargeByDeptId, setChargeByDeptId] = useState<Record<string, DeptConsultCharge>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -113,19 +199,49 @@ export default function DepartmentsAdminPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [rowBusyId, setRowBusyId] = useState<string | null>(null);
+  const [feeDraftByDept, setFeeDraftByDept] = useState<Record<string, string>>({});
+  const [feeSavingId, setFeeSavingId] = useState<string | null>(null);
+
+  const clinicalRows = useMemo(() => rows.filter(isClinicalDepartment), [rows]);
 
   const load = useCallback(async (hid: string) => {
     setLoading(true);
     setError(null);
-    const { data, error: rpcErr } = await supabase.rpc("get_departments", { p_hospital_id: hid });
+    const [{ data, error: rpcErr }, chargeRes] = await Promise.all([
+      supabase.rpc("get_departments", { p_hospital_id: hid }),
+      supabase
+        .from("charge_item_definitions")
+        .select("id, base_price, status, applicability_rules")
+        .eq("hospital_id", hid)
+        .eq("category", "consultation"),
+    ]);
     setLoading(false);
     if (rpcErr) {
       setError(rpcErr.message);
       setRows([]);
+      setChargeByDeptId({});
+      setFeeDraftByDept({});
       return;
     }
     const list = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
-    setRows(list.map(parseDepartmentRow));
+    const parsedRows = list.map(parseDepartmentRow);
+    setRows(parsedRows);
+
+    if (chargeRes.error) {
+      setError(chargeRes.error.message);
+      setChargeByDeptId({});
+      setFeeDraftByDept({});
+      return;
+    }
+    const chargeRows = (Array.isArray(chargeRes.data) ? chargeRes.data : []) as Record<string, unknown>[];
+    const chargeMap = buildConsultChargeByDept(chargeRows);
+    setChargeByDeptId(chargeMap);
+    const drafts: Record<string, string> = {};
+    for (const r of parsedRows.filter(isClinicalDepartment)) {
+      const c = chargeMap[r.id];
+      drafts[r.id] = c ? String(c.base_price) : "";
+    }
+    setFeeDraftByDept(drafts);
   }, []);
 
   useEffect(() => {
@@ -181,8 +297,6 @@ export default function DepartmentsAdminPage() {
     if (b <= a) return "OPD end must be after start.";
     const slot = Number(f.slot_duration_minutes);
     if (!Number.isFinite(slot) || slot < 5 || slot > 240) return "Slot duration must be between 5 and 240 minutes.";
-    const fee = Number(f.consultation_fee);
-    if (!Number.isFinite(fee) || fee < 0) return "Fee must be a non-negative number.";
     return null;
   };
 
@@ -196,7 +310,6 @@ export default function DepartmentsAdminPage() {
     setFormError(null);
     setSaving(true);
     const slot = Number(form.slot_duration_minutes);
-    const fee = Number(form.consultation_fee);
     const specialty = form.specialty.trim() || null;
 
     if (modalMode === "create") {
@@ -207,7 +320,7 @@ export default function DepartmentsAdminPage() {
         p_opd_hours_start: form.opd_hours_start,
         p_opd_hours_end: form.opd_hours_end,
         p_slot_duration_minutes: slot,
-        p_consultation_fee: fee,
+        p_consultation_fee: 0,
       });
       setSaving(false);
       if (rpcErr) {
@@ -223,7 +336,7 @@ export default function DepartmentsAdminPage() {
         p_opd_hours_start: form.opd_hours_start,
         p_opd_hours_end: form.opd_hours_end,
         p_slot_duration_minutes: slot,
-        p_consultation_fee: fee,
+        p_consultation_fee: row?.consultation_fee ?? 0,
         p_is_active: row?.is_active ?? true,
       });
       setSaving(false);
@@ -258,6 +371,67 @@ export default function DepartmentsAdminPage() {
     await load(hospitalId);
   };
 
+  const applyConsultFee = async (row: DepartmentRow) => {
+    if (!hospitalId) return;
+    const raw = feeDraftByDept[row.id]?.trim() ?? "";
+    const num = Number(raw.replace(/,/g, ""));
+    if (!Number.isFinite(num) || num < 0) {
+      setError("Enter a valid consultation fee (₹).");
+      return;
+    }
+    setError(null);
+    setFeeSavingId(row.id);
+    const existing = chargeByDeptId[row.id];
+
+    if (existing) {
+      const { error: upErr } = await supabase
+        .from("charge_item_definitions")
+        .update({ base_price: num })
+        .eq("id", existing.id);
+      setFeeSavingId(null);
+      if (upErr) {
+        setError(upErr.message);
+        return;
+      }
+      await load(hospitalId);
+      return;
+    }
+
+    const { count, error: countErr } = await supabase
+      .from("charge_item_definitions")
+      .select("*", { count: "exact", head: true })
+      .eq("hospital_id", hospitalId)
+      .eq("category", "consultation");
+    if (countErr) {
+      setFeeSavingId(null);
+      setError(countErr.message);
+      return;
+    }
+    const nextNum = (count ?? 0) + 1;
+    const code = `CHG-CONS-${String(nextNum).padStart(3, "0")}`;
+    const displayName = `OPD Consultation — ${row.name.trim()}`;
+    const { error: insErr } = await supabase.from("charge_item_definitions").insert({
+      hospital_id: hospitalId,
+      code,
+      code_system: CODE_SYSTEM,
+      display_name: displayName,
+      category: "consultation",
+      base_price: num,
+      currency: "INR",
+      tax_type: "gst_exempt",
+      tax_rate: 0,
+      status: "active",
+      effective_from: new Date().toISOString().slice(0, 10),
+      applicability_rules: { department_id: row.id },
+    });
+    setFeeSavingId(null);
+    if (insErr) {
+      setError(insErr.message);
+      return;
+    }
+    await load(hospitalId);
+  };
+
   const opdLabel = useMemo(
     () => (row: DepartmentRow) =>
       row.opd_hours_start && row.opd_hours_end
@@ -265,6 +439,8 @@ export default function DepartmentsAdminPage() {
         : "—",
     [],
   );
+
+  const pricingConsultationHref = "/admin/pricing?category=consultation";
 
   return (
     <div className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6">
@@ -274,7 +450,10 @@ export default function DepartmentsAdminPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Administration</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">Departments</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              OPD hours, slot length, and consultation fee per department.
+              OPD hours and slot configuration per clinical department
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Showing clinical departments only. Support departments are managed in Staff Directory.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -295,7 +474,7 @@ export default function DepartmentsAdminPage() {
 
         <Card className="border-border shadow-sm">
           <CardHeader className="border-b border-border pb-4">
-            <CardTitle className="text-lg">All departments</CardTitle>
+            <CardTitle className="text-lg">Clinical departments</CardTitle>
             <CardDescription>Managed with your hospital admin privileges.</CardDescription>
           </CardHeader>
           <CardContent className="p-0 pt-0">
@@ -307,9 +486,10 @@ export default function DepartmentsAdminPage() {
                 />
                 <p className="text-sm font-medium text-muted-foreground">Loading departments…</p>
               </div>
-            ) : rows.length === 0 ? (
+            ) : clinicalRows.length === 0 ? (
               <div className="p-10 text-center text-sm text-muted-foreground">
-                No departments yet. Add one to configure OPD scheduling and fees.
+                No clinical departments to show. Add one to configure OPD scheduling, or manage support departments in Staff
+                Directory.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -320,48 +500,92 @@ export default function DepartmentsAdminPage() {
                       <TableHead className="min-w-[120px]">Specialty</TableHead>
                       <TableHead className="min-w-[160px]">OPD hours</TableHead>
                       <TableHead className="min-w-[100px]">Slot duration</TableHead>
-                      <TableHead className="min-w-[100px]">Fee</TableHead>
+                      <TableHead className="min-w-[200px]">Consultation fee</TableHead>
                       <TableHead className="min-w-[90px]">Status</TableHead>
                       <TableHead className="w-[200px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((row) => (
-                      <TableRow key={row.id} className="border-border">
-                        <TableCell className="font-medium text-foreground">{row.name}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{row.specialty ?? "—"}</TableCell>
-                        <TableCell className="text-sm tabular-nums">{opdLabel(row)}</TableCell>
-                        <TableCell className="text-sm tabular-nums">{row.slot_duration_minutes} min</TableCell>
-                        <TableCell className="text-sm tabular-nums">{formatFeeInr(row.consultation_fee)}</TableCell>
-                        <TableCell>
-                          {row.is_active ? (
-                            <span className="inline-flex rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-semibold text-green-600 dark:bg-green-500/20 dark:text-green-400">
-                              Active
-                            </span>
-                          ) : (
-                            <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground ring-1 ring-border">
-                              Inactive
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Button type="button" variant="outline" size="sm" onClick={() => openEdit(row)}>
-                              Edit
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={rowBusyId === row.id}
-                              onClick={() => void toggleActive(row)}
-                            >
-                              {rowBusyId === row.id ? "…" : row.is_active ? "Deactivate" : "Activate"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {clinicalRows.map((row) => {
+                      const linked = chargeByDeptId[row.id];
+                      return (
+                        <TableRow key={row.id} className="border-border">
+                          <TableCell className="font-medium text-foreground">{row.name}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{row.specialty ?? "—"}</TableCell>
+                          <TableCell className="text-sm tabular-nums">{opdLabel(row)}</TableCell>
+                          <TableCell className="text-sm tabular-nums">{row.slot_duration_minutes} min</TableCell>
+                          <TableCell className="align-top">
+                            <div className="flex min-w-[12rem] flex-col gap-1.5">
+                              {linked ? (
+                                <p className="text-sm tabular-nums text-foreground">
+                                  {formatFeeInr(linked.base_price)}{" "}
+                                  <span className="text-xs font-normal text-muted-foreground">(from Pricing)</span>
+                                </p>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">Not set in Pricing</p>
+                              )}
+                              <Link
+                                href={pricingConsultationHref}
+                                className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                              >
+                                Edit in Pricing →
+                              </Link>
+                              <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  className="h-8 w-[7.5rem]"
+                                  aria-label={`Consultation fee amount for ${row.name}`}
+                                  value={feeDraftByDept[row.id] ?? ""}
+                                  onChange={(e) =>
+                                    setFeeDraftByDept((prev) => ({ ...prev, [row.id]: e.target.value }))
+                                  }
+                                />
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  className="h-8"
+                                  disabled={feeSavingId === row.id}
+                                  onClick={() => void applyConsultFee(row)}
+                                >
+                                  {feeSavingId === row.id ? "…" : "Apply"}
+                                </Button>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">Updates the charge catalog (Pricing).</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {row.is_active ? (
+                              <span className="inline-flex rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-semibold text-green-600 dark:bg-green-500/20 dark:text-green-400">
+                                Active
+                              </span>
+                            ) : (
+                              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground ring-1 ring-border">
+                                Inactive
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button type="button" variant="outline" size="sm" onClick={() => openEdit(row)}>
+                                Edit
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={rowBusyId === row.id}
+                                onClick={() => void toggleActive(row)}
+                              >
+                                {rowBusyId === row.id ? "…" : row.is_active ? "Deactivate" : "Activate"}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -389,7 +613,7 @@ export default function DepartmentsAdminPage() {
               {modalMode === "create" ? "Add department" : "Edit department"}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Required: name, OPD window, slot length, and consultation fee.
+              Required: name, OPD window, and slot length. Consultation fees are managed under Administration → Pricing.
             </p>
 
             {formError ? (
@@ -454,19 +678,6 @@ export default function DepartmentsAdminPage() {
                   step={1}
                   value={form.slot_duration_minutes}
                   onChange={(e) => setForm((f) => ({ ...f, slot_duration_minutes: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dept-fee">
-                  Consultation fee (INR) <span className="text-red-600">*</span>
-                </Label>
-                <Input
-                  id="dept-fee"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={form.consultation_fee}
-                  onChange={(e) => setForm((f) => ({ ...f, consultation_fee: e.target.value }))}
                 />
               </div>
             </div>

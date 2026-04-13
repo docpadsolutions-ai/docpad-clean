@@ -2,9 +2,10 @@
 
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileText, Microscope, PlusCircle, Save } from "lucide-react";
+import { ChevronDown, FileText, Microscope, PlusCircle, Ruler, Save } from "lucide-react";
 
 import { fetchAuthOrgId } from "../../../../lib/authOrg";
 import {
@@ -19,7 +20,17 @@ import { DocPadLogoMark } from "../../../../components/DocPadLogoMark";
 import { PermissionSurface } from "../../../../components/PermissionGate";
 import PrescriptionModal, { type VoiceRxPrefillRow } from "../../../../components/PrescriptionModal";
 
-import SnomedSearch, { type SnomedConcept } from "../../../../components/SnomedSearch";
+import SnomedSearch, {
+  type SnomedConcept,
+  buildSnomedSearchQueryString,
+} from "../../../../components/SnomedSearch";
+import {
+  SNOMED_ECL_CLINICAL_FINDING,
+  SNOMED_ECL_MSK_FINDING,
+  SNOMED_ECL_PROCEDURE,
+  isOrthopedicsSpecialty,
+} from "../../../../lib/ipdSnomedEcl";
+import { DiagnosisWithIcd } from "../../../../components/clinical/DiagnosisWithIcd";
 import VoiceDictationButton, {
   type ClinicalFinding,
   type PlanExtractionResult,
@@ -29,6 +40,15 @@ import { AbdmConsentNotificationGate } from "@/components/abdm/AbdmConsentNotifi
 import PatientSummaryDashboard from "../../../../components/PatientSummaryDashboard";
 import InvestigationsTabContent from "../../../../components/patient-investigations/InvestigationsTabContent";
 import InvestigationsLabOrdersModal from "../../../../components/InvestigationsLabOrdersModal";
+
+const XrayMeasurementTool = dynamic(
+  () => import("../../../../components/measurements/XrayMeasurementTool"),
+  { ssr: false },
+);
+const AdmitPatientModal = dynamic(
+  () => import("@/app/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
+  { ssr: false },
+);
 import { usePermission } from "../../../../hooks/usePermission";
 import { usePatientOpdEncounters } from "../../../../hooks/usePatientOpdEncounters";
 import { usePatientSummaryHighlights } from "../../../../hooks/usePatientSummaryHighlights";
@@ -692,6 +712,8 @@ export default function EncounterPage() {
   // Modal state
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
   const [isLabOrdersModalOpen, setIsLabOrdersModalOpen] = useState(false);
+  const [admitPatientOpen, setAdmitPatientOpen] = useState(false);
+  const [xrayMeasurementOpen, setXrayMeasurementOpen] = useState(false);
   const [currentPatientId, setCurrentPatientId] = useState<string>("");
   const [doctorName, setDoctorName] = useState<string>("Doctor");
   /** `practitioners.id` for SNOMED tiering + frequency RPC. */
@@ -700,6 +722,14 @@ export default function EncounterPage() {
   const [doctorSpecialty, setDoctorSpecialty] = useState<string>("General Medicine");
   /** Normalized signed-in practitioner role (in-memory; no routing). */
   const practitionerRoleRef = useRef<UserRole | null>(null);
+
+  /** Orthopaedics / neurosurgery only — radiological measurement tool. */
+  const xrayMeasurementGate = useMemo(() => {
+    const t = `${doctorSpecialty} ${department}`.toLowerCase();
+    if (/\bneurosur|neurosurgery\b/.test(t)) return { show: true as const, specialty: "neurosurgery" as const };
+    if (/\borthopaedic|\borthopedic/.test(t)) return { show: true as const, specialty: "orthopaedics" as const };
+    return { show: false as const, specialty: null };
+  }, [doctorSpecialty, department]);
 
   const {
     rows: patientEncounterRows,
@@ -1778,6 +1808,16 @@ export default function EncounterPage() {
         encounterNumber = `OPD-${year}-${rand}`;
       }
 
+      const workingDiagnosisCol =
+        (diagnosisFhir?.display?.trim() || persistDxTerm?.trim() || "").trim() || null;
+      const diagnosisIcd10Col = dx0ForFhir?.icd10?.trim()
+        ? dx0ForFhir.icd10.trim()
+        : null;
+      const diagnosisTermCol =
+        diagnosisIcd10Col && dx0ForFhir?.term?.trim()
+          ? dx0ForFhir.term.trim()
+          : workingDiagnosisCol;
+
       const payload = {
         id: encounterId,
         encounter_number: encounterNumber,
@@ -1798,7 +1838,9 @@ export default function EncounterPage() {
         chief_complaint_concept_id: persistChiefConcept,
         chief_complaints_fhir: chiefComplaintsFhir.length > 0 ? chiefComplaintsFhir : null,
         diagnosis_fhir: diagnosisFhir,
-        diagnosis_term: persistDxTerm,
+        working_diagnosis: workingDiagnosisCol,
+        diagnosis_icd10: diagnosisIcd10Col,
+        diagnosis_term: diagnosisTermCol,
         diagnosis_concept_id: persistDxConcept,
         diagnosis_snomed: diagnosisConceptId,
         diagnosis_sctid: diagnosisConceptId,
@@ -2244,6 +2286,23 @@ export default function EncounterPage() {
                 >
                   Edit diagnosis
                 </button>
+                {xrayMeasurementGate.show &&
+                encounterId &&
+                currentPatientId.trim() &&
+                (summaryOrgId || encounterOrgId) ? (
+                  <button
+                    type="button"
+                    className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 shadow-sm transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={permLoading || isEncounterReadOnly}
+                    title="Radiological measurements on uploaded X-ray"
+                    onClick={() => setXrayMeasurementOpen(true)}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Ruler className="h-3.5 w-3.5" />
+                      X-ray Measurements
+                    </span>
+                  </button>
+                ) : null}
               </div>
               {/* Left column: clinical narrative */}
               <div className="min-w-0 space-y-4 lg:col-span-8">
@@ -2423,10 +2482,15 @@ export default function EncounterPage() {
                       placeholder="Search chief complaint (e.g., Knee pain)..."
                       hierarchy="complaint"
                       allowFreeTextNoCode
+                      ecl={SNOMED_ECL_CLINICAL_FINDING}
+                      cacheFilter="finding_diagnosis"
+                      conceptCacheType="finding"
                       onSelect={(concept) => handleComplaintSelect(concept)}
                       value={complaintQuery}
                       onChange={setComplaintQuery}
                       indiaRefset={SNOMED_INDIA_REFSET_UI}
+                      specialty={doctorSpecialty || department}
+                      doctorId={doctorPractitionerId ?? undefined}
                     />
                   </div>
                   <div className="flex-[3] min-w-0">
@@ -2593,10 +2657,19 @@ export default function EncounterPage() {
                     placeholder="Search examination finding (e.g. Chest clear, No murmur)…"
                     hierarchy="finding"
                     allowFreeTextNoCode
+                    ecl={
+                      isOrthopedicsSpecialty(doctorSpecialty || department)
+                        ? SNOMED_ECL_MSK_FINDING
+                        : SNOMED_ECL_CLINICAL_FINDING
+                    }
+                    cacheFilter="finding_diagnosis"
+                    conceptCacheType="finding"
                     value={examQuery}
                     onChange={setExamQuery}
                     onSelect={handleExaminationSelect}
                     indiaRefset={SNOMED_INDIA_REFSET_UI}
+                    specialty={doctorSpecialty || department}
+                    doctorId={doctorPractitionerId ?? undefined}
                   />
                 </div>
                 {selectedExaminationConcept?.conceptId?.trim() && (
@@ -2650,12 +2723,17 @@ export default function EncounterPage() {
                           resolvedItems.push({ term: "", snomed: "", icd10: null });
                         } else {
                           try {
-                            const ir = SNOMED_INDIA_REFSET_UI
-                              ? `&indiaRefset=${encodeURIComponent(SNOMED_INDIA_REFSET_UI)}`
-                              : "";
-                            const res = await fetch(
-                              `/api/snomed/search?q=${encodeURIComponent(label)}&hierarchy=diagnosis${ir}`,
-                            );
+                            const qs = buildSnomedSearchQueryString({
+                              q: label,
+                              hierarchy: "diagnosis",
+                              ecl: SNOMED_ECL_CLINICAL_FINDING,
+                              cacheFilter: "finding_diagnosis",
+                              conceptCacheType: "finding",
+                              indiaRefset: SNOMED_INDIA_REFSET_UI ?? undefined,
+                              specialty: doctorSpecialty || department,
+                              doctorId: doctorPractitionerId ?? undefined,
+                            });
+                            const res = await fetch(`/api/snomed/search?${qs}`);
                             const data = (await res.json()) as {
                               results?: Array<{ term: string; conceptId: string; icd10: string | null }>;
                             };
@@ -2708,10 +2786,9 @@ export default function EncounterPage() {
                       <span
                         className={`h-2 w-2 shrink-0 rounded-full ${d.snomed ? "bg-emerald-400" : "bg-gray-300"}`}
                       />
-                      <span className="text-[12px] font-medium capitalize text-gray-900">{d.term}</span>
-                      {d.icd10 && (
-                        <span className="text-[10px] font-medium text-emerald-600">ICD-10 {d.icd10}</span>
-                      )}
+                      <span className="text-[12px] text-gray-900">
+                        <DiagnosisWithIcd text={d.term} icd10={d.icd10} />
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeDiagnosisEntryAt(i)}
@@ -2739,10 +2816,15 @@ export default function EncounterPage() {
                 placeholder="Search diagnosis (e.g., Osteoarthritis of knee)..."
                 hierarchy="diagnosis"
                 allowFreeTextNoCode
+                ecl={SNOMED_ECL_CLINICAL_FINDING}
+                cacheFilter="finding_diagnosis"
+                conceptCacheType="finding"
                 onSelect={(concept) => handleDiagnosisSelect(concept)}
                 value={diagnosisQuery}
                 onChange={setDiagnosisQuery}
                 indiaRefset={SNOMED_INDIA_REFSET_UI}
+                specialty={doctorSpecialty || department}
+                doctorId={doctorPractitionerId ?? undefined}
               />
             </div>
 
@@ -3284,8 +3366,13 @@ export default function EncounterPage() {
                 <SnomedSearch
                   placeholder="Order procedure (e.g., Appendectomy)..."
                   hierarchy="procedure"
+                  ecl={SNOMED_ECL_PROCEDURE}
+                  cacheFilter="procedure"
+                  conceptCacheType="procedure"
                   onSelect={(concept) => handleProcedureSelect(concept)}
                   indiaRefset={SNOMED_INDIA_REFSET_UI}
+                  specialty={doctorSpecialty || department}
+                  doctorId={doctorPractitionerId ?? undefined}
                 />
                 {/* Tag list of ordered procedures */}
                 {procedureText.trim() && (
@@ -3324,15 +3411,13 @@ export default function EncounterPage() {
                   type="button"
                   disabled={!encounterId?.trim() || !currentPatientId.trim() || isEncounterReadOnly}
                   onClick={() => {
-                    if (!encounterId?.trim()) return;
-                    router.push(
-                      `/dashboard/ipd/pre-admission?encounterId=${encodeURIComponent(encounterId.trim())}`,
-                    );
+                    if (!encounterId?.trim() || !currentPatientId.trim()) return;
+                    setAdmitPatientOpen(true);
                   }}
                   className="flex items-center gap-2.5 rounded-lg border-2 border-amber-200 bg-amber-50/50 px-3 py-2.5 text-left transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <BedIcon className="h-5 w-5 shrink-0 text-amber-500" />
-                  <span className="text-sm font-semibold text-gray-800">Admit this patient</span>
+                  <span className="text-sm font-semibold text-gray-800">Convert to Admission</span>
                 </button>
               </div>
             </PermissionSurface>
@@ -3350,6 +3435,37 @@ export default function EncounterPage() {
         onCreateInvestigationPlan={openInvestigationOrderPage}
         onViewResults={openInvestigationsView}
       />
+
+      {summaryOrgId?.trim() && currentPatientId.trim() ? (
+        <AdmitPatientModal
+          open={admitPatientOpen}
+          onClose={() => setAdmitPatientOpen(false)}
+          patientId={currentPatientId.trim()}
+          hospitalId={summaryOrgId.trim()}
+          sourceOpdEncounterId={encounterId?.trim() ?? undefined}
+          onSuccess={() => setAdmitPatientOpen(false)}
+        />
+      ) : null}
+
+      {xrayMeasurementOpen && xrayMeasurementGate.specialty && encounterId ? (
+        <XrayMeasurementTool
+          encounterId={encounterId}
+          patientId={currentPatientId}
+          hospitalId={(summaryOrgId ?? encounterOrgId ?? "").trim()}
+          doctorId={doctorPractitionerId ?? undefined}
+          specialty={xrayMeasurementGate.specialty}
+          onClose={() => setXrayMeasurementOpen(false)}
+          onSave={(summary) => {
+            const t = summary.trim();
+            if (!t) return;
+            setAdviceText((prev) => {
+              const p = prev.trim();
+              return p ? `${p}\n\n${t}` : t;
+            });
+            setAdviceOpen(true);
+          }}
+        />
+      ) : null}
 
       {/* ── Prescription modal ── */}
       <PrescriptionModal

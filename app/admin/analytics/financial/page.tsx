@@ -84,32 +84,23 @@ export default function AdminFinancialAnalyticsPage() {
   const toLabel = reportRange.to.toLocaleDateString("en-IN", { dateStyle: "medium" });
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8 dark:bg-slate-950">
+    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Financial analytics</h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            <h2 className="text-xl font-bold tracking-tight text-gray-900">Financial analytics</h2>
+            <p className="mt-1 text-sm text-gray-500">
               Hospital-scoped revenue and receivables (invoices, payments, line items). Operational billing tasks stay under
               Billing.
             </p>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-              <Link
-                href="/billing/invoices"
-                className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
+              <Link href="/billing/invoices" className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700">
                 All invoices
               </Link>
-              <Link
-                href="/billing/invoice/new"
-                className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
+              <Link href="/billing/invoice/new" className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700">
                 + New invoice
               </Link>
-              <Link
-                href="/billing/insurance"
-                className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
+              <Link href="/billing/insurance" className="inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700">
                 Insurance
               </Link>
             </div>
@@ -125,22 +116,22 @@ export default function AdminFinancialAnalyticsPage() {
               <button
                 type="button"
                 onClick={() => setLastDays(7)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm hover:bg-gray-50"
               >
                 Last 7 days
               </button>
               <button
                 type="button"
                 onClick={() => setLastDays(30)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm hover:bg-gray-50"
               >
                 Last 30 days
               </button>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Report range: <span className="font-medium text-slate-700 dark:text-slate-300">{fromLabel}</span>
+            <p className="text-xs text-gray-500">
+              Report range: <span className="font-medium text-gray-900">{fromLabel}</span>
               {" — "}
-              <span className="font-medium text-slate-700 dark:text-slate-300">{toLabel}</span>
+              <span className="font-medium text-gray-900">{toLabel}</span>
             </p>
           </div>
         </header>

@@ -6,7 +6,24 @@ import { supabase } from "../supabase";
 
 const ORG_ID = "e90e4607-dd60-4821-b736-02a2577432e0";
 
-const PRIMARY_ROLES = ["Doctor", "Nurse", "Pharmacist", "Receptionist", "Admin"] as const;
+/** UI labels → exact `invitations.role` / `practitioners.role` values stored in DB. */
+const INVITE_ROLE_TO_DB = {
+  Doctor: "doctor",
+  Nurse: "nurse",
+  Receptionist: "receptionist",
+  Pharmacist: "pharmacist",
+  Admin: "admin",
+  "Lab Tech": "lab_technician",
+} as const;
+
+const PRIMARY_ROLES = [
+  "Doctor",
+  "Nurse",
+  "Receptionist",
+  "Pharmacist",
+  "Admin",
+  "Lab Tech",
+] as const satisfies readonly (keyof typeof INVITE_ROLE_TO_DB)[];
 type PrimaryRole = (typeof PRIMARY_ROLES)[number];
 
 const DOCTOR_DESIGNATIONS = [
@@ -59,7 +76,7 @@ export default function AdminPage() {
 
     setIsLoading(true);
 
-    const roleForDb = primaryRole.toLowerCase();
+    const roleForDb = INVITE_ROLE_TO_DB[primaryRole];
     const designationForDb =
       primaryRole === "Doctor" ? designation.toLowerCase() : null;
 

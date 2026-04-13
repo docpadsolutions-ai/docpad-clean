@@ -73,7 +73,7 @@ export function DepartmentPerformanceGrid({
 
   if (!hospitalId) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+      <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-500 shadow-sm">
         Sign in as a practitioner to load department revenue.
       </div>
     );
@@ -81,15 +81,15 @@ export function DepartmentPerformanceGrid({
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <p className="text-sm text-slate-500">Loading department performance…</p>
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <p className="text-sm text-gray-500">Loading department performance…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
         {error}
       </div>
     );
@@ -97,28 +97,28 @@ export function DepartmentPerformanceGrid({
 
   if (data.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+      <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
         No invoice revenue in this range by department.
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">Department performance</h2>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Billed gross by invoice department in the report range.</p>
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">Department performance</h2>
+      <p className="mb-4 text-xs text-gray-500">Billed gross by invoice department in the report range.</p>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {data.map((dept) => (
           <div
             key={dept.department_id ?? `unassigned-${dept.department_name}`}
-            className="rounded-lg border border-slate-200 p-4 dark:border-slate-600"
+            className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
           >
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100">{dept.department_name}</h3>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-800 dark:text-slate-100">
+            <h3 className="font-semibold text-gray-900">{dept.department_name}</h3>
+            <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">
               ₹{dept.total_revenue.toLocaleString("en-IN")}
             </p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{dept.patient_count} patients</p>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-1 text-sm text-gray-500">{dept.patient_count} patients</p>
+            <p className="text-sm text-gray-500">
               Avg: ₹{dept.avg_revenue_per_patient.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
             </p>
           </div>

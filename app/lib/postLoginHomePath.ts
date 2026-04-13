@@ -30,8 +30,9 @@ export function resolveDefaultHomePathFromPractitionerRole(roleRaw: string | nul
   const s = (roleRaw ?? "").trim().toLowerCase();
   if (!s) return "/opd";
   if (s === "doctor") return "/opd";
-  if (s === "nurse" || s === "receptionist") return "/reception";
-  if (s === "lab_tech") return "/lab";
+  if (s === "nurse") return "/nursing";
+  if (s === "receptionist") return "/reception";
+  if (s === "lab_technician" || s === "lab_tech" || s === "lab tech") return "/lab";
   if (s === "pharmacist") return "/pharmacy";
   return "/opd";
 }

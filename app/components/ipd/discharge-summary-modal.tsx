@@ -2,27 +2,26 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import VoiceDictationButton from "@/app/components/VoiceDictationButton";
 import SnomedSearch, { type SnomedConcept } from "@/app/components/SnomedSearch";
+import { SNOMED_ECL_CLINICAL_FINDING } from "@/app/lib/ipdSnomedEcl";
+import { DiagnosisWithIcd } from "@/app/components/clinical/DiagnosisWithIcd";
 import { extractDischargeClinicalNlp, type DischargeNlpExtraction } from "@/app/lib/geminiDischargeNlp";
 import { preAdmissionFrom } from "@/app/lib/ipdAdmissionDisplay";
 import { readIndiaRefsetKeyFromEnv } from "@/app/lib/snomedUiConfig";
 import {
+  fetchDischargeAiCompileContext,
   rpcCompileDischargeSummary,
   rpcUpsertDischargeSummary,
   type CompileDischargeSummaryResult,
   type UpsertDischargeSummaryPayload,
 } from "@/app/lib/ipdData";
 import { wardBedLabelFromAdmission } from "@/app/lib/ipdAdmissionDisplay";
-import {
-  buildDeltaTable,
-  buildHospitalCourseFromNotes,
-  type DeltaRow,
-  type Investigation,
-} from "@/app/lib/dischargeSummaryUtils";
+import { parseDischargeAiSections } from "@/app/lib/dischargeSummaryUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +32,15 @@ import { cn } from "@/lib/utils";
 function s(v: unknown): string {
   if (v == null) return "";
   return String(v).trim();
+}
+
+function numMoney(v: unknown): number {
+  const x = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
+
+function formatInrCompact(v: number): string {
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(v);
 }
 
 function asRec(v: unknown): Record<string, unknown> | null {
@@ -55,6 +63,7 @@ export interface DischargeFormState {
   dischargeDate: string;
   followUpDate: string;
   hospitalCourseSummary: string;
+  investigationsSummary: string;
   finalDiagnosisDisplay: string[];
   finalDiagnosisIcd10: string[];
   /** Parallel SNOMED / ICD rows for final diagnoses (conceptId may be empty if not coded). */
@@ -94,6 +103,7 @@ function emptyForm(): DischargeFormState {
     dischargeDate: "",
     followUpDate: "",
     hospitalCourseSummary: "",
+    investigationsSummary: "",
     finalDiagnosisDisplay: [],
     finalDiagnosisIcd10: [],
     snomedAssessmentCodes: [],
@@ -209,7 +219,13 @@ function applyDischargeNlpPatch(f: DischargeFormState, ext: DischargeNlpExtracti
 }
 
 function buildNlpSourceText(f: DischargeFormState): string {
-  const parts = [f.hospitalCourseSummary, f.dischargeInstructions, f.dietAdvice, f.activityRestrictions]
+  const parts = [
+    f.hospitalCourseSummary,
+    f.investigationsSummary,
+    f.dischargeInstructions,
+    f.dietAdvice,
+    f.activityRestrictions,
+  ]
     .map((x) => s(x))
     .filter(Boolean);
   return parts.join("\n\n").trim();
@@ -227,10 +243,6 @@ function seedFormFromCompiled(data: CompileDischargeSummaryResult | null): Disch
   const treatments = Array.isArray(data.treatments)
     ? (data.treatments as Array<Record<string, unknown>>)
     : [];
-  const investigations = Array.isArray(data.investigations)
-    ? (data.investigations as Investigation[])
-    : [];
-
   if (draft) {
     const fbDisp = admission.primary_diagnosis_display ? [String(admission.primary_diagnosis_display)] : [];
     const fbIcd = admission.primary_diagnosis_icd10 ? [String(admission.primary_diagnosis_icd10)] : [];
@@ -243,6 +255,7 @@ function seedFormFromCompiled(data: CompileDischargeSummaryResult | null): Disch
       dischargeDate: s(draft.discharge_date).slice(0, 10),
       followUpDate: s(draft.follow_up_date).slice(0, 10),
       hospitalCourseSummary: s(draft.hospital_course_summary),
+      investigationsSummary: s(draft.investigations_summary),
       finalDiagnosisDisplay: dxDisp,
       finalDiagnosisIcd10: dxIcd,
       snomedAssessmentCodes: rowsFromDiagnosisArrays(dxDisp, dxIcd),
@@ -266,7 +279,6 @@ function seedFormFromCompiled(data: CompileDischargeSummaryResult | null): Disch
     };
   }
 
-  const genCourse = buildHospitalCourseFromNotes(notes);
   const meds = medicationsFromLastDay(treatments, notes);
   const surgery = asRec(data.surgery);
 
@@ -277,7 +289,8 @@ function seedFormFromCompiled(data: CompileDischargeSummaryResult | null): Disch
     finalDiagnosisDisplay: dxD,
     finalDiagnosisIcd10: dxI,
     snomedAssessmentCodes: rowsFromDiagnosisArrays(dxD, dxI),
-    hospitalCourseSummary: genCourse || s(data.generated_hospital_course ?? data.hospital_course_draft) || "",
+    hospitalCourseSummary: s(data.generated_hospital_course ?? data.hospital_course_draft) || "",
+    investigationsSummary: s(data.generated_investigations_summary ?? data.investigations_summary_draft) || "",
     dischargeMedications: meds.length ? meds : [],
     procedureNotes: s(surgery?.notes),
     implantsUsedText: s(surgery?.implants),
@@ -313,6 +326,7 @@ function formToUpsertPayload(
   admissionId: string,
   status: "draft" | "finalized",
   form: DischargeFormState,
+  opts?: { signedBy?: string | null },
 ): UpsertDischargeSummaryPayload {
   const proceduresForRpc =
     form.proceduresDone.length > 0
@@ -320,6 +334,7 @@ function formToUpsertPayload(
       : form.procedureNotes.trim()
         ? [form.procedureNotes.trim()]
         : null;
+  const signedBy = opts?.signedBy?.trim() || null;
   return {
     p_admission_id: admissionId,
     p_status: status,
@@ -327,6 +342,7 @@ function formToUpsertPayload(
     p_discharge_date: form.dischargeDate || null,
     p_discharge_type: form.dischargeType || null,
     p_hospital_course_summary: form.hospitalCourseSummary || null,
+    p_investigations_summary: form.investigationsSummary || null,
     p_discharge_medications: form.dischargeMedications,
     p_discharge_instructions: form.dischargeInstructions || null,
     p_follow_up_date: form.followUpDate || null,
@@ -341,31 +357,99 @@ function formToUpsertPayload(
     p_final_diagnosis_icd10: sanitizeArray(form.finalDiagnosisIcd10),
     p_final_diagnosis_display: sanitizeArray(form.finalDiagnosisDisplay),
     p_procedures_done: sanitizeArray(proceduresForRpc),
+    ...(status === "finalized" && signedBy
+      ? { p_signed_by: signedBy, p_signed_at: new Date().toISOString() }
+      : {}),
   };
 }
 
 type Phase = "loading" | "ready" | "finalizing";
 
+type AiCompilePhase = "idle" | "loading" | "done";
+
+function computeLosDays(admittedRaw: string, dischargeRaw: string): number {
+  const a = Date.parse(admittedRaw.slice(0, 10));
+  const b = Date.parse(dischargeRaw.slice(0, 10));
+  if (Number.isNaN(a) || Number.isNaN(b)) return 1;
+  return Math.max(1, Math.round((b - a) / 86400000));
+}
+
+function DischargeCompileAiButton({
+  phase,
+  disabled,
+  disabledTitle,
+  onClick,
+}: {
+  phase: AiCompilePhase;
+  disabled: boolean;
+  disabledTitle?: string;
+  onClick: () => void;
+}) {
+  const tip = disabled && disabledTitle ? disabledTitle : undefined;
+  if (phase === "loading") {
+    return (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled
+        className="pointer-events-none shrink-0 gap-1.5 border-indigo-200 bg-indigo-50 text-indigo-800"
+      >
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+        <span className="hidden sm:inline">Compiling clinical summary...</span>
+        <span className="sm:hidden">Compiling...</span>
+      </Button>
+    );
+  }
+  if (phase === "done") {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onClick}
+        disabled={disabled}
+        title={tip}
+        className="h-7 shrink-0 px-2 text-xs text-gray-500 hover:bg-gray-100"
+      >
+        ✓ Regenerate
+      </Button>
+    );
+  }
+  return (
+    <Button
+      type="button"
+      size="sm"
+      onClick={onClick}
+      disabled={disabled}
+      title={tip}
+      className="shrink-0 gap-1 bg-indigo-600 text-white hover:bg-indigo-700"
+    >
+      ✨ Generate with AI
+    </Button>
+  );
+}
+
 /** Shared field styles for inputs / textareas in this modal (theme-aware). */
 const fieldBase =
-  "border border-gray-300 bg-white text-gray-900 shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500";
+  "border border-gray-300 bg-white text-gray-900 shadow-sm placeholder:text-gray-400 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500";
 
 const modalPanelClass =
-  "relative z-[121] flex h-full w-full max-w-[720px] flex-col overflow-hidden border-l border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100";
+  "relative z-[121] flex h-full w-full max-w-[720px] flex-col overflow-hidden border-l border-gray-200 bg-white shadow-2xl";
 
 const saveDraftBtnClass =
-  "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700";
+  "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50";
 
-const labelClass = "text-sm font-medium text-gray-700 dark:text-gray-300";
+const labelClass = "text-sm font-medium text-gray-700";
 
-const radioLabelClass = "flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300";
+const radioLabelClass = "flex items-center gap-1.5 text-sm text-gray-700";
 
 const DX_CHIP_WRAP =
-  "inline-flex max-w-full items-stretch overflow-hidden rounded-full border border-gray-200 bg-gray-100 shadow-sm dark:border-gray-600 dark:bg-gray-800";
+  "inline-flex max-w-full items-stretch overflow-hidden rounded-full border border-gray-200 bg-gray-100 shadow-sm";
 const DX_CHIP_MAIN =
-  "inline-flex min-w-0 flex-1 items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left text-[12px] font-medium text-gray-900 dark:text-gray-100";
+  "inline-flex min-w-0 flex-1 items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left text-[12px] font-medium text-gray-900";
 const DX_CHIP_REMOVE =
-  "shrink-0 border-0 border-l border-gray-200 bg-transparent px-2 py-1.5 text-gray-400 transition hover:bg-red-100 hover:text-red-700 dark:border-gray-600 dark:hover:bg-red-900/30 dark:hover:text-red-200";
+  "shrink-0 border-0 border-l border-gray-200 bg-transparent px-2 py-1.5 text-gray-400 transition hover:bg-red-100 hover:text-red-700";
 
 export type SttFieldKey =
   | "hospitalCourseSummary"
@@ -405,7 +489,7 @@ function DischargeTextareaWithMic({
     <div className="relative" data-stt-field={fieldKey}>
       <div className="pointer-events-none absolute right-2 top-2 z-10 flex flex-col items-end gap-1">
         {showTranscribedBadge ? (
-          <span className="pointer-events-none rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800 opacity-90 dark:bg-blue-900/40 dark:text-blue-200">
+          <span className="pointer-events-none rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800 opacity-90">
             Transcribed
           </span>
         ) : null}
@@ -458,12 +542,13 @@ export function DischargeSummaryModal({
   onDischarged,
   admissionData = null,
 }: DischargeSummaryModalProps) {
+  const router = useRouter();
   const panelId = useId();
   const [phase, setPhase] = useState<Phase>("loading");
   const [compileErr, setCompileErr] = useState<string | null>(null);
   const [compiled, setCompiled] = useState<CompileDischargeSummaryResult | null>(null);
   const [form, setForm] = useState<DischargeFormState>(() => emptyForm());
-  const [deltaRows, setDeltaRows] = useState<DeltaRow[]>([]);
+  const [aiCompilePhase, setAiCompilePhase] = useState<AiCompilePhase>("idle");
   const [pendingFinalize, setPendingFinalize] = useState(false);
   const skipNextAutosave = useRef(true);
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
@@ -594,12 +679,10 @@ export function DischargeSummaryModal({
       return;
     }
     setCompiled(data);
-    const inv = Array.isArray(data?.investigations)
-      ? (data!.investigations as Investigation[])
-      : [];
-    setDeltaRows(buildDeltaTable(inv));
     const next = seedFormFromCompiled(data);
     setForm(next);
+    const hasAiText = Boolean(s(next.hospitalCourseSummary) || s(next.investigationsSummary));
+    setAiCompilePhase(hasAiText ? "done" : "idle");
     setPhase("ready");
     setTimeout(() => {
       skipNextAutosave.current = false;
@@ -611,14 +694,91 @@ export function DischargeSummaryModal({
     void load();
   }, [isOpen, admissionId, load]);
 
+  const patient = asRec(compiled?.patient);
+  const admission = asRec(compiled?.admission);
+  const notes = useMemo(
+    () =>
+      Array.isArray(compiled?.progress_notes)
+        ? (compiled!.progress_notes as Array<Record<string, unknown>>)
+        : [],
+    [compiled],
+  );
+
   const runUpsert = useCallback(
     async (status: "draft" | "finalized") => {
-      const payload = formToUpsertPayload(admissionId, status, form);
+      const payload = formToUpsertPayload(admissionId, status, form, {
+        signedBy: status === "finalized" ? practitionerId : null,
+      });
       const { error } = await rpcUpsertDischargeSummary(supabase, payload);
       if (error) throw error;
     },
-    [admissionId, form],
+    [admissionId, form, practitionerId],
   );
+
+  const handleCompileDischargeAi = useCallback(async () => {
+    if (notes.length === 0) return;
+    const revertPhase = aiCompilePhase;
+    setAiCompilePhase("loading");
+    try {
+      const { data: ctx, error: ctxErr } = await fetchDischargeAiCompileContext(supabase, admissionId);
+      if (ctxErr || !ctx) throw ctxErr ?? new Error("Failed to load clinical data");
+
+      const pat = asRec(compiled?.patient) ?? asRec(admissionBundle?.patient);
+      const adm = asRec(compiled?.admission) ?? asRec(admissionBundle?.admission);
+      const doc = ctx.doctor_admissions_summary;
+
+      const patientName = s(pat?.full_name ?? pat?.name) || "Unknown";
+      const ageYears = s(pat?.age ?? pat?.age_years) || "—";
+      const sex = s(pat?.gender) ?? "";
+      const admittedDate = s(adm?.admission_date).slice(0, 10) || "—";
+      const dischargeDate = form.dischargeDate || new Date().toISOString().slice(0, 10);
+      const losDays = computeLosDays(admittedDate, dischargeDate);
+      const admittingDiagnosis =
+        s(doc?.admitting_diagnosis ?? doc?.primary_diagnosis_display) || s(adm?.primary_diagnosis_display);
+      const specialty = s(doc?.specialty) || s(preAdmission?.specialty) || s(adm?.specialty) || "General";
+
+      const res = await fetch("/api/ipd/compile-discharge-clinical", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientName,
+          ageYears,
+          sex,
+          admittedDate,
+          dischargeDate,
+          losDays,
+          admittingDiagnosis,
+          specialty,
+          progressNotes: ctx.progress_notes,
+          investigations: ctx.investigation_orders,
+          treatments: ctx.treatments,
+        }),
+      });
+      const json = (await res.json()) as { text?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || "AI compilation failed");
+      const text = s(json.text);
+      if (!text) throw new Error("Empty AI response");
+      const { hospitalCourse, investigationsSummary } = parseDischargeAiSections(text);
+      setForm((f) => ({
+        ...f,
+        hospitalCourseSummary: hospitalCourse,
+        investigationsSummary: investigationsSummary || f.investigationsSummary,
+      }));
+      setAiCompilePhase("done");
+      toast.success("Clinical summary compiled — please review");
+    } catch (e) {
+      setAiCompilePhase(revertPhase);
+      toast.error(e instanceof Error ? e.message : "Compilation failed");
+    }
+  }, [
+    admissionId,
+    admissionBundle,
+    aiCompilePhase,
+    compiled,
+    form.dischargeDate,
+    notes.length,
+    preAdmission?.specialty,
+  ]);
 
   useEffect(() => {
     if (!isOpen || phase !== "ready" || skipNextAutosave.current) return;
@@ -657,26 +817,78 @@ export function DischargeSummaryModal({
     setPhase("finalizing");
     try {
       await runUpsert("finalized");
-      toast.success("Discharge summary finalized");
+
+      const dischargeIso = form.dischargeDate
+        ? `${form.dischargeDate}T12:00:00.000Z`
+        : new Date().toISOString();
+
+      const admRow = asRec(compiled?.admission) ?? asRec(admissionBundle?.admission);
+      const bedId = s(admRow?.bed_id);
+
+      const { error: admErr } = await supabase
+        .from("ipd_admissions")
+        .update({ status: "discharged", discharged_at: dischargeIso })
+        .eq("id", admissionId);
+      if (admErr) throw new Error(admErr.message);
+
+      if (bedId) {
+        const { error: bedErr } = await supabase.from("ipd_beds").update({ status: "available" }).eq("id", bedId);
+        if (bedErr) console.warn("[discharge] bed release:", bedErr.message);
+      }
+
+      try {
+        const { data: invoiceIdRaw, error: compileErr } = await supabase.rpc("compile_discharge_invoice", {
+          p_admission_id: admissionId,
+        });
+        if (compileErr) {
+          console.error("[discharge] compile_discharge_invoice:", compileErr);
+          toast.error(
+            "Discharge saved, but the billing invoice could not be compiled automatically. You can complete billing separately.",
+          );
+        } else if (invoiceIdRaw != null && String(invoiceIdRaw).trim() !== "") {
+          const idStr = String(invoiceIdRaw).trim();
+          const { data: invRow, error: invFetchErr } = await supabase
+            .from("invoices")
+            .select("total_gross")
+            .eq("id", idStr)
+            .maybeSingle();
+          if (invFetchErr) {
+            console.warn("[discharge] invoice total_gross fetch:", invFetchErr);
+          }
+          const grossOk = invRow != null && !invFetchErr;
+          const gross = numMoney(invRow?.total_gross);
+          const title = grossOk
+            ? `Discharge invoice compiled — ${formatInrCompact(gross)}`
+            : "Discharge invoice compiled";
+          toast.success(title, {
+            action: {
+              label: "View Invoice",
+              onClick: () => router.push(`/billing/invoices?highlight=${encodeURIComponent(idStr)}`),
+            },
+          });
+        }
+      } catch (e) {
+        console.error("[discharge] compile_discharge_invoice:", e);
+        toast.error(
+          "Discharge saved, but the billing invoice could not be compiled automatically. You can complete billing separately.",
+        );
+      }
+
+      const bedEmb = asRec(admRow?.bed);
+      const bedFromBundle = asRec(admissionBundle?.bed);
+      const bedNum = s(bedEmb?.bed_number) || s(bedFromBundle?.bed_number) || "—";
+
+      toast.success(`Patient discharged. Bed ${bedNum} now available.`);
       setPendingFinalize(false);
       onDischarged();
       onClose();
+      router.push("/dashboard/ipd");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Finalize failed");
     } finally {
       setPhase("ready");
     }
-  }, [runUpsert, onDischarged, onClose]);
-
-  const patient = asRec(compiled?.patient);
-  const admission = asRec(compiled?.admission);
-  const notes = useMemo(
-    () =>
-      Array.isArray(compiled?.progress_notes)
-        ? (compiled!.progress_notes as Array<Record<string, unknown>>)
-        : [],
-    [compiled],
-  );
+  }, [runUpsert, onDischarged, onClose, router, form.dischargeDate, compiled?.admission, admissionBundle, admissionId]);
 
   const headerPatient = s(patient?.full_name ?? patient?.name);
   const uhid = s(patient?.uhid ?? patient?.mrn ?? patient?.patient_code);
@@ -701,24 +913,24 @@ export function DischargeSummaryModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+        <div className="flex shrink-0 flex-col border-b border-gray-200 bg-white">
           <div className="flex items-start justify-between gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-lg font-bold text-gray-900 dark:text-white">{headerPatient || "Patient"}</h2>
+                <h2 className="truncate text-lg font-bold text-gray-900">{headerPatient || "Patient"}</h2>
                 {uhid ? (
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
                     UHID {uhid}
                   </span>
                 ) : null}
                 {ageGender ? (
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
                     {ageGender}
                   </span>
                 ) : null}
-                <span className="text-xs text-gray-500 dark:text-gray-400">Adm. #{admNo}</span>
+                <span className="text-xs text-gray-500">Adm. #{admNo}</span>
               </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p className="mt-1 text-xs text-gray-500">
                 Auto-compiled from IPD record — review before finalizing
               </p>
             </div>
@@ -744,7 +956,7 @@ export function DischargeSummaryModal({
               </Button>
               <button
                 type="button"
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
                 onClick={onClose}
                 aria-label="Close"
               >
@@ -754,8 +966,8 @@ export function DischargeSummaryModal({
           </div>
 
           {pendingFinalize ? (
-            <div className="border-t border-gray-200 bg-amber-50 px-4 py-3 dark:border-gray-700 dark:bg-amber-950/40">
-              <p className="text-sm font-medium text-amber-950 dark:text-amber-100">
+            <div className="border-t border-gray-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-medium text-amber-950">
                 You are about to finalize and lock this discharge summary. This cannot be undone. The patient&apos;s admission
                 will be marked as discharged.
               </p>
@@ -784,7 +996,7 @@ export function DischargeSummaryModal({
         </div>
 
         {compileErr ? (
-          <p className="border-b border-gray-200 bg-red-50 px-4 py-2 text-xs text-red-800 dark:border-gray-700 dark:bg-red-950/30 dark:text-red-200">
+          <p className="border-b border-gray-200 bg-red-50 px-4 py-2 text-xs text-red-800">
             {compileErr}
           </p>
         ) : null}
@@ -804,23 +1016,23 @@ export function DischargeSummaryModal({
                 open={openSec.patient}
                 onToggle={() => toggle("patient")}
               >
-                <dl className="grid grid-cols-1 gap-2 text-gray-900 dark:text-gray-100 sm:grid-cols-2">
+                <dl className="grid grid-cols-1 gap-2 text-gray-900 sm:grid-cols-2">
                   <div>
-                    <dt className="text-xs text-gray-500 dark:text-gray-400">Admitted</dt>
+                    <dt className="text-xs text-gray-500">Admitted</dt>
                     <dd>{s(admission?.admission_date).slice(0, 10) || "—"}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-gray-500 dark:text-gray-400">Ward / Bed</dt>
+                    <dt className="text-xs text-gray-500">Ward / Bed</dt>
                     <dd>{wardBedLabelFromAdmission(admission)}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-gray-500 dark:text-gray-400">Admission type / class</dt>
+                    <dt className="text-xs text-gray-500">Admission type / class</dt>
                     <dd>
                       {[s(admission?.admission_type), s(admission?.admission_class)].filter(Boolean).join(" · ") || "—"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-gray-500 dark:text-gray-400">Primary diagnosis (on admission)</dt>
+                    <dt className="text-xs text-gray-500">Primary diagnosis (on admission)</dt>
                     <dd>{s(admission?.primary_diagnosis_display) || "—"}</dd>
                   </div>
                 </dl>
@@ -838,14 +1050,14 @@ export function DischargeSummaryModal({
                       type="button"
                       onClick={() => void handleExtractDiagnosesClick()}
                       disabled={isExtracting}
-                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-blue-600 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-400"
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-blue-600 disabled:opacity-50"
                     >
                       <Sparkles className="h-3.5 w-3.5" />
                       Extract diagnoses
                     </button>
                   </div>
                   {extractionError ? (
-                    <p className="text-xs text-amber-700 dark:text-amber-300">{extractionError}</p>
+                    <p className="text-xs text-amber-700">{extractionError}</p>
                   ) : null}
                   {form.finalDiagnosisDisplay.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
@@ -859,7 +1071,12 @@ export function DischargeSummaryModal({
                                 : "SNOMED optional"
                             }
                           >
-                            <span className="min-w-0 capitalize">{label}</span>
+                            <span className="min-w-0">
+                              <DiagnosisWithIcd
+                                text={label}
+                                icd10={form.finalDiagnosisIcd10[i]?.trim() || null}
+                              />
+                            </span>
                           </span>
                           <button
                             type="button"
@@ -873,16 +1090,20 @@ export function DischargeSummaryModal({
                       ))}
                     </div>
                   ) : null}
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400">Search and add coded diagnoses</p>
+                  <p className="text-[11px] text-gray-500">Search and add coded diagnoses</p>
                   <SnomedSearch
                     placeholder="Search diagnosis (SNOMED)…"
                     hierarchy="diagnosis"
                     allowFreeTextNoCode
-                    variant="default"
+                    ecl={SNOMED_ECL_CLINICAL_FINDING}
+                    cacheFilter="finding_diagnosis"
+                    conceptCacheType="finding"
                     value={diagnosisQuery}
                     onChange={setDiagnosisQuery}
                     onSelect={handleDxSelect}
                     indiaRefset={indiaRefset || undefined}
+                    specialty={voiceSpecialty}
+                    doctorId={practitionerId ?? undefined}
                   />
                 </div>
               </Collapsible>
@@ -891,6 +1112,14 @@ export function DischargeSummaryModal({
                 title="Hospital Course Summary"
                 open={openSec.course}
                 onToggle={() => toggle("course")}
+                titleActions={
+                  <DischargeCompileAiButton
+                    phase={aiCompilePhase}
+                    disabled={notes.length === 0}
+                    disabledTitle={notes.length === 0 ? "Add progress notes first" : undefined}
+                    onClick={() => void handleCompileDischargeAi()}
+                  />
+                }
                 headerRight={
                   isExtracting ? (
                     <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-500" aria-label="Extracting" />
@@ -910,51 +1139,35 @@ export function DischargeSummaryModal({
                   onRecordingStateChange={(rec) => setFieldRecording("hospitalCourseSummary", rec)}
                   onMergedFinal={handleHospitalCourseMergedFinal}
                 />
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Suggested from progress notes ({notes.length} day{notes.length === 1 ? "" : "s"}). Edit freely.
+                <p className="text-xs text-gray-500">
+                  Generate with AI from progress notes ({notes.length} day{notes.length === 1 ? "" : "s"}), or dictate and edit
+                  freely.
                 </p>
               </Collapsible>
 
               <Collapsible
-                title="Investigations (delta)"
+                title="Investigations Summary"
                 open={openSec.investigations}
                 onToggle={() => toggle("investigations")}
+                titleActions={
+                  <DischargeCompileAiButton
+                    phase={aiCompilePhase}
+                    disabled={notes.length === 0}
+                    disabledTitle={notes.length === 0 ? "Add progress notes first" : undefined}
+                    onClick={() => void handleCompileDischargeAi()}
+                  />
+                }
               >
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[560px] border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-gray-200 dark:border-gray-700">
-                        <th className="py-2 pr-2">Test</th>
-                        <th className="py-2 pr-2">Day 1</th>
-                        <th className="py-2 pr-2">Changed values</th>
-                        <th className="py-2 pr-2">Latest</th>
-                        <th className="py-2">Flag</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deltaRows.map((row) => (
-                        <tr
-                          key={row.testName}
-                          className={cn(
-                            "border-b border-gray-200 dark:border-gray-700",
-                            row.amber && "bg-amber-50/80 dark:bg-amber-950/20",
-                          )}
-                        >
-                          <td className="py-2 pr-2 font-medium">{row.testName}</td>
-                          <td className="py-2 pr-2">{row.day1 || "—"}</td>
-                          <td className="py-2 pr-2">
-                            {row.changes.length
-                              ? row.changes.map((c) => `${c.date}: ${c.value}${c.flag ? ` (${c.flag})` : ""}`).join("; ")
-                              : "—"}
-                          </td>
-                          <td className="py-2 pr-2">{row.latest}</td>
-                          <td className="py-2">{row.flagLatest || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {deltaRows.length === 0 ? <p className="text-xs text-gray-500 dark:text-gray-400">No investigation rows.</p> : null}
-                </div>
+                <Textarea
+                  rows={6}
+                  value={form.investigationsSummary}
+                  onChange={(e) => setForm((f) => ({ ...f, investigationsSummary: e.target.value }))}
+                  placeholder="Trend-based summary of labs and imaging…"
+                  className={cn(fieldBase, "min-h-[120px]")}
+                />
+                <p className="text-xs text-gray-500">
+                  Populated with the same AI compile as hospital course. Edit freely.
+                </p>
               </Collapsible>
 
               {surgeryData ? (
@@ -963,21 +1176,21 @@ export function DischargeSummaryModal({
                   open={openSec.surgery}
                   onToggle={() => toggle("surgery")}
                 >
-                  <dl className="mb-3 grid gap-2 text-gray-900 dark:text-gray-100 sm:grid-cols-2">
+                  <dl className="mb-3 grid gap-2 text-gray-900 sm:grid-cols-2">
                     <div>
-                      <dt className="text-xs text-gray-500 dark:text-gray-400">Procedure</dt>
+                      <dt className="text-xs text-gray-500">Procedure</dt>
                       <dd>{s(surgeryData.procedure_name ?? surgeryData.name)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-gray-500 dark:text-gray-400">Date</dt>
+                      <dt className="text-xs text-gray-500">Date</dt>
                       <dd>{s(surgeryData.surgery_date ?? surgeryData.scheduled_date).slice(0, 10) || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-gray-500 dark:text-gray-400">Anaesthesia</dt>
+                      <dt className="text-xs text-gray-500">Anaesthesia</dt>
                       <dd>{s(surgeryData.anaesthesia_type)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-gray-500 dark:text-gray-400">Surgeon</dt>
+                      <dt className="text-xs text-gray-500">Surgeon</dt>
                       <dd>{s(surgeryData.surgeon_name)}</dd>
                     </div>
                   </dl>
@@ -1007,7 +1220,7 @@ export function DischargeSummaryModal({
                   {form.dischargeMedications.map((m) => (
                     <div
                       key={m.id}
-                      className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-2 sm:grid-cols-6 dark:border-gray-700"
+                      className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-2 sm:grid-cols-6"
                     >
                       <Input
                         placeholder="Drug"
@@ -1120,7 +1333,7 @@ export function DischargeSummaryModal({
                             name="dc"
                             checked={form.dischargeCondition === v}
                             onChange={() => setForm((f) => ({ ...f, dischargeCondition: v }))}
-                            className="border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
+                            className="border-gray-300 text-blue-600 focus:ring-blue-500"
                           />
                           {v.charAt(0).toUpperCase() + v.slice(1)}
                         </label>
@@ -1137,7 +1350,7 @@ export function DischargeSummaryModal({
                             name="dt"
                             checked={form.dischargeType === v}
                             onChange={() => setForm((f) => ({ ...f, dischargeType: v }))}
-                            className="border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
+                            className="border-gray-300 text-blue-600 focus:ring-blue-500"
                           />
                           {v.charAt(0).toUpperCase() + v.slice(1)}
                         </label>
@@ -1295,35 +1508,48 @@ function Collapsible({
   onToggle,
   children,
   headerRight,
+  titleActions,
 }: {
   title: string;
   open: boolean;
   onToggle: () => void;
   children: React.ReactNode;
   headerRight?: ReactNode;
+  titleActions?: ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-4 py-3 text-left dark:border-gray-700 dark:bg-gray-800"
-      >
-        <span className="min-w-0 flex-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          {title}
-        </span>
-        <div className="flex shrink-0 items-center gap-2">
-          {headerRight}
+    <div className="overflow-hidden rounded-xl border border-gray-200">
+      <div className="flex w-full items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-4 py-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <span className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            {title}
+          </span>
           <ChevronDown
             className={cn(
-              "h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-400",
+              "h-4 w-4 shrink-0 text-gray-500 transition-transform",
               open && "rotate-180",
             )}
           />
+        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {titleActions ? (
+            <span
+              className="flex items-center"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              {titleActions}
+            </span>
+          ) : null}
+          {headerRight}
         </div>
-      </button>
+      </div>
       {open ? (
-        <div className="space-y-3 bg-white px-4 py-4 text-sm text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+        <div className="space-y-3 bg-white px-4 py-4 text-sm text-gray-900">
           {children}
         </div>
       ) : null}

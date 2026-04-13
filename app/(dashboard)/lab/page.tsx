@@ -6,39 +6,36 @@
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { formatDistanceToNow } from "date-fns";
 import OCRUploadModal from "../../components/investigations/OCRUploadModal";
 import { fetchAuthOrgId } from "../../lib/authOrg";
 import { formatOrderedDate } from "../../lib/investigationsUi";
 import { practitionerDisplayNameFromRow, practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
 import { supabase } from "../../supabase";
 
-type PatientEmbed = {
-  full_name: string | null;
-  docpad_id: string | null;
-};
-
-type PractitionerEmbed = {
-  full_name?: unknown;
-  first_name?: unknown;
-  last_name?: unknown;
-};
-
+/** Row from `get_lab_queue` / `get_lab_queue_external` RPCs. */
 type InvestigationLabRow = {
-  id: string;
-  patient_id: string;
-  doctor_id: string | null;
-  hospital_id: string | null;
+  order_id: string;
+  patient_id: string | null;
   test_name: string | null;
-  test_code: string | null;
   test_category: string | null;
   status: string | null;
-  result_status: string | null;
   priority: string | null;
+  patient_name: string | null;
+  patient_age: number | null;
+  patient_sex: string | null;
+  ward_name: string | null;
+  bed_number: string | null;
+  admission_number: string | null;
+  sample_type: string | null;
+  requires_fasting: boolean | null;
+  expected_tat_hrs: number | null;
+  ordered_by_name: string | null;
+  ordered_by_id: string | null;
   ordered_at: string | null;
-  collected_at: string | null;
-  resulted_at: string | null;
-  patient: PatientEmbed | PatientEmbed[] | null;
-  practitioner: PractitionerEmbed | PractitionerEmbed[] | null;
+  is_in_house: boolean | null;
+  external_lab_name: string | null;
+  billing_status: string | null;
 };
 
 type ResultEntryDraft = {
@@ -49,24 +46,6 @@ type ResultEntryDraft = {
   reference_range: string;
   is_abnormal: boolean;
 };
-
-const INV_SELECT = `
-  id,
-  patient_id,
-  doctor_id,
-  hospital_id,
-  test_name,
-  test_code,
-  test_category,
-  status,
-  result_status,
-  priority,
-  ordered_at,
-  collected_at,
-  resulted_at,
-  patient:patients!patient_id(full_name, docpad_id),
-  practitioner:practitioners!doctor_id(full_name, first_name, last_name)
-`;
 
 const inputCls =
   "w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
@@ -121,16 +100,13 @@ function sortInvestigations(rows: InvestigationLabRow[]): InvestigationLabRow[] 
 }
 
 function patientNameDocpad(row: InvestigationLabRow): { name: string; token: string } {
-  const p = pickOne(row.patient);
-  const name = p?.full_name != null && String(p.full_name).trim() ? String(p.full_name).trim() : "—";
-  const token = p?.docpad_id != null && String(p.docpad_id).trim() ? String(p.docpad_id).trim() : "—";
+  const name = (row.patient_name ?? "").trim() || "—";
+  const token = (row.admission_number ?? "").trim() || (row.order_id ?? "").slice(0, 8) || "—";
   return { name, token };
 }
 
 function doctorLabel(row: InvestigationLabRow): string {
-  const pr = pickOne(row.practitioner);
-  if (!pr || typeof pr !== "object") return "—";
-  const n = practitionerDisplayNameFromRow(pr as { full_name?: unknown; first_name?: unknown; last_name?: unknown });
+  const n = (row.ordered_by_name ?? "").trim();
   return n ? `Dr. ${n}` : "—";
 }
 
@@ -188,8 +164,8 @@ function priorityPillClass(p: string | null | undefined): string {
 function statusPillClass(st: string | null | undefined): string {
   const x = norm(st);
   if (x === "ordered") return "bg-amber-50 text-amber-900 ring-amber-200";
-  if (x === "collected") return "bg-blue-50 text-blue-900 ring-blue-200";
-  if (x === "resulted") return "bg-emerald-50 text-emerald-900 ring-emerald-200";
+  if (x === "sample_collected" || x === "collected") return "bg-blue-50 text-blue-900 ring-blue-200";
+  if (x === "result_entered" || x === "resulted") return "bg-emerald-50 text-emerald-900 ring-emerald-200";
   return "bg-gray-50 text-gray-800 ring-gray-200";
 }
 
@@ -215,6 +191,7 @@ export default function LabTechDashboardPage() {
 
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "collected" | "resulted">("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | "stat" | "urgent" | "routine">("all");
+  const [labView, setLabView] = useState<"inhouse" | "external">("inhouse");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [entryDrafts, setEntryDrafts] = useState<ResultEntryDraft[]>([]);
@@ -251,7 +228,7 @@ export default function LabTechDashboardPage() {
   }, []);
 
   const loadInvestigations = useCallback(
-    async (hid: string | null, opts?: { silent?: boolean }) => {
+    async (hid: string | null, opts?: { silent?: boolean; view?: "inhouse" | "external" }) => {
       if (!hid) {
         setRows([]);
         setLoading(false);
@@ -264,30 +241,24 @@ export default function LabTechDashboardPage() {
         setLoadError(null);
       }
 
-      const { start, end } = localDayBoundsIso();
-      const { data, error } = await supabase
-        .from("investigations")
-        .select(INV_SELECT)
-        .eq("hospital_id", hid)
-        .gte("ordered_at", start)
-        .lt("ordered_at", end)
-        .not("status", "eq", "cancelled");
+      const view = opts?.view ?? labView;
+      const rpc = view === "external" ? "get_lab_queue_external" : "get_lab_queue";
+      const { data, error } = await supabase.rpc(rpc, { p_hospital_id: hid });
 
       if (error) {
         if (!opts?.silent) setLoadError(error.message);
         showToast(error.message);
         setRows([]);
       } else {
-        const list = (data ?? []) as InvestigationLabRow[];
-        const notCancelled = list.filter((r) => norm(r.status) !== "cancelled");
-        setRows(sortInvestigations(notCancelled));
+        const list = (Array.isArray(data) ? data : []) as InvestigationLabRow[];
+        setRows(sortInvestigations(list));
         setLoadError(null);
       }
 
       if (opts?.silent) setSilentLoading(false);
       else setLoading(false);
     },
-    [showToast],
+    [showToast, labView],
   );
 
   useEffect(() => {
@@ -297,20 +268,19 @@ export default function LabTechDashboardPage() {
       if (cancelled) return;
       if (error) setOrgError(error.message);
       setHospitalId(orgId);
-      await loadInvestigations(orgId);
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadInvestigations]);
+  }, []);
 
   useEffect(() => {
     if (!hospitalId) return;
     const channel = supabase
-      .channel(`lab-investigations-${hospitalId}`)
+      .channel(`lab-queue-${hospitalId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "investigations", filter: `hospital_id=eq.${hospitalId}` },
+        { event: "*", schema: "public", table: "ipd_investigation_orders", filter: `hospital_id=eq.${hospitalId}` },
         () => {
           void loadInvestigations(hospitalId, { silent: true });
         },
@@ -321,6 +291,11 @@ export default function LabTechDashboardPage() {
     };
   }, [hospitalId, loadInvestigations]);
 
+  useEffect(() => {
+    if (!hospitalId) return;
+    void loadInvestigations(hospitalId);
+  }, [hospitalId, labView, loadInvestigations]);
+
   const stats = useMemo(() => {
     let pendingCollection = 0;
     let inProgress = 0;
@@ -328,8 +303,8 @@ export default function LabTechDashboardPage() {
     for (const r of rows) {
       const st = norm(r.status);
       if (st === "ordered") pendingCollection += 1;
-      else if (st === "collected") inProgress += 1;
-      else if (st === "resulted" || norm(r.result_status) === "resulted") {
+      else if (st === "sample_collected" || st === "collected") inProgress += 1;
+      else if (st === "result_entered" || st === "resulted") {
         ready += 1;
       }
     }
@@ -345,8 +320,8 @@ export default function LabTechDashboardPage() {
     return rows.filter((r) => {
       const st = norm(r.status);
       if (statusFilter === "pending" && st !== "ordered") return false;
-      if (statusFilter === "collected" && st !== "collected") return false;
-      if (statusFilter === "resulted" && st !== "resulted") return false;
+      if (statusFilter === "collected" && st !== "sample_collected" && st !== "collected") return false;
+      if (statusFilter === "resulted" && st !== "result_entered" && st !== "resulted") return false;
       const pr = norm(r.priority);
       if (priorityFilter === "stat" && pr !== "stat") return false;
       if (priorityFilter === "urgent" && pr !== "urgent") return false;
@@ -364,12 +339,12 @@ export default function LabTechDashboardPage() {
       return;
     }
     showToast(label);
-    await loadInvestigations(hospitalId, { silent: true });
+    await loadInvestigations(hospitalId, { silent: true, view: labView });
   }
 
   function openEnterResults(row: InvestigationLabRow) {
-    setEditingId(row.id);
-    setEntryDrafts(defaultDraftsForTest(row.test_name));
+    setEditingId(row.order_id);
+    setEntryDrafts([{ ...emptyDraft(), parameter_name: (row.test_name ?? "").trim() || "Result" }]);
   }
 
   function closeEnterResults() {
@@ -378,60 +353,59 @@ export default function LabTechDashboardPage() {
   }
 
   async function saveLabResults(inv: InvestigationLabRow) {
-    const valid = entryDrafts.filter((d) => d.parameter_name.trim() && d.result_value.trim());
-    if (valid.length === 0) {
-      showToast("Add at least one parameter with a result value.");
+    const d = entryDrafts[0];
+    if (!d || !d.result_value.trim()) {
+      showToast("Enter a result value.");
       return;
     }
     setSavingResults(true);
     const now = new Date().toISOString();
-    const payloads = valid.map((d) => {
-      const { value_numeric, value_text } = parseResultValue(d.result_value);
-      return {
-        investigation_id: inv.id,
-        parameter_name: d.parameter_name.trim(),
-        value_numeric,
-        value_text: value_text || null,
-        unit: d.unit.trim() || null,
-        ref_range_text: d.reference_range.trim() || null,
-        ref_range_low: null as number | null,
-        ref_range_high: null as number | null,
-        loinc_code: null as string | null,
-        interpretation: null as string | null,
-        is_abnormal: d.is_abnormal,
-      };
-    });
+    const { value_numeric, value_text } = parseResultValue(d.result_value);
+    const isCritical = d.is_abnormal;
 
-    const { error: insErr } = await supabase.from("lab_result_entries").insert(payloads);
-    if (insErr) {
+    const { error: upErr } = await supabase
+      .from("ipd_investigation_orders")
+      .update({
+        status: "result_entered",
+        result_value: value_numeric,
+        result_unit: d.unit.trim() || null,
+        result_text: value_text || d.result_value.trim(),
+        is_critical: isCritical,
+        result_available_at: now,
+      })
+      .eq("id", inv.order_id)
+      .eq("hospital_id", hospitalId ?? "");
+
+    if (upErr) {
       setSavingResults(false);
-      showToast(insErr.message);
+      showToast(upErr.message);
       return;
     }
 
-    const st = norm(inv.status);
-    if (st !== "resulted") {
-      const { error: upErr } = await supabase
-        .from("investigations")
-        .update({
-          status: "resulted",
-          result_status: "resulted",
-          resulted_at: now,
-        })
-        .eq("id", inv.id)
-        .eq("hospital_id", hospitalId ?? "");
-      setSavingResults(false);
-      if (upErr) {
-        showToast(upErr.message);
-        return;
-      }
-    } else {
-      setSavingResults(false);
+    if (isCritical && inv.ordered_by_id) {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id ?? null;
+      const ward = (inv.ward_name ?? "").trim();
+      const bed = (inv.bed_number ?? "").trim();
+      const loc = [ward, bed ? `Bed ${bed}` : ""].filter(Boolean).join(" ");
+      await supabase.from("notifications").insert({
+        hospital_id: hospitalId,
+        recipient_id: inv.ordered_by_id,
+        sender_id: uid,
+        type: "critical_lab",
+        priority: "critical",
+        context: "IPD",
+        title: "Critical lab result",
+        body: `CRITICAL: ${(inv.test_name ?? "").trim()} — ${(inv.patient_name ?? "").trim()}${loc ? ` (${loc})` : ""}`,
+        data: { order_id: inv.order_id, test_name: inv.test_name },
+        action_url: `/dashboard/ipd`,
+      });
     }
 
+    setSavingResults(false);
     showToast("Results saved.");
     closeEnterResults();
-    await loadInvestigations(hospitalId, { silent: true });
+    await loadInvestigations(hospitalId, { silent: true, view: labView });
   }
 
   const todayLabel = todayLocalYmd();
@@ -451,7 +425,7 @@ export default function LabTechDashboardPage() {
             type="button"
             className={btnSecondary}
             disabled={!hospitalId || loading}
-            onClick={() => void loadInvestigations(hospitalId, { silent: true })}
+            onClick={() => void loadInvestigations(hospitalId, { silent: true, view: labView })}
           >
             Refresh
           </button>
@@ -491,6 +465,15 @@ export default function LabTechDashboardPage() {
         {/* Filters */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <FilterChipGroup
+            label="Queue"
+            value={labView}
+            onChange={(v) => setLabView(v)}
+            options={[
+              { id: "inhouse", label: "In-house" },
+              { id: "external", label: "External" },
+            ]}
+          />
+          <FilterChipGroup
             label="Status"
             value={statusFilter}
             onChange={setStatusFilter}
@@ -529,6 +512,7 @@ export default function LabTechDashboardPage() {
                   <th className="px-3 py-3">Patient</th>
                   <th className="px-3 py-3">Test</th>
                   <th className="px-3 py-3">Category</th>
+                  {labView === "external" ? <th className="px-3 py-3">External Lab</th> : null}
                   <th className="px-3 py-3">Priority</th>
                   <th className="px-3 py-3">Doctor</th>
                   <th className="px-3 py-3">Ordered At</th>
@@ -539,7 +523,7 @@ export default function LabTechDashboardPage() {
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-3 py-12 text-center text-sm text-gray-500">
+                    <td colSpan={labView === "external" ? 10 : 9} className="px-3 py-12 text-center text-sm text-gray-500">
                       No investigations match the current filters.
                     </td>
                   </tr>
@@ -547,21 +531,42 @@ export default function LabTechDashboardPage() {
                   filteredRows.map((row) => {
                     const { name, token } = patientNameDocpad(row);
                     const st = norm(row.status);
-                    const busy = actionId === row.id;
-                    const isEditing = editingId === row.id;
+                    const busy = actionId === row.order_id;
+                    const isEditing = editingId === row.order_id;
+                    const rel =
+                      row.ordered_at && !Number.isNaN(Date.parse(row.ordered_at))
+                        ? formatDistanceToNow(new Date(row.ordered_at), { addSuffix: true })
+                        : "—";
+                    const ageSex = [row.patient_age != null ? `${row.patient_age}y` : "", (row.patient_sex ?? "").trim()]
+                      .filter(Boolean)
+                      .join(" · ");
 
                     return (
-                      <Fragment key={row.id}>
+                      <Fragment key={row.order_id}>
                         <tr className="border-b border-gray-100 transition hover:bg-slate-50/50">
                           <td className="px-3 py-2.5 font-mono text-xs font-semibold text-gray-800">{token}</td>
-                          <td className="px-3 py-2.5 font-medium text-gray-900">{name}</td>
-                          <td className="max-w-[200px] px-3 py-2.5 text-gray-800">
-                            <span className="line-clamp-2">{(row.test_name ?? "").trim() || "—"}</span>
+                          <td className="px-3 py-2.5 text-gray-900">
+                            <div className="font-medium">{name}</div>
+                            {ageSex ? <div className="text-[11px] text-gray-500">{ageSex}</div> : null}
+                          </td>
+                          <td className="max-w-[220px] px-3 py-2.5 text-gray-800">
+                            <span className="line-clamp-2 font-medium">{(row.test_name ?? "").trim() || "—"}</span>
+                            {(row.sample_type ?? "").trim() ? (
+                              <span className="mt-0.5 block text-[11px] text-gray-500">{(row.sample_type ?? "").trim()}</span>
+                            ) : null}
+                            {row.requires_fasting ? (
+                              <span className="mt-1 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+                                Fasting
+                              </span>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2.5 text-gray-600">{(row.test_category ?? "").trim() || "—"}</td>
+                          {labView === "external" ? (
+                            <td className="px-3 py-2.5 text-gray-700">{(row.external_lab_name ?? "").trim() || "—"}</td>
+                          ) : null}
                           <td className="px-3 py-2.5">
                             <span
-                              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset ${priorityPillClass(row.priority)}`}
+                              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset ${priorityPillClass(row.priority)} ${norm(row.priority) === "stat" ? "animate-pulse" : ""}`}
                             >
                               {(row.priority ?? "").trim() || "—"}
                             </span>
@@ -569,7 +574,10 @@ export default function LabTechDashboardPage() {
                           <td className="max-w-[160px] px-3 py-2.5 text-xs text-gray-700">
                             <span className="line-clamp-2">{doctorLabel(row)}</span>
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-xs text-gray-600">{formatOrderedDate(row.ordered_at)}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-xs text-gray-600">
+                            <div>{formatOrderedDate(row.ordered_at)}</div>
+                            <div className="text-[10px] text-gray-400">{rel}</div>
+                          </td>
                           <td className="px-3 py-2.5">
                             <span
                               className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset ${statusPillClass(row.status)}`}
@@ -582,14 +590,18 @@ export default function LabTechDashboardPage() {
                               {st === "ordered" ? (
                                 <button
                                   type="button"
-                                  disabled={busy || !hospitalId}
+                                  disabled={busy || !hospitalId || !labTechPractitionerId}
                                   className={btnPrimary}
                                   onClick={() =>
-                                    void runAction(row.id, "Sample collected.", async () =>
+                                    void runAction(row.order_id, "Sample collected.", async () =>
                                       await supabase
-                                        .from("investigations")
-                                        .update({ status: "collected", collected_at: new Date().toISOString() })
-                                        .eq("id", row.id)
+                                        .from("ipd_investigation_orders")
+                                        .update({
+                                          status: "sample_collected",
+                                          sample_collected_at: new Date().toISOString(),
+                                          sample_collected_by: labTechPractitionerId,
+                                        })
+                                        .eq("id", row.order_id)
                                         .eq("hospital_id", hospitalId ?? ""),
                                     )
                                   }
@@ -597,49 +609,38 @@ export default function LabTechDashboardPage() {
                                   {busy ? "…" : "Collect Sample"}
                                 </button>
                               ) : null}
-                              {st === "collected" ? (
-                                <button
-                                  type="button"
-                                  disabled={busy || !hospitalId}
-                                  className={btnSecondary}
-                                  onClick={() =>
-                                    void runAction(row.id, "Marked ready.", async () =>
-                                      await supabase
-                                        .from("investigations")
-                                        .update({
-                                          status: "resulted",
-                                          result_status: "resulted",
-                                          resulted_at: new Date().toISOString(),
-                                        })
-                                        .eq("id", row.id)
-                                        .eq("hospital_id", hospitalId ?? ""),
-                                    )
-                                  }
-                                >
-                                  {busy ? "…" : "Mark Ready"}
+                              {st === "sample_collected" || st === "collected" ? (
+                                <button type="button" className={btnSecondary} onClick={() => openEnterResults(row)}>
+                                  Enter Result
                                 </button>
                               ) : null}
-                              {st === "collected" || st === "resulted" ? (
-                                <button type="button" className={btnGhost} onClick={() => openEnterResults(row)}>
-                                  Enter Results
-                                </button>
+                              {st === "result_entered" || st === "resulted" ? (
+                                <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-900">
+                                  Resulted
+                                </span>
                               ) : null}
-                              {st === "ordered" || st === "collected" ? (
-                                <button
-                                  type="button"
-                                  className={btnGhost}
-                                  disabled={!hospitalId}
-                                  onClick={() => setOcrTarget(row)}
-                                >
-                                  Upload Report
-                                </button>
+                              {labView === "external" && (st === "ordered" || st === "sample_collected" || st === "collected") ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className={btnGhost}
+                                    onClick={() => {
+                                      window.print();
+                                    }}
+                                  >
+                                    Print Requisition
+                                  </button>
+                                  <button type="button" className={btnGhost} disabled={!hospitalId} onClick={() => setOcrTarget(row)}>
+                                    Upload Result
+                                  </button>
+                                </>
                               ) : null}
                             </div>
                           </td>
                         </tr>
                         {isEditing ? (
                           <tr className="border-b border-gray-200 bg-blue-50/30">
-                            <td colSpan={9} className="px-4 py-4">
+                            <td colSpan={labView === "external" ? 10 : 9} className="px-4 py-4">
                               <EnterResultsPanel
                                 testLabel={(row.test_name ?? "").trim() || "Investigation"}
                                 drafts={entryDrafts}
@@ -666,16 +667,12 @@ export default function LabTechDashboardPage() {
         <OCRUploadModal
           open
           onClose={() => setOcrTarget(null)}
-          investigationId={ocrTarget.id}
+          investigationId={ocrTarget.order_id}
           patientId={ocrTarget.patient_id}
-          hospitalId={
-            ocrTarget.hospital_id != null && String(ocrTarget.hospital_id).trim() !== ""
-              ? String(ocrTarget.hospital_id).trim()
-              : hospitalId ?? ""
-          }
+          hospitalId={hospitalId ?? ""}
           uploadedBy={labTechPractitionerId}
           investigationTestName={ocrTarget.test_name}
-          onSuccess={() => void loadInvestigations(hospitalId, { silent: true })}
+          onSuccess={() => void loadInvestigations(hospitalId, { silent: true, view: labView })}
         />
       ) : null}
     </div>
@@ -817,7 +814,7 @@ function EnterResultsPanel({
                 }
                 className="h-4 w-4 rounded border-gray-300"
               />
-              <span className="text-xs font-medium text-gray-700">Abnormal</span>
+              <span className="text-xs font-medium text-gray-700">Critical</span>
             </label>
             {drafts.length > 1 ? (
               <div className="sm:col-span-12">

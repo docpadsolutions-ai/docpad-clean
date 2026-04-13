@@ -155,6 +155,7 @@ export function PreauthForm({
   const draftIdRef = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
   const urlEncounterBootstrappedRef = useRef<string | null>(null);
+  const urlAdmissionBootstrappedRef = useRef<string | null>(null);
   const pendingCoverageIdRef = useRef<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(variant !== "create");
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -290,6 +291,45 @@ export function PreauthForm({
       const label = pat?.full_name != null && String(pat.full_name).trim() !== "" ? String(pat.full_name).trim() : "Patient";
       selectPatient(pid, label, { encounterId: eid });
       urlEncounterBootstrappedRef.current = eid;
+    })();
+  }, [hospitalId, searchParams, selectPatient, variant]);
+
+  /** Deep link: ?admissionId=… (create only) — IPD admission patient prefill */
+  useEffect(() => {
+    if (variant !== "create" || !hospitalId) return;
+    const aid = searchParams.get("admissionId")?.trim() ?? "";
+    if (!aid) {
+      urlAdmissionBootstrappedRef.current = null;
+      return;
+    }
+    if (urlAdmissionBootstrappedRef.current === aid) return;
+
+    void (async () => {
+      const { data: adm, error: admErr } = await supabase
+        .from("ipd_admissions")
+        .select("patient_id, hospital_id")
+        .eq("id", aid)
+        .maybeSingle();
+      if (admErr || !adm) {
+        toast.error(admErr?.message ?? "Admission not found.");
+        return;
+      }
+      const row = adm as Record<string, unknown>;
+      const hid = row.hospital_id != null ? String(row.hospital_id) : "";
+      if (hid !== hospitalId) {
+        toast.error("Admission is not in your hospital.");
+        return;
+      }
+      const pid = row.patient_id != null ? String(row.patient_id) : "";
+      if (!pid) {
+        toast.error("Admission has no patient.");
+        return;
+      }
+      const { data: pat } = await supabase.from("patients").select("full_name").eq("id", pid).maybeSingle();
+      const label =
+        pat?.full_name != null && String(pat.full_name).trim() !== "" ? String(pat.full_name).trim() : "Patient";
+      selectPatient(pid, label, {});
+      urlAdmissionBootstrappedRef.current = aid;
     })();
   }, [hospitalId, searchParams, selectPatient, variant]);
 

@@ -212,6 +212,32 @@ export function parseFirstWardBedFromAvailability(data: unknown): FirstWardBed |
   return { wardId, bedId, label };
 }
 
+/** Admission rows that block creating another admission for the same patient (see `rpcAdmitPatient`). */
+const ACTIVE_IPD_ADMISSION_STATUSES = ["in-progress", "admitted"] as const;
+
+const ACTIVE_ADMISSION_EXISTS_MSG =
+  "This patient already has an active admission. Discharge them before creating a new one.";
+
+async function findActiveIpdAdmissionForPatient(
+  supabase: SupabaseClient,
+  patientId: string,
+): Promise<{ row: { id: string } | null; error: Error | null }> {
+  const pid = str(patientId);
+  if (!pid) return { row: null, error: null };
+  const { data, error } = await supabase
+    .from("ipd_admissions")
+    .select("id")
+    .eq("patient_id", pid)
+    .in("status", [...ACTIVE_IPD_ADMISSION_STATUSES])
+    .limit(1)
+    .maybeSingle();
+  if (error) return { row: null, error: new Error(error.message) };
+  if (data && typeof data === "object" && data.id != null) {
+    return { row: { id: String(data.id) }, error: null };
+  }
+  return { row: null, error: null };
+}
+
 export type AdmitPatientInput = {
   p_hospital_id: string;
   p_patient_id: string;
@@ -238,6 +264,15 @@ export async function rpcAdmitPatient(
   supabase: SupabaseClient,
   input: AdmitPatientInput,
 ): Promise<{ admissionId: string | null; error: Error | null }> {
+  const { row: activeRow, error: activeErr } = await findActiveIpdAdmissionForPatient(
+    supabase,
+    input.p_patient_id,
+  );
+  if (activeErr) return { admissionId: null, error: activeErr };
+  if (activeRow) {
+    return { admissionId: null, error: new Error(ACTIVE_ADMISSION_EXISTS_MSG) };
+  }
+
   let wardId = str(input.p_ward_id);
   let bedId = str(input.p_bed_id);
 
@@ -475,6 +510,67 @@ export async function rpcCompileDischargeSummary(
   return { data: row, error: null };
 }
 
+/** Parallel row sets for AI discharge compilation (hospital course + investigations). */
+export type DischargeAiCompileContext = {
+  progress_notes: Record<string, unknown>[];
+  investigation_orders: Record<string, unknown>[];
+  treatments: Record<string, unknown>[];
+  doctor_admissions_summary: Record<string, unknown> | null;
+};
+
+/** Fetches IPD rows used to build the Anthropic prompt (matches discharge modal Step 1). */
+export async function fetchDischargeAiCompileContext(
+  supabase: SupabaseClient,
+  admissionId: string,
+): Promise<{ data: DischargeAiCompileContext | null; error: Error | null }> {
+  const qNotes = supabase
+    .from("ipd_progress_notes")
+    .select(
+      "note_date, hospital_day_number, condition_status, pain_score, heart_rate, bp_systolic, bp_diastolic, spo2, temperature_c, subjective_text, assessment_text, plan_narrative, wound_status, appetite, sleep_ok, bowel_ok",
+    )
+    .eq("admission_id", admissionId)
+    .order("note_date");
+
+  const qInv = supabase
+    .from("ipd_investigation_orders")
+    .select(
+      "test_name, test_category, ordered_date, status, result_text, result_value, result_unit, is_critical, loinc_code",
+    )
+    .eq("admission_id", admissionId)
+    .order("ordered_date");
+
+  const qTx = supabase
+    .from("ipd_treatments")
+    .select("name, dose, route, frequency, duration_days, start_date, end_date, treatment_kind, status")
+    .eq("admission_id", admissionId);
+
+  const qDoc = supabase
+    .from("ipd_doctor_admissions_summary")
+    .select("*")
+    .eq("admission_id", admissionId)
+    .maybeSingle();
+
+  const [notesRes, invRes, txRes, docRes] = await Promise.all([qNotes, qInv, qTx, qDoc]);
+
+  const firstErr = notesRes.error ?? invRes.error ?? txRes.error ?? docRes.error;
+  if (firstErr) {
+    return { data: null, error: new Error(firstErr.message) };
+  }
+
+  return {
+    data: {
+      progress_notes: (notesRes.data ?? []) as Record<string, unknown>[],
+      investigation_orders: (invRes.data ?? []) as Record<string, unknown>[],
+      treatments: (txRes.data ?? []) as Record<string, unknown>[],
+      doctor_admissions_summary:
+        docRes.data && typeof docRes.data === "object" && !Array.isArray(docRes.data)
+          ? (docRes.data as Record<string, unknown>)
+          : null,
+    },
+    error: null,
+  };
+}
+
 export type UpsertDischargeSummaryPayload = {
   p_admission_id: string;
   p_status: "draft" | "finalized";
@@ -482,6 +578,8 @@ export type UpsertDischargeSummaryPayload = {
   p_discharge_date: string | null;
   p_discharge_type: string | null;
   p_hospital_course_summary: string | null;
+  /** Requires `upsert_discharge_summary` to accept this parameter in Supabase. */
+  p_investigations_summary?: string | null;
   p_discharge_medications: unknown;
   p_discharge_instructions: string | null;
   p_follow_up_date: string | null;
@@ -494,6 +592,9 @@ export type UpsertDischargeSummaryPayload = {
   p_final_diagnosis_icd10: string[] | null;
   p_final_diagnosis_display: string[] | null;
   p_procedures_done: unknown;
+  /** Set on finalize when supported by `upsert_discharge_summary`. */
+  p_signed_by?: string | null;
+  p_signed_at?: string | null;
 };
 
 export async function rpcUpsertDischargeSummary(

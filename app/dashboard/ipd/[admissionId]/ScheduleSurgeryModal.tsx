@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "../../../../lib/supabase";
 import { rpcMarkSurgeryDay } from "../../../lib/ipdData";
@@ -11,9 +11,13 @@ import {
   type PractitionerRoleFilter,
   type PractitionerSearchRow,
 } from "../../../lib/ipdSearchPractitioners";
-import { readIndiaRefsetKeyFromEnv } from "@/app/lib/snomedUiConfig";
-import SnomedSearch from "../../../components/SnomedSearch";
-import VoiceDictationButton from "../../../components/VoiceDictationButton";
+import ProcedureSnomedSearchField from "../../../components/ProcedureSnomedSearchField";
+import TimeWheelPicker, {
+  parseDbStartTimeTo12hDisplay,
+  parseTime12h,
+  time12hTo24hForDb,
+} from "../../../components/TimeWheelPicker";
+import OtRoomDropdown from "../../../components/OtRoomDropdown";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";
 import { Label } from "../../../../components/ui/label";
@@ -29,7 +33,9 @@ function asRec(v: unknown): Record<string, unknown> | null {
 }
 
 const PAGE_OVERLAY = "bg-black/55";
-const CARD = "rounded-xl border border-slate-600/80 bg-[#1e293b] p-4";
+const CARD = "rounded-xl border border-gray-200 bg-white p-4";
+const SECTION_HEADER = "mb-3 text-xs font-semibold uppercase text-blue-600";
+const INPUT_FIELD = "border border-gray-300 bg-white text-gray-900";
 
 const LATERALITY_OPTS = [
   { value: "Left", label: "Left" },
@@ -62,13 +68,6 @@ function findNoteIdForSurgeryDate(admissionData: Record<string, unknown> | null,
     }
   }
   return null;
-}
-
-function timeToDb(t: string): string | null {
-  const x = t.trim();
-  if (!x) return null;
-  if (/^\d{2}:\d{2}$/.test(x)) return `${x}:00`;
-  return x;
 }
 
 function PractitionerSearchField({
@@ -117,9 +116,9 @@ function PractitionerSearchField({
 
   return (
     <div ref={wrapRef} className="relative space-y-1.5">
-      <Label className="text-[11px] uppercase tracking-wide text-slate-400">
+      <Label className="text-[11px] uppercase tracking-wide text-gray-600">
         {label}
-        {required ? <span className="text-red-400"> *</span> : null}
+        {required ? <span className="text-red-600"> *</span> : null}
       </Label>
       <input
         type="text"
@@ -136,14 +135,14 @@ function PractitionerSearchField({
         onFocus={() => {
           if (q.trim().length >= 1) void runSearch(q);
         }}
-        className="w-full rounded-lg border border-slate-600 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none ring-0 placeholder:text-slate-600 focus:border-sky-500"
+        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none ring-0 placeholder:text-gray-500 focus:border-blue-600"
       />
       {value?.id ? (
-        <p className="text-[11px] text-sky-300">
+        <p className="text-[11px] text-sky-800">
           Selected: {value.label}
           <button
             type="button"
-            className="ml-2 text-slate-400 underline hover:text-white"
+            className="ml-2 text-gray-600 underline hover:text-gray-900"
             onClick={() => {
               onChange(null);
               setQ("");
@@ -155,7 +154,7 @@ function PractitionerSearchField({
       ) : null}
       {open && results.length > 0 ? (
         <div
-          className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-600 bg-[#1e293b] py-1 shadow-xl"
+          className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-xl"
           style={{ top: "100%" }}
         >
           {results.map((r) => {
@@ -166,15 +165,15 @@ function PractitionerSearchField({
               <button
                 key={r.id}
                 type="button"
-                className="w-full px-3 py-2 text-left hover:bg-slate-700/80"
+                className="w-full px-3 py-2 text-left hover:bg-gray-100"
                 onClick={() => {
                   onChange({ id: r.id, label: line, fullName: fn });
                   setQ(line);
                   setOpen(false);
                 }}
               >
-                <span className="block text-[13px] text-slate-100">{fn}</span>
-                <span className="block text-[11px] text-slate-500">{sp || "—"}</span>
+                <span className="block text-[13px] text-gray-900">{fn}</span>
+                <span className="block text-[11px] text-gray-500">{sp || "—"}</span>
               </button>
             );
           })}
@@ -202,27 +201,26 @@ export default function ScheduleSurgeryModal({
   onScheduled,
 }: ScheduleSurgeryModalProps) {
   const titleId = useId();
+  const plannedStartLabelId = useId();
+  const plannedStartTimeRegionId = useId();
+  const otNumberLabelId = useId();
   const [busy, setBusy] = useState(false);
   const [loadingRow, setLoadingRow] = useState(false);
-  const [practitionerId, setPractitionerId] = useState<string | null>(null);
-
   const admission = asRec(admissionData?.admission);
   const patient = asRec(admissionData?.patient);
-  const preAdmission = asRec(admissionData?.pre_admission);
   const doctor = asRec(admissionData?.doctor);
   const patientId = s(patient?.id ?? admission?.patient_id);
   const surgeryIdExisting = s(admission?.surgery_id);
-  const snomedIndia = readIndiaRefsetKeyFromEnv();
-
   const [procedureName, setProcedureName] = useState("");
   const [procedureSnomed, setProcedureSnomed] = useState("");
   const [procedureIcd10, setProcedureIcd10] = useState<string | null>(null);
-  const [procedureQuery, setProcedureQuery] = useState("");
   const [laterality, setLaterality] = useState<string>("Not applicable");
   const [surgeryDate, setSurgeryDate] = useState("");
   const [estimatedMins, setEstimatedMins] = useState<string>("");
   const [otNumber, setOtNumber] = useState("");
-  const [startTime, setStartTime] = useState("");
+  /** 12h display e.g. "02:30 PM"; persisted in `planned_start_time` and converted for `start_time`. */
+  const [plannedStartTime, setPlannedStartTime] = useState("");
+  const [plannedStartTimeExpanded, setPlannedStartTimeExpanded] = useState(false);
   const [anaesthesiaType, setAnaesthesiaType] = useState<string>("General");
   const [anaesthetist, setAnaesthetist] = useState<Selection | null>(null);
   const [primarySurgeon, setPrimarySurgeon] = useState<Selection | null>(null);
@@ -231,15 +229,11 @@ export default function ScheduleSurgeryModal({
   const [siteMarking, setSiteMarking] = useState(false);
   const [consentVerified, setConsentVerified] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const uid = auth.user?.id;
-      if (!uid) return;
-      const { data: prof } = await supabase.from("practitioners").select("id").eq("user_id", uid).maybeSingle();
-      if (prof?.id) setPractitionerId(String(prof.id));
-    })();
-  }, []);
+  const plannedStartTimePreview = useMemo(() => {
+    const t = plannedStartTime.trim();
+    if (t && parseTime12h(t)) return t;
+    return null;
+  }, [plannedStartTime]);
 
   const resetFormFromAdmission = useCallback(() => {
     const sd = s(admission?.surgery_date);
@@ -254,11 +248,10 @@ export default function ScheduleSurgeryModal({
     setProcedureName("");
     setProcedureSnomed("");
     setProcedureIcd10(null);
-    setProcedureQuery("");
     setLaterality("Not applicable");
     setEstimatedMins("");
     setOtNumber("");
-    setStartTime("");
+    setPlannedStartTime("");
     setAnaesthesiaType("General");
     setAnaesthetist(null);
     setAssistantSurgeon(null);
@@ -282,25 +275,17 @@ export default function ScheduleSurgeryModal({
       setProcedureSnomed(s(row.procedure_snomed));
       const icd = row.procedure_icd10;
       setProcedureIcd10(icd != null && String(icd).trim() !== "" ? String(icd) : null);
-      setProcedureQuery("");
       setLaterality(s(row.laterality) || "Not applicable");
       const sd = s(row.surgery_date);
       setSurgeryDate(sd ? sd.slice(0, 10) : "");
       const em = row.estimated_duration_mins;
       setEstimatedMins(em != null && em !== "" ? String(em) : "");
       setOtNumber(s(row.ot_number));
-      const st = s(row.start_time);
-      if (st && st.includes("T")) {
-        const d = new Date(st);
-        if (!Number.isNaN(d.getTime())) {
-          const hh = String(d.getHours()).padStart(2, "0");
-          const mm = String(d.getMinutes()).padStart(2, "0");
-          setStartTime(`${hh}:${mm}`);
-        }
-      } else if (/^\d{2}:\d{2}/.test(st)) {
-        setStartTime(st.slice(0, 5));
+      const planned = s(row.planned_start_time);
+      if (planned && parseTime12h(planned)) {
+        setPlannedStartTime(planned);
       } else {
-        setStartTime("");
+        setPlannedStartTime(parseDbStartTimeTo12hDisplay(s(row.start_time)));
       }
       setAnaesthesiaType(s(row.anaesthesia_type) || "General");
       setSiteMarking(Boolean(row.site_marking_confirmed));
@@ -381,7 +366,8 @@ export default function ScheduleSurgeryModal({
           return Number.isFinite(n) && n > 0 ? n : null;
         })(),
         ot_number: otNumber.trim() || null,
-        start_time: timeToDb(startTime),
+        planned_start_time: plannedStartTime.trim() || null,
+        start_time: plannedStartTime.trim() ? time12hTo24hForDb(plannedStartTime.trim()) : null,
         anaesthesia_type: anaesthesiaType,
         anaesthetist_id: anaesthetist.id,
         primary_surgeon_id: primarySurgeon?.id ?? null,
@@ -461,6 +447,7 @@ export default function ScheduleSurgeryModal({
             sender_id: uid,
             type: "pac_request",
             priority: "high",
+            context: "IPD",
             title: "PAC requested — surgery scheduled",
             body: bodyText,
             data: {
@@ -512,16 +499,16 @@ export default function ScheduleSurgeryModal({
         role="dialog"
         aria-modal
         aria-labelledby={titleId}
-        className="relative z-10 flex max-h-[min(92vh,800px)] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-slate-600 bg-[#0f172a] shadow-2xl"
+        className="relative z-10 flex max-h-[min(92vh,800px)] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-slate-700 px-5 py-4">
-          <h2 id={titleId} className="text-lg font-bold text-white">
+        <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+          <h2 id={titleId} className="text-lg font-bold text-gray-900">
             Schedule Surgery
           </h2>
           <button
             type="button"
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
             onClick={() => close()}
           >
             <X className="h-5 w-5" />
@@ -529,88 +516,28 @@ export default function ScheduleSurgeryModal({
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          {loadingRow ? <p className="text-sm text-slate-400">Loading surgery…</p> : null}
+          {loadingRow ? <p className="text-sm text-gray-600">Loading surgery…</p> : null}
 
           <div className={CARD}>
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-sky-400">Procedure details</p>
+            <p className={SECTION_HEADER}>Procedure details</p>
             <div className="space-y-3">
               <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <Label className="text-[11px] uppercase text-slate-400">Procedure name *</Label>
-                  <VoiceDictationButton
-                    contextType="ipd_progress_note"
-                    ipdVoiceField="plan"
-                    specialty={s(preAdmission?.specialty) || s(admission?.specialty)}
-                    doctorId={practitionerId ?? undefined}
-                    indiaRefset={snomedIndia ?? undefined}
-                    ipdVoiceBaseText={procedureName}
-                    variant="slate"
-                    onTranscriptUpdate={(text) => {
-                      setProcedureName(text);
-                      setProcedureSnomed("");
-                      setProcedureIcd10(null);
-                    }}
-                    className="scale-90"
-                  />
-                </div>
-                {procedureName.trim() ? (
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    <span
-                      title={
-                        procedureSnomed.trim()
-                          ? `SNOMED CT: ${procedureSnomed.trim()}`
-                          : "No SNOMED code — pick from search below"
-                      }
-                      className="inline-flex max-w-full items-stretch overflow-hidden rounded-full border border-sky-900/40 bg-[#1e3a5f] shadow-sm"
-                    >
-                      <span className="min-w-0 px-2.5 py-1.5 text-[12px] font-medium text-white">{procedureName.trim()}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProcedureName("");
-                          setProcedureSnomed("");
-                          setProcedureIcd10(null);
-                          setProcedureQuery("");
-                        }}
-                        className="shrink-0 border-0 border-l border-white/20 bg-transparent px-2 py-1.5 text-white/50 transition hover:bg-red-900/40 hover:text-white"
-                        aria-label="Remove procedure"
-                      >
-                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
-                          <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
-                        </svg>
-                      </button>
-                    </span>
-                  </div>
-                ) : null}
-                <p className="mb-1 text-[10px] font-medium text-slate-500">Search SNOMED procedure</p>
-                <SnomedSearch
-                  placeholder="e.g. Total knee replacement…"
-                  hierarchy="procedure"
-                  allowFreeTextNoCode
-                  variant="slate"
-                  value={procedureQuery}
-                  onChange={setProcedureQuery}
-                  indiaRefset={snomedIndia ?? undefined}
-                  onSelect={(concept) => {
-                    setProcedureName(concept.term.trim());
-                    setProcedureSnomed(concept.conceptId.trim());
-                    setProcedureIcd10(concept.icd10?.trim() ? concept.icd10 : null);
-                    setProcedureQuery("");
+                <Label className="mb-1 block text-[11px] uppercase text-gray-600">Procedure name *</Label>
+                <ProcedureSnomedSearchField
+                  disabled={loadingRow}
+                  laterality={laterality}
+                  procedureName={procedureName}
+                  procedureSnomed={procedureSnomed}
+                  procedureIcd10={procedureIcd10}
+                  onProcedureChange={({ procedureName: n, procedureSnomed: sn, procedureIcd10: icd }) => {
+                    setProcedureName(n);
+                    setProcedureSnomed(sn);
+                    setProcedureIcd10(icd);
                   }}
-                />
-                <Input
-                  value={procedureName}
-                  onChange={(e) => {
-                    setProcedureName(e.target.value);
-                    setProcedureSnomed("");
-                    setProcedureIcd10(null);
-                  }}
-                  placeholder="Or type display name manually…"
-                  className="mt-2 border-slate-600 bg-slate-900/60 text-white placeholder:text-slate-600"
                 />
               </div>
               <div>
-                <Label className="text-[11px] uppercase text-slate-400">Laterality</Label>
+                <Label className="text-[11px] uppercase text-gray-600">Laterality</Label>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {LATERALITY_OPTS.map((o) => (
                     <button
@@ -620,8 +547,8 @@ export default function ScheduleSurgeryModal({
                       className={cn(
                         "rounded-full px-3 py-1.5 text-xs font-medium transition",
                         laterality === o.value
-                          ? "bg-sky-600 text-white"
-                          : "border border-slate-600 text-slate-400 hover:border-slate-500",
+                          ? "bg-blue-600 text-white"
+                          : "border border-gray-300 bg-white text-gray-700 hover:border-gray-400",
                       )}
                     >
                       {o.label}
@@ -631,16 +558,16 @@ export default function ScheduleSurgeryModal({
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <Label className="text-[11px] uppercase text-slate-400">Surgery date *</Label>
+                  <Label className="text-[11px] uppercase text-gray-600">Surgery date *</Label>
                   <Input
                     type="date"
                     value={surgeryDate}
                     onChange={(e) => setSurgeryDate(e.target.value)}
-                    className="mt-1 border-slate-600 bg-slate-900/60 text-white"
+                    className={cn("mt-1", INPUT_FIELD)}
                   />
                 </div>
                 <div>
-                  <Label className="text-[11px] uppercase text-slate-400">Estimated duration</Label>
+                  <Label className="text-[11px] uppercase text-gray-600">Estimated duration</Label>
                   <div className="mt-1 flex items-center gap-2">
                     <Input
                       type="text"
@@ -648,40 +575,79 @@ export default function ScheduleSurgeryModal({
                       value={estimatedMins}
                       onChange={(e) => setEstimatedMins(e.target.value.replace(/\D/g, "").slice(0, 4))}
                       placeholder="e.g. 120"
-                      className="border-slate-600 bg-slate-900/60 text-white"
+                      className={INPUT_FIELD}
                     />
-                    <span className="shrink-0 text-sm text-slate-500">mins</span>
+                    <span className="shrink-0 text-sm text-gray-500">mins</span>
                   </div>
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <Label className="text-[11px] uppercase text-slate-400">OT number</Label>
-                  <Input
+              <div>
+                <Label id={otNumberLabelId} className="text-[11px] uppercase text-gray-600">
+                  OT number
+                </Label>
+                <div className="mt-1">
+                  <OtRoomDropdown
+                    aria-labelledby={otNumberLabelId}
+                    hospitalId={hospitalId}
                     value={otNumber}
-                    onChange={(e) => setOtNumber(e.target.value)}
-                    placeholder="OT-1"
-                    className="mt-1 border-slate-600 bg-slate-900/60 text-white"
+                    onChange={setOtNumber}
+                    disabled={loadingRow}
                   />
                 </div>
-                <div>
-                  <Label className="text-[11px] uppercase text-slate-400">Planned start time</Label>
-                  <Input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="mt-1 border-slate-600 bg-slate-900/60 text-white"
-                  />
+              </div>
+              <div>
+                <button
+                  type="button"
+                  id={plannedStartLabelId}
+                  aria-expanded={plannedStartTimeExpanded}
+                  aria-controls={plannedStartTimeRegionId}
+                  disabled={loadingRow}
+                  onClick={() => setPlannedStartTimeExpanded((v) => !v)}
+                  className="flex w-full items-center gap-2 rounded-lg text-left outline-none transition hover:bg-gray-50/80 focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50"
+                >
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-gray-600">
+                    Planned start time
+                  </span>
+                  <span className="ml-auto flex min-w-0 shrink-0 items-center gap-2">
+                    {!plannedStartTimeExpanded ? (
+                      <span className="text-sm tabular-nums text-gray-500">
+                        {plannedStartTimePreview ?? "—"}
+                      </span>
+                    ) : null}
+                    {plannedStartTimeExpanded ? (
+                      <ChevronUp className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
+                    )}
+                  </span>
+                </button>
+                <div
+                  id={plannedStartTimeRegionId}
+                  className={cn(
+                    "grid transition-[grid-template-rows] duration-200 ease-in-out",
+                    plannedStartTimeExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                  )}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="pt-2">
+                      <TimeWheelPicker
+                        aria-labelledby={plannedStartLabelId}
+                        disabled={loadingRow}
+                        value={plannedStartTime}
+                        onChange={setPlannedStartTime}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
           <div className={CARD}>
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-emerald-400">Anaesthesia</p>
+            <p className={SECTION_HEADER}>Anaesthesia</p>
             <div className="space-y-3">
               <div>
-                <Label className="text-[11px] uppercase text-slate-400">Type</Label>
+                <Label className="text-[11px] uppercase text-gray-600">Type</Label>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {ANAESTHESIA_OPTS.map((a) => (
                     <button
@@ -691,8 +657,8 @@ export default function ScheduleSurgeryModal({
                       className={cn(
                         "rounded-full px-3 py-1.5 text-xs font-medium transition",
                         anaesthesiaType === a
-                          ? "bg-emerald-600 text-white"
-                          : "border border-slate-600 text-slate-400 hover:border-slate-500",
+                          ? "bg-blue-600 text-white"
+                          : "border border-gray-300 bg-white text-gray-700 hover:border-gray-400",
                       )}
                     >
                       {a}
@@ -710,7 +676,7 @@ export default function ScheduleSurgeryModal({
                 disabled={loadingRow}
               />
               {anaesthetist?.id ? (
-                <p className="text-[11px] leading-relaxed text-amber-200/80">
+                <p className="text-[11px] leading-relaxed text-amber-800">
                   A PAC request will be sent to this anaesthetist on scheduling.
                 </p>
               ) : null}
@@ -718,7 +684,7 @@ export default function ScheduleSurgeryModal({
           </div>
 
           <div className={CARD}>
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-violet-400">Surgical team</p>
+            <p className={SECTION_HEADER}>Surgical team</p>
             <div className="space-y-3">
               <PractitionerSearchField
                 label="Primary surgeon"
@@ -746,33 +712,33 @@ export default function ScheduleSurgeryModal({
           </div>
 
           <div className={CARD}>
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-amber-400">NABH safety</p>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+            <p className={SECTION_HEADER}>NABH safety</p>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-900">
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-slate-500"
+                className="h-4 w-4 rounded border-gray-300"
                 checked={siteMarking}
                 onChange={(e) => setSiteMarking(e.target.checked)}
               />
               Site marking confirmed
             </label>
-            <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+            <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-gray-900">
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-slate-500"
+                className="h-4 w-4 rounded border-gray-300"
                 checked={consentVerified}
                 onChange={(e) => setConsentVerified(e.target.checked)}
               />
               Consent verified
             </label>
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            <p className="mt-3 text-[11px] leading-relaxed text-gray-600">
               NatSSIPS checklist to be completed on day of surgery
             </p>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-700 px-5 py-4">
-          <Button type="button" variant="outline" className="border-slate-600 text-slate-300" onClick={() => close()}>
+        <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
+          <Button type="button" variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => close()}>
             Cancel
           </Button>
           <Button

@@ -47,7 +47,16 @@ export function classifyInviteRole(roleRaw: string | null | undefined): "doctor"
   const r = (roleRaw ?? "").trim().toLowerCase();
   if (!r) return "unknown";
   if (r === "doctor" || r === "physician") return "doctor";
-  if (r === "nurse" || r === "pharmacist" || r === "receptionist" || r === "admin") return "staff";
+  if (
+    r === "nurse" ||
+    r === "pharmacist" ||
+    r === "receptionist" ||
+    r === "admin" ||
+    r === "lab_technician" ||
+    r === "lab technician" ||
+    r === "lab tech"
+  )
+    return "staff";
   return "unknown";
 }
 

@@ -43,7 +43,7 @@ function formatInr(n: number): string {
 }
 
 function MethodIcon({ method }: { method: Method }) {
-  const cls = "h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400";
+  const cls = "h-5 w-5 shrink-0 text-slate-500";
   switch (method) {
     case "cash":
       return <Banknote className={cls} aria-hidden />;
@@ -72,7 +72,7 @@ function labelFor(method: Method): string {
 function ChangeBadge({ pct }: { pct: number | null }) {
   if (pct == null) {
     return (
-      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
         —
       </span>
     );
@@ -82,8 +82,8 @@ function ChangeBadge({ pct }: { pct: number | null }) {
     <span
       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
         up
-          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-          : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+          ? "bg-emerald-100 text-emerald-800"
+          : "bg-red-100 text-red-800"
       }`}
     >
       {up ? "+" : ""}
@@ -112,10 +112,10 @@ export function DailyCollectionCard({
         {METHODS.map((m) => (
           <div
             key={m}
-            className="animate-pulse rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+            className="animate-pulse rounded-xl border border-slate-200 bg-white p-4"
           >
-            <div className="h-4 w-24 rounded bg-slate-200 dark:bg-slate-700" />
-            <div className="mt-3 h-8 w-32 rounded bg-slate-100 dark:bg-slate-800" />
+            <div className="h-4 w-24 rounded bg-slate-200" />
+            <div className="mt-3 h-8 w-32 rounded bg-slate-100" />
           </div>
         ))}
       </div>
@@ -124,7 +124,7 @@ export function DailyCollectionCard({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
         {error}
       </div>
     );
@@ -132,7 +132,7 @@ export function DailyCollectionCard({
 
   return (
     <div>
-      <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Today&apos;s collection</h2>
+      <h2 className="mb-3 text-sm font-semibold text-slate-700">Today&apos;s collection</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {METHODS.map((method) => {
           const t = todayM[method];
@@ -146,27 +146,27 @@ export function DailyCollectionCard({
           return (
             <div
               key={method}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <MethodIcon method={method} />
-                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{labelFor(method)}</span>
+                  <span className="text-sm font-medium text-slate-900">{labelFor(method)}</span>
                 </div>
                 <ChangeBadge pct={delta} />
               </div>
-              <p className="mt-3 text-2xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">
+              <p className="mt-3 text-2xl font-semibold tabular-nums text-slate-900">
                 {formatInr(net)}
               </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-1 text-xs text-slate-500">
                 {txn} transaction{txn === 1 ? "" : "s"}
               </p>
               {voided > 0 ? (
-                <p className="mt-1 text-xs text-slate-400 line-through dark:text-slate-500">
+                <p className="mt-1 text-xs text-slate-400 line-through">
                   Voided {formatInr(voided)}
                 </p>
               ) : (
-                <p className="mt-1 text-xs text-slate-300 dark:text-slate-600">No voids</p>
+                <p className="mt-1 text-xs text-slate-300">No voids</p>
               )}
             </div>
           );

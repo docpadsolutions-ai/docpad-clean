@@ -22,7 +22,7 @@ function isDoctorOrAdmin(role: UserRole): boolean {
 }
 
 function triageLike(role: UserRole, rawLower: string): boolean {
-  return role === "nurse" || rawLower.includes("triage");
+  return role === "receptionist" || rawLower.includes("triage");
 }
 
 function mapLegacyDomain(domain: string): string {

@@ -10,6 +10,40 @@ export type SnomedConcept = {
   lowConfidence?: boolean;
 };
 
+export type SnomedSearchCacheFilter = "finding_diagnosis" | "procedure";
+export type SnomedConceptCacheType = "finding" | "procedure";
+
+/** Build query string for `/api/snomed/search` (voice resolution, tests, etc.). */
+export function buildSnomedSearchQueryString(params: {
+  q: string;
+  hierarchy?: string;
+  ecl?: string;
+  cacheFilter?: SnomedSearchCacheFilter;
+  conceptCacheType?: SnomedConceptCacheType;
+  bodySite?: string;
+  descendantOfConceptId?: string;
+  findingSiteConceptId?: string;
+  morphologyConceptId?: string;
+  indiaRefset?: string;
+  specialty?: string;
+  doctorId?: string;
+}): string {
+  const sp = new URLSearchParams();
+  sp.set("q", params.q);
+  if (params.hierarchy) sp.set("hierarchy", params.hierarchy);
+  if (params.ecl?.trim()) sp.set("ecl", params.ecl.trim());
+  if (params.cacheFilter) sp.set("cacheFilter", params.cacheFilter);
+  if (params.conceptCacheType) sp.set("conceptCacheType", params.conceptCacheType);
+  if (params.bodySite?.trim()) sp.set("bodySite", params.bodySite.trim());
+  if (params.descendantOfConceptId?.trim()) sp.set("descendantOf", params.descendantOfConceptId.trim());
+  if (params.findingSiteConceptId?.trim()) sp.set("findingSiteConcept", params.findingSiteConceptId.trim());
+  if (params.morphologyConceptId?.trim()) sp.set("morphologyConcept", params.morphologyConceptId.trim());
+  if (params.indiaRefset?.trim()) sp.set("indiaRefset", params.indiaRefset.trim());
+  if (params.specialty?.trim()) sp.set("specialty", params.specialty.trim());
+  if (params.doctorId?.trim()) sp.set("doctorId", params.doctorId.trim());
+  return sp.toString();
+}
+
 async function bumpCacheUsage(concept: SnomedConcept, hierarchy?: string) {
   if (!concept.conceptId?.trim()) return;
   try {
@@ -28,6 +62,13 @@ async function bumpCacheUsage(concept: SnomedConcept, hierarchy?: string) {
   }
 }
 
+const INPUT_WRAP =
+  "flex w-full items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500";
+const INPUT_FIELD =
+  "min-w-0 flex-1 bg-white text-sm text-gray-900 outline-none placeholder:text-gray-400";
+const DROPDOWN_PANEL =
+  "absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg";
+
 /**
  * Chief complaint / diagnosis / etc. — searches `snomed_cache` first (via API), then CSIRO when the cache has no rows.
  * @param allowFreeTextNoCode When true and there are no matches, offer adding the typed text without a SNOMED code.
@@ -36,6 +77,7 @@ async function bumpCacheUsage(concept: SnomedConcept, hierarchy?: string) {
  * @param findingSiteConceptId Refine clinical hierarchies with finding-site attribute (numeric SCTID).
  * @param morphologyConceptId Refine clinical hierarchies with associated morphology (numeric SCTID).
  * @param indiaRefset Key from `INDIA_SNOMED_REFSET_IDS` (e.g. `orthopedics`) — intersects with India NRC refset via ECL.
+ * @param ecl Optional ECL for Ontoserver expansion (tier 3). Use with `cacheFilter` / `conceptCacheType` for tier 1–2 alignment.
  */
 export default function SnomedSearch({
   placeholder,
@@ -51,7 +93,11 @@ export default function SnomedSearch({
   findingSiteConceptId,
   morphologyConceptId,
   indiaRefset,
-  variant = "default",
+  ecl,
+  cacheFilter,
+  conceptCacheType,
+  specialty,
+  doctorId,
 }: {
   placeholder: string;
   hierarchy?: "diagnosis" | "complaint" | "procedure" | "allergy" | "finding";
@@ -65,10 +111,12 @@ export default function SnomedSearch({
   findingSiteConceptId?: string;
   morphologyConceptId?: string;
   indiaRefset?: string;
-  /** Dark panel styling (IPD progress notes, schedule surgery). */
-  variant?: "default" | "slate";
+  ecl?: string;
+  cacheFilter?: SnomedSearchCacheFilter;
+  conceptCacheType?: SnomedConceptCacheType;
+  specialty?: string;
+  doctorId?: string;
 }) {
-  // ALL HOOKS MUST BE AT THE TOP
   const [isMounted, setIsMounted] = useState(false);
   const [internalQuery, setInternalQuery] = useState("");
   const [results, setResults] = useState<SnomedConcept[]>([]);
@@ -102,22 +150,21 @@ export default function SnomedSearch({
       setIsLoading(true);
       try {
         const q = query.trim();
-        const siteQ =
-          hierarchy === "finding" && bodySite?.trim()
-            ? `&bodySite=${encodeURIComponent(bodySite.trim())}`
-            : "";
-        const d = descendantOfConceptId?.trim()
-          ? `&descendantOf=${encodeURIComponent(descendantOfConceptId.trim())}`
-          : "";
-        const fs = findingSiteConceptId?.trim()
-          ? `&findingSiteConcept=${encodeURIComponent(findingSiteConceptId.trim())}`
-          : "";
-        const mo = morphologyConceptId?.trim()
-          ? `&morphologyConcept=${encodeURIComponent(morphologyConceptId.trim())}`
-          : "";
-        const ir = indiaRefset?.trim() ? `&indiaRefset=${encodeURIComponent(indiaRefset.trim())}` : "";
-        const url = `/api/snomed/search?q=${encodeURIComponent(query)}${hierarchy ? `&hierarchy=${hierarchy}` : ""}${siteQ}${d}${fs}${mo}${ir}`;
-        const res = await fetch(url);
+        const qs = buildSnomedSearchQueryString({
+          q: query,
+          hierarchy,
+          ecl,
+          cacheFilter,
+          conceptCacheType,
+          bodySite: hierarchy === "finding" && bodySite?.trim() ? bodySite : undefined,
+          descendantOfConceptId,
+          findingSiteConceptId,
+          morphologyConceptId,
+          indiaRefset,
+          specialty,
+          doctorId,
+        });
+        const res = await fetch(`/api/snomed/search?${qs}`);
         const data = (await res.json()) as { results?: SnomedConcept[] };
         const list = Array.isArray(data.results) ? data.results : [];
         setResults(list);
@@ -141,35 +188,15 @@ export default function SnomedSearch({
     findingSiteConceptId,
     morphologyConceptId,
     indiaRefset,
+    ecl,
+    cacheFilter,
+    conceptCacheType,
+    specialty,
+    doctorId,
   ]);
 
-
-  const isSlate = variant === "slate";
-  const shellClass = isSlate
-    ? "flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/50 px-3 py-2.5 focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/25"
-    : "flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100";
-  const inputClass = isSlate
-    ? "flex-1 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
-    : "flex-1 bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400";
-  const iconMuted = isSlate ? "text-slate-500" : "text-gray-400";
-  const spinClass = isSlate ? "text-sky-400" : "text-blue-400";
-  const listClass = isSlate
-    ? "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-slate-600 bg-[#1e293b] py-1 shadow-xl"
-    : "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-xl";
-  const itemHover = isSlate ? "hover:bg-slate-700/90" : "hover:bg-blue-50";
-  const titleClass = isSlate ? "text-sm font-medium text-slate-100" : "text-sm font-medium text-gray-900";
-  const metaClass = isSlate ? "mt-0.5 text-xs text-slate-400" : "mt-0.5 text-xs text-gray-400";
-  const freeHover = isSlate ? "hover:bg-amber-900/30" : "hover:bg-amber-50";
-  const freeTitle = isSlate ? "text-sm font-medium text-amber-200" : "text-sm font-medium text-amber-900";
-  const freeSub = isSlate ? "mt-0.5 text-xs text-amber-100/80" : "mt-0.5 text-xs text-amber-800/80";
-
-  // --- HYDRATION SAFETY RENDER MUST BE PLACED *AFTER* ALL HOOKS ---
   if (!isMounted) {
-    return (
-      <div
-        className={`h-[42px] w-full animate-pulse rounded-xl border ${isSlate ? "border-slate-600 bg-slate-800/50" : "border-gray-200 bg-gray-50"}`}
-      />
-    );
+    return <div className="h-[42px] w-full animate-pulse rounded-lg border border-gray-200 bg-gray-50" />;
   }
 
   const trimmedQuery = query.trim();
@@ -178,10 +205,10 @@ export default function SnomedSearch({
 
   return (
     <div className="relative w-full">
-      <div className={shellClass}>
+      <div className={INPUT_WRAP}>
         {isLoading ? (
           <svg
-            className={`h-4 w-4 shrink-0 animate-spin ${spinClass}`}
+            className="h-4 w-4 shrink-0 animate-spin text-blue-400"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -193,7 +220,7 @@ export default function SnomedSearch({
           </svg>
         ) : (
           <svg
-            className={`h-4 w-4 shrink-0 ${iconMuted}`}
+            className="h-4 w-4 shrink-0 text-gray-400"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -206,7 +233,7 @@ export default function SnomedSearch({
         )}
         <input
           type="text"
-          className={inputClass}
+          className={INPUT_FIELD}
           placeholder={placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -215,11 +242,11 @@ export default function SnomedSearch({
       </div>
 
       {isOpen && (results.length > 0 || showFreeText) && (
-        <ul className={listClass}>
+        <ul className={DROPDOWN_PANEL}>
           {results.map((item) => (
             <li
               key={item.conceptId}
-              className={`cursor-pointer px-4 py-2.5 ${itemHover}`}
+              className="cursor-pointer px-3 py-2.5 hover:bg-blue-50"
               onMouseDown={() => {
                 setQuery("");
                 setIsOpen(false);
@@ -227,24 +254,27 @@ export default function SnomedSearch({
                 onSelect(item);
               }}
             >
-              <p className={titleClass}>{item.term}</p>
-              <p className={metaClass}>
-                SNOMED: {item.conceptId}
-                {item.icd10 && <> · ICD-10: {item.icd10}</>}
-                {item.lowConfidence && (
-                  <span className={`ml-1.5 font-medium ${isSlate ? "text-amber-400" : "text-amber-700"}`}>
-                    {" "}
-                    · Review match (body site)
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900">{item.term}</p>
+                  <p className="mt-0.5 text-xs text-gray-400">SNOMED {item.conceptId}</p>
+                  {item.lowConfidence ? (
+                    <p className="mt-0.5 text-xs font-medium text-amber-700">Review match (body site)</p>
+                  ) : null}
+                </div>
+                {item.icd10 ? (
+                  <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-blue-600 bg-blue-50">
+                    {item.icd10}
                   </span>
-                )}
-              </p>
+                ) : null}
+              </div>
             </li>
           ))}
           {showFreeText && (
-            <li className={isSlate ? "border-t border-slate-600" : "border-t border-gray-100"}>
+            <li className="border-t border-gray-100">
               <button
                 type="button"
-                className={`w-full cursor-pointer px-4 py-2.5 text-left ${freeHover}`}
+                className="w-full cursor-pointer px-3 py-2.5 text-left hover:bg-amber-50"
                 onMouseDown={() => {
                   const t = trimmedQuery;
                   setQuery("");
@@ -252,8 +282,8 @@ export default function SnomedSearch({
                   onSelect({ term: t, conceptId: "", icd10: null });
                 }}
               >
-                <p className={freeTitle}>Add as free text (no SNOMED code)</p>
-                <p className={freeSub}>&quot;{trimmedQuery}&quot;</p>
+                <p className="text-sm font-medium text-amber-900">Add as free text (no SNOMED code)</p>
+                <p className="mt-0.5 text-xs text-amber-800/80">&quot;{trimmedQuery}&quot;</p>
               </button>
             </li>
           )}
