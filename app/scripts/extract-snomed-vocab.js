@@ -69,6 +69,7 @@ const KEYWORDS = [
   "hyper",
   "acute",
   "chronic",
+  "swelling"
 ];
 
 const lines = fs.readFileSync(FILE, "utf8").split("\n");
