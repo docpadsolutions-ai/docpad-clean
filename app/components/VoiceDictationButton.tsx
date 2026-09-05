@@ -198,7 +198,7 @@ async function extractStructuredClinicalEntities(
       ? `${base}\n\nADDITIONAL CONTEXT (screen-specific):\n${extra}`
       : base;
   const model = geminiFlashClient.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     systemInstruction,
     generationConfig: {
       temperature: 0.05,
@@ -377,7 +377,7 @@ async function saveClinicalExtractionSafe(
 /** Diagnosis / plan / advice — legacy prompts (not the structured chief_complaint schema). */
 async function extractClinicalDataLegacy(text: string, contextType: string): Promise<unknown> {
   const model = geminiFlashClient.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     generationConfig: { responseMimeType: "application/json" },
   });
 
