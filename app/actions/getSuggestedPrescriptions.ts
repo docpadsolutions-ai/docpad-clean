@@ -9,6 +9,9 @@ export type SuggestedPrescription = {
   content_text: string;
   similarity: number;
   interaction_type: string;
+  /** "mine" = this doctor prescribed it. "clinic" = a colleague at the same hospital did. */
+  scope: "mine" | "clinic";
+  author_name: string | null;
 };
 
 /**
@@ -20,6 +23,13 @@ export type SuggestedPrescriptionsResult = {
   suggestions: SuggestedPrescription[];
   /** Short, user-facing reason the lookup could not run. null when it ran. */
   error: string | null;
+  /**
+   * True when this hospital has no prescription history embedded at all, so there
+   * is nothing to match against yet. Distinguishes "not set up" from "no similar
+   * case", which is the difference between a feature that looks broken and one
+   * that is simply new.
+   */
+  corpusEmpty: boolean;
 };
 
 /**
@@ -30,11 +40,16 @@ export type SuggestedPrescriptionsResult = {
  */
 const MATCH_THRESHOLD = 0.65;
 
-const ok = (suggestions: SuggestedPrescription[]): SuggestedPrescriptionsResult => ({
-  suggestions,
-  error: null,
+const ok = (
+  suggestions: SuggestedPrescription[],
+  corpusEmpty = false,
+): SuggestedPrescriptionsResult => ({ suggestions, error: null, corpusEmpty });
+
+const fail = (error: string): SuggestedPrescriptionsResult => ({
+  suggestions: [],
+  error,
+  corpusEmpty: false,
 });
-const fail = (error: string): SuggestedPrescriptionsResult => ({ suggestions: [], error });
 
 export async function getSuggestedPrescriptions(
   text: string,
@@ -104,9 +119,19 @@ export async function getSuggestedPrescriptions(
   });
 
   if (error) return fail(error.message);
-  if (!Array.isArray(data)) return ok([]);
 
-  return ok(
-    (data as SuggestedPrescription[]).filter((r) => r.interaction_type === "prescription"),
-  );
+  const rows = Array.isArray(data)
+    ? (data as SuggestedPrescription[]).filter((r) => r.interaction_type === "prescription")
+    : [];
+  if (rows.length > 0) return ok(rows);
+
+  // Nothing matched. Say whether that is because there is no history to match
+  // against yet, which is what a new clinic will always see.
+  const { count } = await supabase
+    .from("doctor_interaction_embeddings")
+    .select("id", { count: "exact", head: true })
+    .eq("hospital_id", gate.staff.hospitalId)
+    .eq("interaction_type", "prescription");
+
+  return ok([], (count ?? 0) === 0);
 }

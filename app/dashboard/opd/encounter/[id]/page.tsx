@@ -2310,25 +2310,6 @@ export default function EncounterPage() {
         .join(" | ");
       const finalContent = contentText || `Encounter ${encounterId}`;
 
-      // eslint-disable-next-line no-console
-      console.log("[EMBED DEBUG]", {
-        allStateVars: {
-          chiefComplaintLine,
-          chiefComplaint: "NOT_DEFINED",
-          complaint: "NOT_DEFINED",
-          workingDiagnosisCol,
-          workingDiagnosis: "NOT_DEFINED",
-          diagnosis: "NOT_DEFINED",
-          selectedDiagnosis: "NOT_DEFINED",
-          persistDxTerm,
-          rxRows: rxRows?.length ?? "NOT_DEFINED",
-          prescriptions: "NOT_DEFINED",
-          contentText,
-          doctorPractitionerId,
-          orgIdForSave,
-        },
-      });
-
       // Fire and forget — the function checks the signed-in user's hospital before writing
       void (async () => {
         try {

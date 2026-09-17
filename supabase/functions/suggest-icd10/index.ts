@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
       return json({ success: false, error: "embed_shape" }, 500);
     }
 
-    // 2. Vector search — top 15 candidate ICD-10 codes
+    // 2. Vector search - top candidate ICD-10 codes
     const supabase = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -146,7 +146,28 @@ Return JSON exactly like this:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 256 },
+          generationConfig: {
+            temperature: 0.1,
+            // gemini-2.5-flash reasons before answering by default and that
+            // reasoning is charged against maxOutputTokens, so a 256-token cap
+            // was being spent on thinking and the answer came back truncated
+            // (finishReason MAX_TOKENS, empty text) - which is what surfaced as
+            // "the AI returned an unreadable answer". Turn thinking off for a
+            // task that is a pick-one-from-a-list, and leave real headroom.
+            thinkingConfig: { thinkingBudget: 0 },
+            maxOutputTokens: 1024,
+            // Ask for JSON directly rather than hoping the prose parses.
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                code: { type: "STRING" },
+                description: { type: "STRING" },
+                reasoning: { type: "STRING" },
+              },
+              required: ["code", "description"],
+            },
+          },
         }),
       },
     );
@@ -158,18 +179,39 @@ Return JSON exactly like this:
     }
 
     const genJson = await genRes.json();
-    const rawText: string = String(
-      genJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "",
-    ).trim();
+    const candidate = genJson?.candidates?.[0];
 
-    // Strip markdown fences if present
+    // With thinking enabled the answer can arrive split across several parts, so
+    // take all of them rather than only the first.
+    const parts = (candidate?.content?.parts ?? []) as { text?: unknown }[];
+    const rawText = parts
+      .map((p) => (typeof p?.text === "string" ? p.text : ""))
+      .join("")
+      .trim();
+
+    if (!rawText) {
+      console.error(
+        "[suggest-icd10] empty completion",
+        candidate?.finishReason,
+        JSON.stringify(genJson?.usageMetadata ?? null),
+      );
+      return json(
+        {
+          success: false,
+          error: candidate?.finishReason === "MAX_TOKENS" ? "answer_truncated" : "empty_answer",
+        },
+        500,
+      );
+    }
+
+    // Strip markdown fences in case the model ignores responseMimeType.
     const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
     let suggestion: { code: string; description: string; reasoning: string };
     try {
       suggestion = JSON.parse(cleaned);
     } catch {
-      console.error("[suggest-icd10] JSON parse failed", cleaned.slice(0, 200));
+      console.error("[suggest-icd10] JSON parse failed", candidate?.finishReason, cleaned.slice(0, 300));
       return json({ success: false, error: "parse_failed" }, 500);
     }
 

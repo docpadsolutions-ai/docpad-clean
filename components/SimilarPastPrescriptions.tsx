@@ -55,7 +55,15 @@ function FlipCard({
             <span className="inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
               {Math.round(suggestion.similarity * 100)}% match
             </span>
-            <span className="ml-auto text-[10px] text-violet-300">tap to preview →</span>
+            {suggestion.scope === "clinic" ? (
+              <span
+                className="inline-block truncate rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                title={`Prescribed by ${suggestion.author_name ?? "a colleague"}, not by you`}
+              >
+                {suggestion.author_name?.trim() || "clinic"}
+              </span>
+            ) : null}
+            <span className="ml-auto text-[10px] text-violet-300">tap →</span>
           </div>
           <p className="line-clamp-3 text-[11px] leading-relaxed text-gray-600">
             {isFallback ? (
@@ -116,36 +124,38 @@ function FlipCard({
 export default function SimilarPastPrescriptions({ query, practitionerId, onSelect }: Props) {
   const [suggestions, setSuggestions] = useState<SuggestedPrescription[]>([]);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [corpusEmpty, setCorpusEmpty] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [dismissed, setDismissed] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastQueryRef = useRef("");
 
-  useEffect(() => {
-    if (query.trim() !== lastQueryRef.current) {
-      setDismissed(false);
-    }
-  }, [query]);
-
+  // Everything below happens inside the debounce callback rather than in the effect
+  // body: it keeps results on screen while the doctor is still typing, and avoids
+  // the cascading render that a synchronous setState in an effect causes.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     const trimmed = query.trim();
-    if (trimmed.length < MIN_QUERY_LEN || !practitionerId) {
-      setSuggestions([]);
-      setLookupError(null);
-      return;
-    }
 
     debounceRef.current = setTimeout(() => {
+      if (trimmed !== lastQueryRef.current) setDismissed(false);
+
+      if (trimmed.length < MIN_QUERY_LEN || !practitionerId) {
+        lastQueryRef.current = trimmed;
+        setSuggestions([]);
+        setLookupError(null);
+        setCorpusEmpty(false);
+        return;
+      }
+
       lastQueryRef.current = trimmed;
       startTransition(async () => {
-        const { suggestions: results, error } = await getSuggestedPrescriptions(
-          trimmed,
-          practitionerId,
-        );
+        const { suggestions: results, error, corpusEmpty: empty } =
+          await getSuggestedPrescriptions(trimmed, practitionerId);
         setSuggestions(results);
         setLookupError(error);
+        setCorpusEmpty(empty);
       });
     }, DEBOUNCE_MS);
 
@@ -156,7 +166,9 @@ export default function SimilarPastPrescriptions({ query, practitionerId, onSele
 
   // A failed lookup stays on screen with its reason. Silently disappearing is what
   // made this look like a feature that simply never worked.
-  if (dismissed || (!isPending && suggestions.length === 0 && !lookupError)) return null;
+  if (dismissed || (!isPending && suggestions.length === 0 && !lookupError && !corpusEmpty)) {
+    return null;
+  }
 
   return (
     <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
@@ -201,7 +213,12 @@ export default function SimilarPastPrescriptions({ query, practitionerId, onSele
         </div>
       ) : lookupError ? (
         <p className="text-[11px] text-red-500">
-          Could not look up past prescriptions — {lookupError}.
+          Could not look up past prescriptions - {lookupError}.
+        </p>
+      ) : corpusEmpty ? (
+        <p className="text-[11px] text-violet-600/80">
+          No prescribing history to match against yet. This fills in as prescriptions are
+          saved at this clinic.
         </p>
       ) : (
         <div className="flex gap-2 overflow-x-auto pb-1">
