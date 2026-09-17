@@ -35,12 +35,17 @@ export async function fetchBedAvailability(
   return normalizeBedAvailabilityPayload(data);
 }
 
+/** Row shape from `get_ward_census` (plus optional legacy aliases). */
 export type WardCensusRow = {
   ward_id?: string;
   ward_name?: string;
   admission_id?: string;
   admission_number?: string;
   patient_id?: string;
+  /** Preferred display name from RPC */
+  full_name?: string;
+  first_name?: string;
+  last_name?: string;
   patient_name?: string;
   bed_number?: string;
   bed_id?: string;
@@ -48,16 +53,27 @@ export type WardCensusRow = {
   length_of_stay_days?: number;
   los_days?: number;
   admitted_at?: string;
+  date_of_birth?: string;
   admitting_doctor_name?: string;
   doctor_name?: string;
   bp_systolic?: number;
   bp_diastolic?: number;
   heart_rate?: number;
+  pulse?: number;
+  /** BP as recorded, e.g. "120/80" */
+  blood_pressure?: string;
+  bp?: string;
+  spo2?: number;
+  temperature?: number;
   age_years?: number;
   sex?: string;
   gender?: string;
   ward_occupied?: number;
   ward_capacity?: number;
+  latest_vitals_at?: string | null;
+  mews_score?: number | null;
+  /** `normal` | `escalate` | `critical` or UI `red` | `yellow` */
+  mews_alert_level?: string | null;
   [key: string]: unknown;
 };
 

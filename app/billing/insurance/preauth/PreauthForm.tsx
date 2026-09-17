@@ -8,6 +8,12 @@ import { type Resolver, useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
+import {
+  patientIdsWithSimilarNamePeer,
+  similarFullNamesToSelected,
+  similarPatientNamesWarningBody,
+} from "@/app/lib/patientNameSimilarity";
+import { useToast } from "@/src/components/ui/toast-provider";
 import { composePreauthClinicalSummary } from "@/app/lib/buildEncounterClinicalSummary";
 import { supabase } from "@/app/supabase";
 import { cn } from "@/lib/utils";
@@ -60,9 +66,10 @@ type CoverageRpcRow = {
 
 type EncounterOpt = {
   id: string;
-  encounter_number: string | null;
   encounter_date: string | null;
   created_at: string | null;
+  diagnosis_term: string | null;
+  diagnosis_icd10: string | null;
 };
 
 function formatInr(v: number): string {
@@ -116,15 +123,75 @@ function parseDiagnosisJson(raw: unknown): PreauthFormValues["diagnoses"] {
   });
 }
 
+function parseDiagnosisFromEncounter(enc: Record<string, unknown>): PreauthFormValues["diagnoses"] {
+  const icdRaw = enc.diagnosis_icd10 != null ? String(enc.diagnosis_icd10) : "";
+  const termRaw = enc.diagnosis_term != null ? String(enc.diagnosis_term) : "";
+  const icds = icdRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  const terms = termRaw.split(",").map((s) => s.trim()).filter(Boolean);
+
+  if (icds.length === 0 && terms.length === 0) {
+    const wd = enc.working_diagnosis != null ? String(enc.working_diagnosis).trim() : "";
+    if (wd) return [{ icd10Code: "", description: wd }];
+    return [{ icd10Code: "", description: "" }];
+  }
+
+  const count = Math.max(icds.length, terms.length);
+  const rows: PreauthFormValues["diagnoses"] = [];
+  for (let i = 0; i < count; i++) {
+    rows.push({ icd10Code: icds[i] ?? "", description: terms[i] ?? "" });
+  }
+  return rows;
+}
+
+function parseProceduresFromEncounter(enc: Record<string, unknown>): PreauthFormValues["procedures"] {
+  const raw = enc.plan_procedures_snomed;
+  if (raw == null) {
+    const plain = enc.plan_procedures != null ? String(enc.plan_procedures) : "";
+    if (!plain.trim()) return [{ procedureName: "", snomedCode: "", estimatedCost: 0 }];
+    return plain.split(",").map((s) => s.trim()).filter(Boolean).map((name) => ({ procedureName: name, snomedCode: "", estimatedCost: 0 }));
+  }
+  let arr: unknown[] = [];
+  if (Array.isArray(raw)) arr = raw;
+  else if (typeof raw === "string") { try { arr = JSON.parse(raw); } catch { /* ignore */ } }
+  if (!Array.isArray(arr) || arr.length === 0) return [{ procedureName: "", snomedCode: "", estimatedCost: 0 }];
+  return arr.map((item) => {
+    if (typeof item === "string") return { procedureName: item, snomedCode: "", estimatedCost: 0 };
+    const o = item as Record<string, unknown>;
+    return {
+      procedureName: String(o.name ?? o.procedure_name ?? o.display ?? ""),
+      snomedCode: String(o.code ?? o.snomed_code ?? o.snomedCode ?? ""),
+      estimatedCost: 0,
+    };
+  });
+}
+
+function formatEncounterLabel(e: EncounterOpt): string {
+  const dateStr = e.encounter_date ?? e.created_at?.slice(0, 10) ?? "—";
+  let label = dateStr;
+  try {
+    const d = new Date(dateStr);
+    if (!Number.isNaN(d.getTime())) label = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  } catch { /* use raw */ }
+  const dx = e.diagnosis_term?.trim();
+  const icd = e.diagnosis_icd10?.trim();
+  if (dx) label += ` — ${dx}`;
+  if (icd) label += ` (ICD: ${icd.split(",")[0]})`;
+  return label;
+}
+
 const sectionHeader = "text-lg font-semibold text-slate-900 dark:text-white";
 const formLabel = "mb-1.5 block text-sm font-medium text-slate-800 dark:text-gray-200";
 const formControl =
-  "border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus-visible:border-blue-500 dark:focus-visible:ring-blue-500 dark:[&_[data-placeholder]]:text-gray-500";
+  "border border-gray-700 bg-gray-800 text-white placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:[&_[data-placeholder]]:text-gray-500";
 const helperText = "text-sm text-slate-600 dark:text-gray-400";
 const valueText = "text-slate-900 dark:text-white";
 const tableHeaderBar =
-  "mb-2 hidden gap-2 rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 sm:grid sm:items-center dark:bg-gray-800/50 dark:text-gray-200";
-const addRowBtnClass = "text-slate-700 dark:text-gray-300 dark:hover:text-white";
+  "mb-2 hidden gap-2 rounded-md bg-slate-100 px-3 py-2 text-xs font-medium uppercase text-slate-700 sm:grid sm:items-center dark:bg-gray-800 dark:text-gray-400";
+const insCard = "shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:shadow-none";
+const insSecondaryBtn =
+  "border border-gray-700 bg-gray-800 text-white hover:bg-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700";
+const insErrorBanner = "rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-red-400";
+const insSelectContent = "border border-gray-700 bg-gray-900 text-white";
 const metaLabel = "text-sm font-medium text-slate-600 dark:text-gray-200";
 
 export type PreauthFormVariant = "create" | "edit" | "view";
@@ -140,12 +207,14 @@ export function PreauthForm({
   title: string;
   description?: string;
 }) {
+  const { toast: appToast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const readOnly = variant === "view";
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState("");
   const [patientOptions, setPatientOptions] = useState<{ id: string; full_name: string }[]>([]);
+  const [pickFlashId, setPickFlashId] = useState<string | null>(null);
   const [patientLabel, setPatientLabel] = useState("");
   const [coverages, setCoverages] = useState<CoverageRpcRow[]>([]);
   const [coveragesLoading, setCoveragesLoading] = useState(false);
@@ -182,6 +251,14 @@ export function PreauthForm({
   const coverageIdWatch = watch("coverageId");
   const encounterIdWatch = watch("encounterId");
 
+  const patientSearchSimilarIds = useMemo(
+    () =>
+      patientIdsWithSimilarNamePeer(
+        patientOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" })),
+      ),
+    [patientOptions],
+  );
+
   const selectPatient = useCallback(
     (id: string, label: string, opts?: { encounterId?: string }) => {
       if (variant === "create") {
@@ -208,7 +285,6 @@ export function PreauthForm({
     })();
   }, []);
 
-  /** Load existing preauth for edit / view */
   useEffect(() => {
     if (variant === "create" || !preauthId?.trim()) {
       setDetailLoading(false);
@@ -260,7 +336,6 @@ export function PreauthForm({
     })();
   }, [variant, preauthId, reset, router]);
 
-  /** Deep link: ?encounterId=… (create only) */
   useEffect(() => {
     if (variant !== "create" || !hospitalId) return;
     const eid = searchParams.get("encounterId")?.trim() ?? "";
@@ -294,7 +369,6 @@ export function PreauthForm({
     })();
   }, [hospitalId, searchParams, selectPatient, variant]);
 
-  /** Deep link: ?admissionId=… (create only) — IPD admission patient prefill */
   useEffect(() => {
     if (variant !== "create" || !hospitalId) return;
     const aid = searchParams.get("admissionId")?.trim() ?? "";
@@ -333,20 +407,36 @@ export function PreauthForm({
     })();
   }, [hospitalId, searchParams, selectPatient, variant]);
 
-  /** Clinical auto-fill from encounter (create flow only — avoid clobbering saved draft/view) */
+  /** Clinical auto-fill from encounter (Task 3) — populates all fields */
+  const autoFillRef = useRef<string | null>(null);
   useEffect(() => {
     if (variant !== "create") return;
     const encounterId = encounterIdWatch?.trim() ?? "";
     if (!encounterId || !patientId || !hospitalId) return;
+    if (autoFillRef.current === encounterId) return;
 
     void (async () => {
-      const { data, error } = await supabase.from("opd_encounters").select("*").eq("id", encounterId).maybeSingle();
+      autoFillRef.current = encounterId;
+      const [{ data, error }, { data: invData }] = await Promise.all([
+        supabase.from("opd_encounters").select("*").eq("id", encounterId).maybeSingle(),
+        supabase.from("invoices").select("total_amount").eq("encounter_id", encounterId).limit(10),
+      ]);
       if (error || !data) return;
       const row = data as Record<string, unknown>;
       if (String(row.patient_id ?? "") !== patientId) return;
       if (String(row.hospital_id ?? "") !== hospitalId) return;
+
       const summary = composePreauthClinicalSummary(row);
       if (summary) setValue("clinicalSummary", summary);
+
+      const dxRows = parseDiagnosisFromEncounter(row);
+      setValue("diagnoses", dxRows);
+
+      const procRows = parseProceduresFromEncounter(row);
+      setValue("procedures", procRows);
+
+      const invoiceTotal = ((invData ?? []) as { total_amount: unknown }[]).reduce((acc, r) => acc + n(r.total_amount), 0);
+      if (invoiceTotal > 0) setValue("estimatedAmount", invoiceTotal);
     })();
   }, [encounterIdWatch, patientId, hospitalId, setValue, variant]);
 
@@ -395,11 +485,11 @@ export function PreauthForm({
           supabase.rpc("get_patient_insurance_coverage", { p_patient_id: pid }),
           supabase
             .from("opd_encounters")
-            .select("id, encounter_number, encounter_date, created_at")
+            .select("id, encounter_date, created_at, diagnosis_term, diagnosis_icd10")
             .eq("patient_id", pid)
             .eq("hospital_id", hospitalId)
             .order("encounter_date", { ascending: false, nullsFirst: false })
-            .limit(80),
+            .limit(10),
         ]);
 
         if (covErr) throw new Error(covErr.message);
@@ -427,9 +517,10 @@ export function PreauthForm({
         setEncounters(
           ((encData ?? []) as Record<string, unknown>[]).map((e) => ({
             id: String(e.id),
-            encounter_number: e.encounter_number != null ? String(e.encounter_number) : null,
             encounter_date: e.encounter_date != null ? String(e.encounter_date).slice(0, 10) : null,
             created_at: e.created_at != null ? String(e.created_at) : null,
+            diagnosis_term: e.diagnosis_term != null ? String(e.diagnosis_term) : null,
+            diagnosis_icd10: e.diagnosis_icd10 != null ? String(e.diagnosis_icd10) : null,
           })),
         );
       } catch (e) {
@@ -526,7 +617,7 @@ export function PreauthForm({
 
   if (detailLoading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center bg-slate-50 p-6 dark:bg-gray-950 dark:text-gray-300">
+      <div className="flex min-h-[40vh] items-center justify-center bg-slate-50 p-6 dark:bg-transparent dark:text-gray-300">
         Loading…
       </div>
     );
@@ -535,8 +626,8 @@ export function PreauthForm({
   if (detailError && variant !== "create") {
     return (
       <div className="mx-auto max-w-3xl space-y-4 p-6">
-        <p className="text-red-600 dark:text-red-400">{detailError}</p>
-        <Button type="button" variant="outline" asChild>
+        <p className={insErrorBanner}>{detailError}</p>
+        <Button type="button" variant="outline" className={insSecondaryBtn} asChild>
           <Link href="/billing/insurance">Back to insurance</Link>
         </Button>
       </div>
@@ -544,7 +635,7 @@ export function PreauthForm({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8 dark:bg-gray-950">
+    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8 dark:bg-transparent">
       <div className="mx-auto max-w-3xl space-y-6">
         <header>
           <Link href="/billing/insurance" className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-300">
@@ -557,21 +648,20 @@ export function PreauthForm({
           ) : null}
         </header>
 
-        <Card className="dark:border-gray-700 dark:bg-gray-900">
-          <CardHeader>
+        {/* ──────── Patient section ──────── */}
+        <Card className={insCard}>
+          <CardHeader className="border-b border-slate-200 dark:border-gray-800">
             <CardTitle className={sectionHeader}>Patient</CardTitle>
-            <CardDescription className={helperText}>
+            <CardDescription className={`${helperText} dark:text-gray-400`}>
               {variant === "create" ? "Search by name, then confirm coverage below." : "Patient for this preauthorization."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="patient-search" className={formLabel}>
-                Find patient
-              </Label>
+              <Label htmlFor="patient-search" className={formLabel}>Find patient</Label>
               <Input
                 id="patient-search"
-                className={cn("h-9 w-full rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-1", formControl)}
+                className={cn("h-9 w-full rounded-md", formControl)}
                 placeholder="Type at least 2 characters…"
                 value={patientSearch}
                 onChange={(e) => setPatientSearch(e.target.value)}
@@ -579,15 +669,32 @@ export function PreauthForm({
                 disabled={readOnly || variant !== "create"}
               />
               {variant === "create" && patientOptions.length > 0 ? (
-                <ul className="mt-2 max-h-40 overflow-auto rounded-md border border-slate-200 bg-white dark:border-gray-600 dark:bg-gray-900">
+                <ul className="mt-2 max-h-40 overflow-auto rounded-md border border-gray-700 bg-gray-800 dark:border-gray-700">
                   {patientOptions.map((p) => (
                     <li key={p.id}>
                       <button
                         type="button"
-                        className="w-full px-3 py-2 text-left text-sm text-slate-900 hover:bg-slate-50 dark:text-gray-100 dark:hover:bg-gray-800"
-                        onClick={() => selectPatient(p.id, p.full_name)}
+                        className={`w-full px-3 py-2 text-left text-sm text-white hover:bg-gray-700 ${
+                          patientSearchSimilarIds.has(p.id) ? "border-l-4 border-amber-300/90 bg-amber-50/50" : ""
+                        } ${pickFlashId === p.id ? "patient-row-select-flash" : ""}`}
+                        onClick={() => {
+                          const entries = patientOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" }));
+                          const body = similarPatientNamesWarningBody(
+                            p.full_name ?? "Patient",
+                            similarFullNamesToSelected(p.id, p.full_name ?? "", entries),
+                          );
+                          if (body) {
+                            appToast.warning({ title: "Similar patient names", body });
+                          }
+                          setPickFlashId(p.id);
+                          window.setTimeout(() => setPickFlashId((cur) => (cur === p.id ? null : cur)), 500);
+                          selectPatient(p.id, p.full_name);
+                        }}
                       >
                         {p.full_name}
+                        {patientSearchSimilarIds.has(p.id) ? (
+                          <span className="ml-1 text-amber-600" title="Similar name in this list" aria-label="Similar name warning">⚠️</span>
+                        ) : null}
                       </button>
                     </li>
                   ))}
@@ -600,6 +707,7 @@ export function PreauthForm({
               ) : null}
             </div>
 
+            {/* Coverage display */}
             {!patientId ? (
               <p className={helperText}>Select a patient to load insurance and encounters.</p>
             ) : coveragesLoading ? (
@@ -607,7 +715,7 @@ export function PreauthForm({
             ) : coverages.length === 0 ? (
               <p className="text-sm text-amber-800 dark:text-amber-200">No active insurance on file for this patient.</p>
             ) : (
-              <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800/80">
+              <div className="space-y-3 rounded-lg border border-gray-700 bg-gray-800/80 p-4 dark:border-gray-700">
                 <Label className={formLabel}>Active insurance</Label>
                 {coverages.length > 1 ? (
                   <Select
@@ -615,19 +723,14 @@ export function PreauthForm({
                     onValueChange={(v) => setValue("coverageId", v === "__none__" ? "" : v)}
                     disabled={readOnly}
                   >
-                    <SelectTrigger
-                      className={cn(
-                        "h-9 w-full rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500",
-                        formControl,
-                      )}
-                    >
+                    <SelectTrigger className={cn("h-9 w-full rounded-md", formControl)}>
                       <SelectValue placeholder="Select policy" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className={insSelectContent}>
                       <SelectItem value="__none__">Choose…</SelectItem>
                       {coverages.map((c) => (
                         <SelectItem key={c.coverage_id} value={c.coverage_id}>
-                          {c.insurance_company_name} — {c.policy_number || "No policy #"}
+                          {c.insurance_company_name} — {c.policy_number || "No policy #"}{c.tpa_name?.trim() ? ` (TPA: ${c.tpa_name})` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -671,13 +774,15 @@ export function PreauthForm({
         </Card>
 
         <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-          <Card className="dark:border-gray-700 dark:bg-gray-900">
-            <CardHeader>
+          {/* ──────── Encounter + request details ──────── */}
+          <Card className={insCard}>
+            <CardHeader className="border-b border-slate-200 dark:border-gray-800">
               <CardTitle className={sectionHeader}>Request details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Encounter selector (Task 3) */}
               <div>
-                <Label className={formLabel}>Encounter (optional)</Label>
+                <Label className={formLabel}>Encounter</Label>
                 {!patientId ? (
                   <p className={helperText}>Select a patient first.</p>
                 ) : encountersLoading ? (
@@ -687,37 +792,33 @@ export function PreauthForm({
                 ) : (
                   <Select
                     value={watch("encounterId") || "__none__"}
-                    onValueChange={(v) => setValue("encounterId", v === "__none__" ? "" : v)}
+                    onValueChange={(v) => {
+                      const val = v === "__none__" ? "" : v;
+                      autoFillRef.current = null;
+                      setValue("encounterId", val);
+                    }}
                     disabled={readOnly}
                   >
-                    <SelectTrigger
-                      className={cn("h-9 w-full rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500", formControl)}
-                    >
-                      <SelectValue placeholder="None" />
+                    <SelectTrigger className={cn("h-auto min-h-[2.25rem] w-full rounded-md py-1.5", formControl)}>
+                      <SelectValue placeholder="Select encounter to auto-fill…" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className={insSelectContent}>
                       <SelectItem value="__none__">None</SelectItem>
-                      {encounters.map((e) => {
-                        const parts = [e.encounter_number, e.encounter_date, e.created_at?.slice(0, 10)].filter(Boolean);
-                        const label = parts.length > 0 ? parts.join(" · ") : e.id.slice(0, 8);
-                        return (
-                          <SelectItem key={e.id} value={e.id}>
-                            {label}
-                          </SelectItem>
-                        );
-                      })}
+                      {encounters.map((e) => (
+                        <SelectItem key={e.id} value={e.id}>
+                          {formatEncounterLabel(e)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
               </div>
 
               <div>
-                <Label htmlFor="est-amt" className={formLabel}>
-                  Estimated amount (₹)
-                </Label>
+                <Label htmlFor="est-amt" className={formLabel}>Estimated amount (₹)</Label>
                 <Input
                   id="est-amt"
-                  className={cn("h-9 w-full rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-1", formControl)}
+                  className={cn("h-9 w-full rounded-md", formControl)}
                   type="number"
                   inputMode="decimal"
                   min={0}
@@ -731,15 +832,10 @@ export function PreauthForm({
               </div>
 
               <div>
-                <Label htmlFor="clinical" className={formLabel}>
-                  Clinical summary
-                </Label>
+                <Label htmlFor="clinical" className={formLabel}>Clinical summary</Label>
                 <Textarea
                   id="clinical"
-                  className={cn(
-                    "min-h-[120px] w-full rounded-md px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1",
-                    formControl,
-                  )}
+                  className={cn("min-h-[120px] w-full rounded-md px-3 py-2 text-sm", formControl)}
                   rows={8}
                   placeholder="Relevant history, indications, clinical findings, and plan…"
                   disabled={readOnly}
@@ -749,162 +845,116 @@ export function PreauthForm({
             </CardContent>
           </Card>
 
-          <Card className="dark:border-gray-700 dark:bg-gray-900">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          {/* ──────── Procedures (Task 3: tighter, max-w) ──────── */}
+          <Card className={insCard}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b border-slate-200 dark:border-gray-800">
               <div>
                 <CardTitle className={sectionHeader}>Requested procedures</CardTitle>
-                <CardDescription className={helperText}>Procedure name, SNOMED CT code, estimated cost per line.</CardDescription>
+                <CardDescription className={`${helperText} dark:text-gray-400`}>
+                  Procedure name, SNOMED CT code, estimated cost per line.
+                </CardDescription>
               </div>
               {!readOnly ? (
                 <Button
                   type="button"
                   size="sm"
                   variant="secondary"
-                  className={addRowBtnClass}
+                  className={insSecondaryBtn}
                   onClick={() => procFields.append({ procedureName: "", snomedCode: "", estimatedCost: 0 })}
                 >
                   Add row
                 </Button>
               ) : null}
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className={cn(tableHeaderBar, "sm:grid-cols-[minmax(0,1fr)_10rem_9rem_auto]")}>
+            <CardContent className="space-y-3">
+              <div className={cn(tableHeaderBar, "sm:grid-cols-[minmax(0,1fr)_max-content_max-content_auto]")}>
                 <span>Procedure name</span>
-                <span>SNOMED code</span>
-                <span>Est. cost (₹)</span>
-                <div className="hidden min-w-[4.5rem] sm:block" aria-hidden />
+                <span className="w-[180px]">SNOMED code</span>
+                <span className="w-[120px]">Est. cost (₹)</span>
+                <div className="hidden min-w-[4rem] sm:block" aria-hidden />
               </div>
               {procFields.fields.map((field, i) => (
                 <div
                   key={field.id}
-                  className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 dark:border-gray-600 sm:flex-row sm:flex-wrap sm:items-end"
+                  className="flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5 dark:border-gray-700 sm:flex-row sm:items-end"
                 >
                   <div className="min-w-0 flex-1">
                     <Label className={cn(formLabel, "sm:hidden")}>Procedure name</Label>
-                    <Input
-                      className={cn("h-9 w-full rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-1", formControl)}
-                      placeholder="Procedure name"
-                      disabled={readOnly}
-                      {...register(`procedures.${i}.procedureName`)}
-                    />
+                    <Input className={cn("h-9 w-full rounded-md", formControl)} placeholder="Procedure name" disabled={readOnly} {...register(`procedures.${i}.procedureName`)} />
                   </div>
-                  <div className="w-full sm:w-40">
+                  <div className="w-full sm:max-w-[180px]">
                     <Label className={cn(formLabel, "sm:hidden")}>SNOMED code</Label>
-                    <Input
-                      className={cn("h-9 w-full rounded-md font-mono text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1", formControl)}
-                      placeholder="SNOMED code"
-                      disabled={readOnly}
-                      {...register(`procedures.${i}.snomedCode`)}
-                    />
+                    <Input className={cn("h-9 w-full rounded-md font-mono text-sm", formControl)} placeholder="SNOMED code" disabled={readOnly} {...register(`procedures.${i}.snomedCode`)} />
                   </div>
-                  <div className="w-full sm:w-36">
+                  <div className="w-full sm:max-w-[120px]">
                     <Label className={cn(formLabel, "sm:hidden")}>Est. cost (₹)</Label>
-                    <Input
-                      className={cn("h-9 w-full rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-1", formControl)}
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      placeholder="0"
-                      disabled={readOnly}
-                      {...register(`procedures.${i}.estimatedCost`, { setValueAs: numFromInput })}
-                    />
+                    <Input className={cn("h-9 w-full rounded-md", formControl)} type="number" min={0} step="0.01" placeholder="0" disabled={readOnly} {...register(`procedures.${i}.estimatedCost`, { setValueAs: numFromInput })} />
                   </div>
                   {!readOnly ? (
-                    <Button type="button" variant="outline" size="sm" disabled={procFields.fields.length <= 1} onClick={() => procFields.remove(i)}>
-                      Remove
-                    </Button>
-                  ) : (
-                    <div className="hidden min-w-[4.5rem] sm:block" aria-hidden />
-                  )}
+                    <Button type="button" variant="outline" size="sm" className={insSecondaryBtn} disabled={procFields.fields.length <= 1} onClick={() => procFields.remove(i)}>Remove</Button>
+                  ) : <div className="hidden min-w-[4rem] sm:block" aria-hidden />}
                 </div>
               ))}
             </CardContent>
           </Card>
 
-          <Card className="dark:border-gray-700 dark:bg-gray-900">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          {/* ──────── Diagnosis codes ──────── */}
+          <Card className={insCard}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b border-slate-200 dark:border-gray-800">
               <div>
                 <CardTitle className={sectionHeader}>Diagnosis codes</CardTitle>
-                <CardDescription className={helperText}>ICD-10 code and description per row.</CardDescription>
+                <CardDescription className={`${helperText} dark:text-gray-400`}>ICD-10 code and description per row.</CardDescription>
               </div>
               {!readOnly ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className={addRowBtnClass}
-                  onClick={() => dxFields.append({ icd10Code: "", description: "" })}
-                >
+                <Button type="button" size="sm" variant="secondary" className={insSecondaryBtn} onClick={() => dxFields.append({ icd10Code: "", description: "" })}>
                   Add row
                 </Button>
               ) : null}
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div className={cn(tableHeaderBar, "sm:grid-cols-[10rem_minmax(0,1fr)_auto]")}>
                 <span>ICD-10</span>
                 <span>Description</span>
-                <div className="hidden min-w-[4.5rem] sm:block" aria-hidden />
+                <div className="hidden min-w-[4rem] sm:block" aria-hidden />
               </div>
               {dxFields.fields.map((field, i) => (
-                <div
-                  key={field.id}
-                  className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 dark:border-gray-600 sm:flex-row sm:items-end"
-                >
+                <div key={field.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-2.5 dark:border-gray-700 sm:flex-row sm:items-end">
                   <div className="w-full sm:w-40">
                     <Label className={cn(formLabel, "sm:hidden")}>ICD-10</Label>
-                    <Input
-                      className={cn(
-                        "h-9 w-full rounded-md font-mono text-sm uppercase shadow-sm focus-visible:outline-none focus-visible:ring-1",
-                        formControl,
-                      )}
-                      placeholder="e.g. K35.9"
-                      disabled={readOnly}
-                      {...register(`diagnoses.${i}.icd10Code`)}
-                    />
+                    <Input className={cn("h-9 w-full rounded-md font-mono text-sm uppercase", formControl)} placeholder="e.g. K35.9" disabled={readOnly} {...register(`diagnoses.${i}.icd10Code`)} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <Label className={cn(formLabel, "sm:hidden")}>Description</Label>
-                    <Input
-                      className={cn("h-9 w-full rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-1", formControl)}
-                      placeholder="Diagnosis description"
-                      disabled={readOnly}
-                      {...register(`diagnoses.${i}.description`)}
-                    />
+                    <Input className={cn("h-9 w-full rounded-md", formControl)} placeholder="Diagnosis description" disabled={readOnly} {...register(`diagnoses.${i}.description`)} />
                   </div>
                   {!readOnly ? (
-                    <Button type="button" variant="outline" size="sm" disabled={dxFields.fields.length <= 1} onClick={() => dxFields.remove(i)}>
-                      Remove
-                    </Button>
-                  ) : (
-                    <div className="hidden min-w-[4.5rem] sm:block" aria-hidden />
-                  )}
+                    <Button type="button" variant="outline" size="sm" className={insSecondaryBtn} disabled={dxFields.fields.length <= 1} onClick={() => dxFields.remove(i)}>Remove</Button>
+                  ) : <div className="hidden min-w-[4rem] sm:block" aria-hidden />}
                 </div>
               ))}
             </CardContent>
           </Card>
 
-          <Card className="dark:border-gray-700 dark:bg-gray-900">
-            <CardHeader>
+          {/* ──────── Supporting documents ──────── */}
+          <Card className={insCard}>
+            <CardHeader className="border-b border-slate-200 dark:border-gray-800">
               <CardTitle className={sectionHeader}>Supporting documents</CardTitle>
-              <CardDescription className={helperText}>Upload will be enabled in phase 2.</CardDescription>
+              <CardDescription className={`${helperText} dark:text-gray-400`}>Phase 2 — not active yet.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Label className={formLabel}>Attachments (phase 2)</Label>
-              <Input
-                type="file"
-                disabled
-                className={cn("mt-0 h-9 w-full cursor-not-allowed rounded-md opacity-60 shadow-sm", formControl)}
-              />
+              <div className="flex items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 py-8 text-sm text-slate-400 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-500">
+                Document upload coming in Phase 2
+              </div>
             </CardContent>
           </Card>
 
           <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="outline" asChild>
+            <Button type="button" variant="outline" className={insSecondaryBtn} asChild>
               <Link href="/billing/insurance">Cancel</Link>
             </Button>
             {!readOnly ? (
               <>
-                <Button type="button" variant="secondary" disabled={saving} onClick={() => void saveDraft()}>
+                <Button type="button" variant="secondary" className={insSecondaryBtn} disabled={saving} onClick={() => void saveDraft()}>
                   {saving ? "Saving…" : "Save draft"}
                 </Button>
                 <Button type="button" disabled={saving} onClick={() => void submitFinal()}>

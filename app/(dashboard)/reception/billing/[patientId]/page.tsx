@@ -5,6 +5,13 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  patientIdsWithSimilarNamePeer,
+  similarFullNamesToSelected,
+  similarPatientNamesWarningBody,
+} from "@/app/lib/patientNameSimilarity";
+import { useToast } from "@/src/components/ui/toast-provider";
+import { CurrentUserBadge } from "@/app/components/CurrentUserBadge";
 import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
 import { supabase } from "@/app/supabase";
 import { Button } from "@/components/ui/button";
@@ -154,6 +161,7 @@ function parseSummary(data: unknown): BillingSummary | null {
 }
 
 export default function ReceptionPatientBillingPage() {
+  const { toast: appToast } = useToast();
   const params = useParams();
   const router = useRouter();
   const patientId = typeof params?.patientId === "string" ? params.patientId.trim() : "";
@@ -168,6 +176,7 @@ export default function ReceptionPatientBillingPage() {
   const [searchDebounced, setSearchDebounced] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchOptions, setSearchOptions] = useState<PatientOpt[]>([]);
+  const [pickFlashId, setPickFlashId] = useState<string | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -307,6 +316,14 @@ export default function ReceptionPatientBillingPage() {
   const outStd = num(summary?.total_outstanding);
   const invoices = summary?.invoices ?? [];
 
+  const patientSearchSimilarIds = useMemo(
+    () =>
+      patientIdsWithSimilarNamePeer(
+        searchOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" })),
+      ),
+    [searchOptions],
+  );
+
   const toggleInvoice = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -442,7 +459,7 @@ export default function ReceptionPatientBillingPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-6">
         <header className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <Link href="/reception" className="text-sm font-medium text-blue-400 hover:underline">
                 ← Reception
@@ -450,6 +467,7 @@ export default function ReceptionPatientBillingPage() {
               <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Patient billing</h1>
               <p className="mt-1 text-sm text-slate-400">{patientLabel}</p>
             </div>
+            <CurrentUserBadge tone="onDark" className="shrink-0 pt-1" />
           </div>
 
           <div ref={searchRef} className="relative max-w-md">
@@ -476,14 +494,33 @@ export default function ReceptionPatientBillingPage() {
                     <button
                       key={p.id}
                       type="button"
-                      className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-slate-800"
+                      className={`flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-slate-800 ${
+                        patientSearchSimilarIds.has(p.id) ? "border-l-4 border-amber-400/90 bg-amber-950/30" : ""
+                      } ${pickFlashId === p.id ? "patient-row-select-flash" : ""}`}
                       onClick={() => {
+                        const entries = searchOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" }));
+                        const body = similarPatientNamesWarningBody(
+                          p.full_name ?? "Patient",
+                          similarFullNamesToSelected(p.id, p.full_name ?? "", entries),
+                        );
+                        if (body) {
+                          appToast.warning({ title: "Similar patient names", body });
+                        }
+                        setPickFlashId(p.id);
+                        window.setTimeout(() => setPickFlashId((cur) => (cur === p.id ? null : cur)), 500);
                         router.push(`/reception/billing/${p.id}`);
                         setSearchOpen(false);
                         setSearchQuery("");
                       }}
                     >
-                      <span className="font-medium text-slate-100">{p.full_name ?? "—"}</span>
+                      <span className="font-medium text-slate-100">
+                        {p.full_name ?? "—"}
+                        {patientSearchSimilarIds.has(p.id) ? (
+                          <span className="ml-1 text-amber-400" title="Similar name in this list" aria-label="Similar name warning">
+                            ⚠️
+                          </span>
+                        ) : null}
+                      </span>
                       {p.docpad_id ? <span className="text-xs text-slate-500">{p.docpad_id}</span> : null}
                     </button>
                   ))

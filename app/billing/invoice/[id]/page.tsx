@@ -31,15 +31,49 @@ type InvoiceRow = {
 };
 
 type LineRow = {
+  id: string;
   line_number: number;
+  item_description: string | null;
   quantity: number | string;
   unit_price: number | string;
+  gross_amount: number | string | null;
+  discount_amount: number | string | null;
+  tax_amount: number | string | null;
   discount_percent: number | string;
   tax_percent: number | string;
   line_subtotal: number | string;
   net_amount: number | string;
-  charge_item_id: string;
+  charge_item_id: string | null;
+  charge_items:
+    | { category: string | null; charge_code_display: string | null; source_type: string | null }
+    | { category: string | null; charge_code_display: string | null; source_type: string | null }[]
+    | null;
 };
+
+function fmtCategory(cat: string | null | undefined): string {
+  if (!cat) return "—";
+  const known: Record<string, string> = {
+    lab_test: "Lab Test",
+    imaging: "Imaging",
+    consultation: "Consultation",
+    procedure: "Procedure",
+    pharmacy: "Pharmacy",
+    room_charge: "Room Charge",
+    other: "Other",
+  };
+  return known[cat] ?? cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function inr(v: unknown): string {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function pickOne<T>(x: T | T[] | null | undefined): T | null {
+  if (x == null) return null;
+  return Array.isArray(x) ? (x[0] ?? null) : x;
+}
 
 function num(v: unknown): number {
   const x = typeof v === "number" ? v : Number(v);
@@ -54,6 +88,7 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [lineItems, setLineItems] = useState<LineRow[]>([]);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -105,32 +140,21 @@ export default function InvoiceDetailPage() {
         : Promise.resolve({ data: null }),
       supabase
         .from("invoice_line_items")
-        .select("line_number, quantity, unit_price, discount_percent, tax_percent, line_subtotal, net_amount, charge_item_id")
+        .select(
+          `id, line_number, item_description,
+           unit_price, quantity, gross_amount, discount_amount, tax_amount,
+           discount_percent, tax_percent, line_subtotal, net_amount, charge_item_id,
+           charge_items(category, charge_code_display, source_type)`,
+        )
         .eq("invoice_id", id)
         .order("line_number", { ascending: true }),
     ]);
 
     const lines = (lineRows ?? []) as LineRow[];
-    const chargeIds = [...new Set(lines.map((l) => l.charge_item_id).filter(Boolean))];
-    let chargeMap = new Map<string, { label: string | null; code: string | null }>();
-
-    if (chargeIds.length > 0) {
-      const { data: charges } = await supabase
-        .from("charge_items")
-        .select("id, display_label, charge_code")
-        .in("id", chargeIds);
-
-      for (const c of charges ?? []) {
-        const r = c as { id: string; display_label: string | null; charge_code: string | null };
-        chargeMap.set(r.id, {
-          label: r.display_label,
-          code: r.charge_code,
-        });
-      }
-    }
+    setLineItems(lines);
 
     const pdfLines = lines.map((li) => {
-      const ch = chargeMap.get(li.charge_item_id);
+      const ci = pickOne(li.charge_items);
       return {
         line_number: li.line_number,
         quantity: li.quantity,
@@ -139,8 +163,8 @@ export default function InvoiceDetailPage() {
         tax_percent: li.tax_percent,
         line_subtotal: li.line_subtotal,
         net_amount: li.net_amount,
-        charge_label: ch?.label ?? null,
-        charge_code: ch?.code ?? null,
+        charge_label: li.item_description ?? ci?.charge_code_display ?? null,
+        charge_code: null,
       };
     });
 
@@ -298,6 +322,89 @@ export default function InvoiceDetailPage() {
                 <p className="mt-4 whitespace-pre-wrap text-sm text-gray-600">{row.notes}</p>
               ) : null}
               <p className="mt-6 text-xs text-gray-500">Patient: {row.patient_id ?? "—"}</p>
+            </div>
+
+            {/* Line items */}
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 px-4 py-3">
+                <h2 className="text-sm font-semibold text-gray-900">Line items</h2>
+              </div>
+              {lineItems.length === 0 ? (
+                <p className="px-4 py-6 text-center text-sm text-gray-500">No line items.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="border-b border-gray-100 bg-gray-50/90 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-3 py-2.5 tabular-nums">#</th>
+                        <th className="px-3 py-2.5">Description</th>
+                        <th className="px-3 py-2.5">Category</th>
+                        <th className="px-3 py-2.5 text-right">Qty</th>
+                        <th className="px-3 py-2.5 text-right">Unit Price</th>
+                        <th className="px-3 py-2.5 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {lineItems.map((li, idx) => {
+                        const ci = pickOne(li.charge_items);
+                        const desc = li.item_description ?? ci?.charge_code_display ?? "—";
+                        const category = fmtCategory(ci?.category);
+                        const lineNum = li.line_number ?? idx + 1;
+                        return (
+                          <tr key={li.id ?? idx} className="hover:bg-gray-50/80">
+                            <td className="px-3 py-3 tabular-nums text-gray-500">{lineNum}</td>
+                            <td className="px-3 py-3 text-gray-900">{desc}</td>
+                            <td className="px-3 py-3 text-gray-600">{category}</td>
+                            <td className="px-3 py-3 text-right tabular-nums text-gray-800">
+                              {num(li.quantity)}
+                            </td>
+                            <td className="px-3 py-3 text-right tabular-nums text-gray-800">
+                              {inr(li.unit_price)}
+                            </td>
+                            <td className="px-3 py-3 text-right tabular-nums text-gray-900">
+                              {inr(li.gross_amount ?? li.line_subtotal)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Financial summary */}
+              <div className="border-t border-gray-100 px-4 py-4">
+                <dl className="ml-auto max-w-xs space-y-1.5 text-sm">
+                  <div className="flex justify-between gap-8">
+                    <dt className="text-gray-600">Subtotal</dt>
+                    <dd className="tabular-nums text-gray-900">{inr(row.total_net)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-8">
+                    <dt className="text-gray-600">Discount</dt>
+                    <dd className="tabular-nums text-gray-900">
+                      {num(row.total_discount) > 0 ? `− ${inr(row.total_discount)}` : inr(0)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-8">
+                    <dt className="text-gray-600">Tax</dt>
+                    <dd className="tabular-nums text-gray-900">{inr(row.total_tax)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-8 border-t border-gray-200 pt-1.5 font-semibold">
+                    <dt className="text-gray-900">Total</dt>
+                    <dd className="tabular-nums text-gray-900">{inr(row.total_gross)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-8">
+                    <dt className="text-gray-600">Paid</dt>
+                    <dd className="tabular-nums text-gray-900">{inr(row.amount_paid)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-8 border-t border-gray-200 pt-1.5 font-bold">
+                    <dt className={balanceDue > 0 ? "text-red-700" : "text-gray-900"}>Balance due</dt>
+                    <dd className={`tabular-nums ${balanceDue > 0 ? "text-red-700" : "text-gray-900"}`}>
+                      {inr(balanceDue)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </div>
           </div>
         )}

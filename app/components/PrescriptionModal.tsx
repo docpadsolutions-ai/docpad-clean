@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import { usePrescription } from "../hooks/usePrescription";
 import type { CatalogEntry } from "../lib/medicineCatalog";
@@ -37,6 +37,11 @@ import {
 import { fetchAuthOrgId } from "../lib/authOrg";
 import { parsePractitionerRoleColumn, type UserRole } from "../lib/userRole";
 import { supabase } from "../supabase";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+import { AlertBanner } from "@/src/components/ui/alert-banner";
+import { useToast } from "@/src/components/ui/toast-provider";
+import { formatDosageBilingual } from "@/src/utils/prescription-hindi";
+import { HospitalLetterhead, type HospitalLetterheadData } from "./HospitalLetterhead";
 import ClinicalProposalModal, { type ClinicalProposalPayload } from "./ClinicalProposalModal";
 import InlineDosageSelector from "./InlineDosageSelector";
 import { usePermission } from "../hooks/usePermission";
@@ -51,9 +56,12 @@ import {
 import {
   buildLabSummaryText,
   fetchCompletedLabOcrForEncounter,
+  fetchInvestigationPrintMetaForIds,
+  fetchLabResultEntriesForInvestigationIds,
   fetchLabResultEntriesForOcrUploads,
   fetchPrescriptionAttachmentsForEncounter,
   replacePrescriptionAttachmentsForEncounter,
+  type InvestigationPrintMeta,
   type LabResultEntryLite,
 } from "../lib/prescriptionAttachments";
 
@@ -72,6 +80,29 @@ type LabAttachSlot = {
   includeWhatsapp: boolean;
   includePrint: boolean;
 };
+
+function labEntriesForAttachmentSlot(
+  s: LabAttachSlot,
+  byInvestigationId: Record<string, LabResultEntryLite[]>,
+  byOcrUploadId: Record<string, LabResultEntryLite[]>,
+): LabResultEntryLite[] {
+  const iid = s.investigation_id?.trim();
+  if (iid && byInvestigationId[iid]?.length) return byInvestigationId[iid]!;
+  return byOcrUploadId[s.ocr_upload_id] ?? [];
+}
+
+function formatLabReportDate(iso: string | null | undefined): string {
+  if (!iso?.trim()) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return iso.trim().slice(0, 16);
+  return new Date(t).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatResultStatusLabel(rs: string | null | undefined): string {
+  const s = (rs ?? "").trim().toLowerCase();
+  if (!s) return "—";
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 type WorkspaceTab = "favorites" | "recent" | "previous" | "templates";
 
@@ -341,6 +372,8 @@ function PrescriptionChip({
   onToggleFavorite,
   flash,
   allowPrescribeEdits = true,
+  hideRemoveButton = false,
+  rxBilingual,
 }: {
   line: PrescriptionLine;
   onEdit: (l: PrescriptionLine) => void;
@@ -350,10 +383,25 @@ function PrescriptionChip({
   onToggleFavorite: () => void;
   flash?: boolean;
   allowPrescribeEdits?: boolean;
+  /** When true (e.g. prescription just finalized), omit the remove control entirely. */
+  hideRemoveButton?: boolean;
+  /** When true, append Hindi dosage line under English (Rx language = English + Hindi). */
+  rxBilingual: boolean;
 }) {
-  const sig = [line.dosage, line.frequency, line.duration, `Total ${line.total_quantity}`]
-    .filter((s) => s != null && String(s).trim() !== "")
-    .join(" · ");
+  const doseCore = formatDosageBilingual(
+    line.dosage,
+    line.frequency,
+    line.timing,
+    line.duration,
+    rxBilingual,
+  );
+  const sigLines = doseCore.split("\n");
+  if (sigLines[0]?.trim()) {
+    sigLines[0] = `${sigLines[0].trim()} · Total ${line.total_quantity}`;
+  } else {
+    sigLines[0] = `Total ${line.total_quantity}`;
+  }
+  const sig = sigLines.filter((s) => s.trim() !== "").join("\n");
   const isStock = line.catalog.medication_source === "stock";
 
   return (
@@ -373,7 +421,9 @@ function PrescriptionChip({
           <span className="truncate text-xs font-semibold text-gray-900">
             {formatAbdmMedicationLabel(line.catalog)}
           </span>
-          {sig ? <span className="min-w-0 truncate text-[10px] text-gray-500">{sig}</span> : null}
+          {sig ? (
+            <span className="min-w-0 whitespace-pre-line text-[10px] leading-snug text-gray-500">{sig}</span>
+          ) : null}
         </div>
         {isStock ? (
           <span
@@ -387,7 +437,7 @@ function PrescriptionChip({
       </button>
       <button
         type="button"
-        disabled={favoriteBusy}
+        disabled={favoriteBusy || !allowPrescribeEdits}
         aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
         onClick={(e) => {
           e.preventDefault();
@@ -398,20 +448,22 @@ function PrescriptionChip({
       >
         <StarIcon className={`h-3.5 w-3.5 ${isFavorite ? "fill-amber-400 text-amber-500" : "text-gray-300"}`} />
       </button>
-      <button
-        type="button"
-        aria-label={`Remove ${formatAbdmMedicationLabel(line.catalog)}`}
-        disabled={!allowPrescribeEdits}
-        title={!allowPrescribeEdits ? "Only doctors can remove medications from this prescription." : undefined}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onRemove(line.id);
-        }}
-        className="flex shrink-0 items-center justify-center rounded-r-full py-2 px-3 text-sm font-medium leading-none text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
-      >
-        ×
-      </button>
+      {!hideRemoveButton ? (
+        <button
+          type="button"
+          aria-label={`Remove ${formatAbdmMedicationLabel(line.catalog)}`}
+          disabled={!allowPrescribeEdits}
+          title={!allowPrescribeEdits ? "Only doctors can remove medications from this prescription." : undefined}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove(line.id);
+          }}
+          className="flex shrink-0 items-center justify-center rounded-r-full py-2 px-3 text-sm font-medium leading-none text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+        >
+          ×
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -552,6 +604,7 @@ export default function PrescriptionModal({
   const rxEdit = hasPermission("prescriptions", "edit");
   const dispEdit = hasPermission("dispensing", "edit");
   const whatsappNotificationsEnabled = true;
+  const { toast } = useToast();
   const [dispensingEncounterStatus, setDispensingEncounterStatus] = useState<"pending" | "prepared" | "dispensed">(
     "pending"
   );
@@ -560,6 +613,9 @@ export default function PrescriptionModal({
   const printRef       = useRef<HTMLDivElement>(null);
   const handlePrint    = useReactToPrint({ contentRef: printRef });
   const wasModalOpenRef = useRef(false);
+
+  /** Reserved for drug–drug interaction checks; wire to interaction data when available. */
+  const drugDrugInteractionWarnings: string[] = [];
 
   type InlineDraftState = { line: PrescriptionLine; isNew: boolean; variant: "catalog" | "manual" };
   const [inlineDraft, setInlineDraft] = useState<InlineDraftState | null>(null);
@@ -716,6 +772,8 @@ export default function PrescriptionModal({
   const [templatesRefreshKey, setTemplatesRefreshKey] = useState(0);
   const [injectingTemplateId, setInjectingTemplateId] = useState<string | null>(null);
   const [isSaving, setIsSaving]                   = useState(false);
+  /** True after successful finalize RPC — locks edits until the modal auto-closes. */
+  const [isPrescriptionFinal, setIsPrescriptionFinal] = useState(false);
   const [saveError, setSaveError]                 = useState<string | null>(null);
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
   const [whatsAppSuccess, setWhatsAppSuccess]     = useState(false);
@@ -723,8 +781,12 @@ export default function PrescriptionModal({
   const [savedRxId, setSavedRxId]                 = useState<string | null>(null);
   const [labAttachSlots, setLabAttachSlots]       = useState<LabAttachSlot[]>([]);
   const [labEntriesByOcrUploadId, setLabEntriesByOcrUploadId] = useState<Record<string, LabResultEntryLite[]>>({});
+  const [labEntriesByInvestigationId, setLabEntriesByInvestigationId] = useState<Record<string, LabResultEntryLite[]>>({});
+  const [invPrintMetaById, setInvPrintMetaById]   = useState<Record<string, InvestigationPrintMeta>>({});
   const [labAttachLoading, setLabAttachLoading]   = useState(false);
   const [labAttachError, setLabAttachError]       = useState<string | null>(null);
+  /** Prescription footer language — drives Hindi dosage glosses on chips, print, WhatsApp. */
+  const [rxLang, setRxLang] = useState<"en" | "en-hi">("en-hi");
 
   // Doctor profile (fetched dynamically)
   type DoctorProfile = {
@@ -739,12 +801,14 @@ export default function PrescriptionModal({
   const [organizationName, setOrganizationName] = useState<string | null>(null);
   /** From `auth_org()` — registry search + org name. */
   const [sessionOrgId, setSessionOrgId] = useState<string | null>(null);
+  const [hospitalLetterhead, setHospitalLetterhead] = useState<HospitalLetterheadData | null>(null);
 
   // Reset on open + fetch doctor profile + apply voice Rx prefill (snapshot on open only)
   useEffect(() => {
     if (!isOpen) {
       wasModalOpenRef.current = false;
       setSessionOrgId(null);
+      setHospitalLetterhead(null);
       return;
     }
 
@@ -765,6 +829,8 @@ export default function PrescriptionModal({
       setPrescriptionSaved(false);
       setSavedRxId(null);
       setWhatsAppSuccess(false);
+      setRxLang("en-hi");
+      setIsPrescriptionFinal(false);
       setTimeout(() => searchInputRef.current?.focus(), 50);
 
       supabase.auth.getUser().then(({ data: authData }) => {
@@ -801,6 +867,15 @@ export default function PrescriptionModal({
             .then(({ data: org }) => {
               if (org?.name) setOrganizationName(org.name);
             });
+          // Fetch full hospital letterhead data
+          supabase
+            .from("hospitals")
+            .select("name, address_line1, city, state, pincode, phone, email, website, logo_url, tagline, registration_no, letterhead_color, nabh_accredited, nabh_certificate_number, prescription_header_config")
+            .eq("id", oid)
+            .maybeSingle()
+            .then(({ data: hosp }) => {
+              if (hosp) setHospitalLetterhead(hosp as unknown as HospitalLetterheadData);
+            });
         });
       });
     }
@@ -811,6 +886,8 @@ export default function PrescriptionModal({
       if (!isOpen) {
         setLabAttachSlots([]);
         setLabEntriesByOcrUploadId({});
+        setLabEntriesByInvestigationId({});
+        setInvPrintMetaById({});
         setLabAttachError(null);
         setLabAttachLoading(false);
       }
@@ -832,6 +909,8 @@ export default function PrescriptionModal({
         setLabAttachError(err);
         setLabAttachSlots([]);
         setLabEntriesByOcrUploadId({});
+        setLabEntriesByInvestigationId({});
+        setInvPrintMetaById({});
         return;
       }
       const existingByOcr = new Map(existing.map((r) => [r.ocr_upload_id, r]));
@@ -850,10 +929,19 @@ export default function PrescriptionModal({
       });
       setLabAttachSlots(slots);
       const ocrIds = completed.map((c) => c.ocr_upload_id);
-      const { byUploadId, error: e3 } = await fetchLabResultEntriesForOcrUploads(ocrIds);
+      const invIds = [...new Set(completed.map((c) => c.investigation_id).filter((x): x is string => Boolean(x?.trim())))];
+      const [{ byUploadId, error: e3 }, { byInvestigationId, error: e4 }, { byId: invMeta, error: e5 }] =
+        await Promise.all([
+          fetchLabResultEntriesForOcrUploads(ocrIds),
+          fetchLabResultEntriesForInvestigationIds(invIds),
+          fetchInvestigationPrintMetaForIds(invIds),
+        ]);
       if (cancelled) return;
-      if (e3) setLabAttachError(e3);
+      const labErr = e3 || e4 || e5;
+      if (labErr) setLabAttachError(labErr);
       setLabEntriesByOcrUploadId(byUploadId);
+      setLabEntriesByInvestigationId(byInvestigationId);
+      setInvPrintMetaById(invMeta);
     })();
     return () => {
       cancelled = true;
@@ -1168,25 +1256,42 @@ export default function PrescriptionModal({
     return error ?? null;
   }
 
-  function labSummaryItemsForPrint() {
+  const labPrintBlocks = useMemo(() => {
     return labAttachSlots
       .filter((s) => s.checked && s.includePrint)
       .map((s) => ({
-        displayName: `${s.display_name} — ${s.report_date_label}`,
-        entries: labEntriesByOcrUploadId[s.ocr_upload_id] ?? [],
+        slot: s,
+        entries: labEntriesForAttachmentSlot(s, labEntriesByInvestigationId, labEntriesByOcrUploadId),
+        meta: s.investigation_id?.trim() ? invPrintMetaById[s.investigation_id.trim()] ?? null : null,
       }))
-      .filter((it) => it.entries.length > 0);
-  }
+      .filter((b) => b.entries.length > 0);
+  }, [labAttachSlots, labEntriesByInvestigationId, labEntriesByOcrUploadId, invPrintMetaById]);
+
+  const printLabAttachmentCount = labAttachSlots.filter((s) => s.checked && s.includePrint).length;
 
   function labSummaryTextForWhatsapp(): string {
     const items = labAttachSlots
       .filter((s) => s.checked && s.includeWhatsapp)
       .map((s) => ({
         displayName: `${s.display_name} — ${s.report_date_label}`,
-        entries: labEntriesByOcrUploadId[s.ocr_upload_id] ?? [],
+        entries: labEntriesForAttachmentSlot(s, labEntriesByInvestigationId, labEntriesByOcrUploadId),
       }))
       .filter((it) => it.entries.length > 0);
     return buildLabSummaryText(items);
+  }
+
+  /** Medication lines for WhatsApp (English, or English + Hindi dosage glosses). */
+  function medicationsTextForWhatsapp(): string {
+    return addedMedicines
+      .map((m, i) => {
+        const name = formatAbdmMedicationLabel(m.catalog);
+        const dose = formatDosageBilingual(m.dosage, m.frequency, m.timing, m.duration, rxLang === "en-hi");
+        const inst = m.instructions?.trim();
+        let block = `${i + 1}. *${name}*\n${dose}`;
+        if (inst) block += `\n_${inst}_`;
+        return block;
+      })
+      .join("\n\n");
   }
 
   const handleRemoveLine = useCallback(
@@ -1200,36 +1305,40 @@ export default function PrescriptionModal({
     [inlineDraft, removeLine],
   );
 
-  async function handleSavePrescription() {
+  /** Persist lines + ancillary writes, then `finalize_prescription` (shared by Route to Pharmacy & Finalize). */
+  async function handleFinalizePrescription() {
     if (inlineDraft) {
-      setSaveError("Finish or cancel the inline medication entry before saving.");
+      toast.error({
+        title: "Finish or cancel the inline medication entry before finalizing.",
+      });
       return;
     }
     if (addedMedicines.length === 0) {
-      setSaveError("Add at least one medicine before saving.");
+      toast.error({ title: "Add at least one medication before finalizing" });
       return;
     }
-    if (!encounterId || !patientId) {
-      setSaveError("Missing encounter or patient ID. Please try again.");
+    const eid = encounterId?.trim();
+    const pid = patientId?.trim();
+    if (!eid || !pid) {
+      toast.error({ title: "Missing encounter or patient ID. Please try again." });
       return;
     }
 
     setSaveError(null);
     setIsSaving(true);
 
-    const payload = addedMedicines.map((line) => prescriptionLineToDbRow(line, encounterId, patientId));
+    const payload = addedMedicines.map((line) => prescriptionLineToDbRow(line, eid, pid));
 
     const { error } = await supabase.from(PRESCRIPTIONS_TABLE).insert(payload);
 
-    setIsSaving(false);
-
     if (error) {
       console.error("Prescription save failed:", error);
-      setSaveError(error.message);
+      setIsSaving(false);
+      toast.error({ title: error.message });
       return;
     }
 
-    const fuErr = await persistEncounterFollowUp(encounterId, followUpDate ?? null);
+    const fuErr = await persistEncounterFollowUp(eid, followUpDate ?? null);
     if (fuErr) console.warn("Could not persist follow-up on encounter:", fuErr);
 
     const invErr = await deductHospitalInventoryForPrescription(addedMedicines, sessionOrgId);
@@ -1240,10 +1349,41 @@ export default function PrescriptionModal({
     const attachErr = await persistPrescriptionAttachments();
     if (attachErr) console.warn("prescription_attachments:", attachErr);
 
+    let hid = sessionOrgId;
+    if (!hid) {
+      const { orgId } = await fetchAuthOrgId();
+      hid = orgId;
+    }
+    if (!hid) {
+      setIsSaving(false);
+      toast.error({ title: "Could not determine hospital for this session." });
+      return;
+    }
+
+    const { error: rpcErr } = await supabase.rpc("finalize_prescription", {
+      encounter_id: eid,
+      patient_id: pid,
+      hospital_id: hid,
+    });
+
+    setIsSaving(false);
+
+    if (rpcErr) {
+      toast.error({ title: rpcErr.message });
+      return;
+    }
+
+    toast.success({ title: "Prescription finalized and sent to pharmacy" });
     setPrescriptionSaved(true);
-    setSavedRxId(encounterId);
-    handlePrint();
-    onClose();
+    setSavedRxId(eid);
+    setIsPrescriptionFinal(true);
+    queueMicrotask(() => {
+      void handlePrint();
+    });
+    window.setTimeout(() => {
+      setIsPrescriptionFinal(false);
+      onClose();
+    }, 1500);
   }
 
   async function handleWhatsAppSend() {
@@ -1299,6 +1439,7 @@ export default function PrescriptionModal({
 
     try {
       const labSummaryText = labSummaryTextForWhatsapp();
+      const medicationsText = medicationsTextForWhatsapp();
       const res = await fetch("/api/whatsapp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1308,6 +1449,7 @@ export default function PrescriptionModal({
           rxId:        rxId ?? encounterId,
           doctorName,
           labSummaryText: labSummaryText.trim() || undefined,
+          medicationsText: medicationsText.trim() || undefined,
         }),
       });
       const json = await res.json() as { success?: boolean; error?: string };
@@ -1424,6 +1566,7 @@ export default function PrescriptionModal({
       aria-modal="true"
       role="dialog"
       onClick={(e) => {
+        if (isPrescriptionFinal) return;
         if (saveTemplateModalOpen || clinicalProposalOpen) return;
         if (inlineDraft) {
           if (e.target === e.currentTarget) {
@@ -1442,19 +1585,23 @@ export default function PrescriptionModal({
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Prescription for {patientName}</h2>
-            <p className="mt-0.5 text-sm text-gray-500">
-              {patientAge != null && patientSex ? `${patientAge}Y / ${patientSex.charAt(0).toUpperCase()}` : ""}
-              {diagnosis && toDisplay(diagnosis).trim()
-                ? <> &nbsp;·&nbsp; <span className="font-medium">Dx:</span> {toDisplay(diagnosis)}</>
-                : ""}
-            </p>
+          <div className="flex min-w-0 items-start gap-3">
+            <PatientAvatar patientId={patientId} patientName={patientName} size="md" />
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-gray-900">Prescription for {patientName}</h2>
+              <p className="mt-0.5 text-sm text-gray-500">
+                {patientAge != null && patientSex ? `${patientAge}Y / ${patientSex.charAt(0).toUpperCase()}` : ""}
+                {diagnosis && toDisplay(diagnosis).trim()
+                  ? <> &nbsp;·&nbsp; <span className="font-medium">Dx:</span> {toDisplay(diagnosis)}</>
+                  : ""}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            disabled={isPrescriptionFinal}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Close"
           >
             <XIcon className="h-5 w-5" />
@@ -1474,6 +1621,8 @@ export default function PrescriptionModal({
               deniedTitle="View-only access for your role."
             >
             <div className="flex min-w-0 flex-col">
+            {!isPrescriptionFinal ? (
+              <>
             {/* Search */}
             <div className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
               <SearchIcon className="h-4 w-4 shrink-0 text-gray-400" />
@@ -1722,11 +1871,20 @@ export default function PrescriptionModal({
                 </>
               )}
             </div>
+              </>
+            ) : null}
 
             {/* Current prescription list — inline entry (no dosage modal) */}
             <div className="mt-6 border-t border-gray-100 pt-4">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-900">Current Prescription</h3>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-bold text-gray-900">Current Prescription</h3>
+                  {isPrescriptionFinal ? (
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                      ✓ Finalized
+                    </span>
+                  ) : null}
+                </div>
                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${addedMedicines.length > 0 ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"}`}>
                   {addedMedicines.length} medicine{addedMedicines.length !== 1 ? "s" : ""}
                 </span>
@@ -1799,7 +1957,9 @@ export default function PrescriptionModal({
                         favoriteBusy={favoriteBusyKey === medFavoriteBusyKey(line.catalog)}
                         onToggleFavorite={() => void handleToggleFavoriteMed(line.catalog)}
                         flash={flashLineId === line.id}
-                        allowPrescribeEdits={rxEdit}
+                        allowPrescribeEdits={rxEdit && !isPrescriptionFinal}
+                        hideRemoveButton={isPrescriptionFinal}
+                        rxBilingual={rxLang === "en-hi"}
                       />
                     </div>
                   ))}
@@ -1809,10 +1969,17 @@ export default function PrescriptionModal({
 
             <div className="mt-6 border-t border-gray-100 pt-4">
               <h3 className="mb-1 text-sm font-bold text-gray-900">Attach lab reports</h3>
-              <p className="mb-3 text-[11px] text-gray-500">
-                Completed OCR reports for this visit. Included summaries appear after medications on print
-                {whatsappNotificationsEnabled ? " and optionally on WhatsApp" : ""}.
+              <p className="mb-2 text-[11px] text-gray-500">
+                Completed OCR reports for this visit.
+                {whatsappNotificationsEnabled ? " Optional WhatsApp summary per report below." : ""}
               </p>
+              {labAttachSlots.length > 0 && !labAttachLoading ? (
+                <p className="mb-3 text-[11px] font-medium text-gray-700">
+                  {printLabAttachmentCount === 0
+                    ? 'Enable "Include in print" on a report to attach the laboratory section on page 2.'
+                    : `${printLabAttachmentCount} lab report${printLabAttachmentCount === 1 ? "" : "s"} will be attached on page 2.`}
+                </p>
+              ) : null}
               {labAttachLoading ? (
                 <p className="text-xs text-gray-400">Loading lab reports…</p>
               ) : labAttachError ? (
@@ -1830,7 +1997,7 @@ export default function PrescriptionModal({
                         <input
                           type="checkbox"
                           checked={slot.checked}
-                          disabled={!rxEdit}
+                          disabled={!rxEdit || isPrescriptionFinal}
                           onChange={(e) => {
                             const v = e.target.checked;
                             setLabAttachSlots((prev) =>
@@ -1850,7 +2017,7 @@ export default function PrescriptionModal({
                               <input
                                 type="checkbox"
                                 checked={slot.includeWhatsapp}
-                                disabled={!rxEdit}
+                                disabled={!rxEdit || isPrescriptionFinal}
                                 onChange={(e) => {
                                   const v = e.target.checked;
                                   setLabAttachSlots((prev) =>
@@ -1868,7 +2035,7 @@ export default function PrescriptionModal({
                             <input
                               type="checkbox"
                               checked={slot.includePrint}
-                              disabled={!rxEdit}
+                              disabled={!rxEdit || isPrescriptionFinal}
                               onChange={(e) => {
                                 const v = e.target.checked;
                                 setLabAttachSlots((prev) =>
@@ -1894,43 +2061,87 @@ export default function PrescriptionModal({
 
           {/* ─── Right: Prescription preview ─── */}
           <div className="flex flex-col gap-4 overflow-y-auto bg-slate-100 p-5">
+            {allergies.length > 0 ? (
+              <AlertBanner
+                severity="critical"
+                title="Patient allergies on record"
+                body={allergies
+                  .map((a) => toDisplay(a))
+                  .filter(Boolean)
+                  .join(", ")}
+                className="print:hidden"
+              />
+            ) : null}
+            {drugDrugInteractionWarnings.length > 0 ? (
+              <AlertBanner
+                severity="high"
+                title="Potential drug–drug interactions"
+                body={
+                  <ul className="list-inside list-disc space-y-0.5">
+                    {drugDrugInteractionWarnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                }
+                className="print:hidden"
+              />
+            ) : null}
             <h3 className="text-sm font-bold text-gray-700">Prescription Preview</h3>
 
             {/* Paper — ref targets this for print */}
             <div
               ref={printRef}
-              className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-[12px] leading-relaxed text-gray-800 print:m-0 print:h-screen print:max-w-none print:rounded-none print:border-none print:p-8 print:shadow-none print:w-full"
+              className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm text-[12px] leading-relaxed text-gray-800 print:m-0 print:min-h-0 print:max-w-none print:rounded-none print:border-none print:p-6 print:shadow-none print:w-full"
               style={{ WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
             >
 
               {/* Incomplete profile warning */}
               {profileIncomplete && (
-                <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] text-red-700 print:hidden">
-                  <span className="font-bold">⚠ Incomplete Profile:</span>
-                  &nbsp;Update your Reg. No. in Settings to print.
+                <div className="mb-2 print:hidden">
+                  <AlertBanner
+                    severity="medium"
+                    title="Incomplete prescriber profile"
+                    body="Update your Reg. No. in Settings to print."
+                  />
                 </div>
               )}
 
-              {/* Hospital header */}
-              <div className="flex items-start justify-between border-b border-gray-200 pb-3">
-                <div className="flex items-start gap-2">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 print:h-10 print:w-10">
-                    <PillIcon className="h-4 w-4 text-blue-600 print:h-5 print:w-5" />
+              {/* Hospital letterhead header */}
+              <div className="mb-3">
+                {hospitalLetterhead ? (
+                  <HospitalLetterhead
+                    hospital={hospitalLetterhead}
+                    doctor={{
+                      full_name: doctorProfile
+                        ? [doctorProfile.first_name, doctorProfile.last_name].filter(Boolean).join(" ") || doctorName
+                        : doctorName,
+                      specialty: doctorProfile?.specialty ?? null,
+                      registration_no: doctorProfile?.registration_no ?? null,
+                    }}
+                    compact
+                  />
+                ) : (
+                  <div className="flex items-start justify-between border-b border-gray-200 pb-3">
+                    <div className="flex items-start gap-2">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 print:h-10 print:w-10">
+                        <PillIcon className="h-4 w-4 text-blue-600 print:h-5 print:w-5" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 print:text-base">{clinicDisplayName}</p>
+                        <p className="text-[11px] text-gray-500 print:text-sm">DocPad Digital Health Network</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-gray-900 print:text-base">{doctorTitle}</p>
+                      <p className="text-[11px] text-gray-500 print:text-sm">
+                        {doctorQualification}{doctorSpecialty ? ` · ${doctorSpecialty}` : ""}
+                      </p>
+                      {doctorRegNo ? (
+                        <p className="text-[11px] text-gray-500 print:text-sm">Reg. No.: {doctorRegNo}</p>
+                      ) : null}
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-gray-900 print:text-base">{clinicDisplayName}</p>
-                    <p className="text-[11px] text-gray-500 print:text-sm">DocPad Digital Health Network</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-gray-900 print:text-base">{doctorTitle}</p>
-                  <p className="text-[11px] text-gray-500 print:text-sm">
-                    {doctorQualification}{doctorSpecialty ? ` · ${doctorSpecialty}` : ""}
-                  </p>
-                  <p className={`text-[11px] print:text-sm ${doctorRegNo ? "text-gray-500" : "text-red-400 italic"}`}>
-                    {doctorRegNo ? `Reg. No.: ${doctorRegNo}` : "Reg. No.: Not set"}
-                  </p>
-                </div>
+                )}
               </div>
 
               {/* Patient row */}
@@ -1945,14 +2156,24 @@ export default function PrescriptionModal({
               {/* Rx body */}
               <div className="mt-3 flex gap-3">
                 <div className="w-[42%] border-r border-gray-100 pr-3 space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 print:text-xs">Clinical Summary</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] print:text-[10px]">
+                    Clinical Summary
+                  </p>
 
-                  {/* Allergies — always show, "Nil known" when empty */}
-                  <div className={`rounded px-2 py-1 ${allergies.length > 0 ? "bg-red-50" : "bg-gray-50"}`}>
-                    <span className={`text-[10px] font-bold print:text-xs ${allergies.length > 0 ? "text-red-600" : "text-gray-400"}`}>
+                  {/* Allergies — always show on printed Rx; screen uses AlertBanner above */}
+                  <div
+                    className={`rounded border px-2 py-1 ${
+                      allergies.length > 0 ? "border-red-200 bg-red-50/80" : "border-transparent bg-gray-50"
+                    }`}
+                  >
+                    <span
+                      className={`text-[10px] font-bold print:text-xs ${allergies.length > 0 ? "text-red-700" : "text-gray-400"}`}
+                    >
                       {allergies.length > 0 ? "⚠ Allergies: " : "Allergies: "}
                     </span>
-                    <span className={`text-[11px] print:text-sm ${allergies.length > 0 ? "text-red-700" : "italic text-gray-400"}`}>
+                    <span
+                      className={`text-[11px] print:text-sm ${allergies.length > 0 ? "text-red-800" : "italic text-gray-400"}`}
+                    >
                       {allergies.length > 0
                         ? allergies.map((a) => toDisplay(a)).filter(Boolean).join(", ")
                         : "No known allergies"}
@@ -2011,9 +2232,15 @@ export default function PrescriptionModal({
                         : <span className="italic text-gray-400">Nil</span>}
                     </span>
                   </div>
+
+                  <div className="mt-4 flex h-12 w-12 shrink-0 items-center justify-center self-start rounded border border-gray-200 bg-gray-50 text-[9px] font-medium leading-tight text-gray-400 print:h-16 print:w-16 print:text-[11px]">
+                    Scan for Digital Dashboard &amp; reminders
+                  </div>
                 </div>
                 <div className="flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 print:text-xs">Medication &amp; Advice</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] print:text-[10px]">
+                    Medication &amp; Advice
+                  </p>
                   {addedMedicines.length === 0 ? (
                     <>
                       <p className="mt-1 font-serif text-2xl font-bold italic text-blue-700">Rx</p>
@@ -2022,57 +2249,43 @@ export default function PrescriptionModal({
                   ) : (
                     <ul className="mt-1.5 space-y-2.5">
                       {addedMedicines.map((m, i) => {
-                        const sig = [m.dosage, m.frequency, m.duration].filter(Boolean).join(" · ");
-                        const extra =
-                          m.timing || m.instructions
-                            ? [m.timing, m.instructions].filter(Boolean).join(". ")
-                            : "";
+                        const doseText = formatDosageBilingual(
+                          m.dosage,
+                          m.frequency,
+                          m.timing,
+                          m.duration,
+                          rxLang === "en-hi",
+                        );
+                        const inst = m.instructions?.trim();
+                        const doseLines = doseText ? doseText.split("\n") : [];
                         return (
                           <li key={m.id} className="text-[11px] print:text-sm">
-                            <p className="font-semibold text-gray-800">
+                            <p className="text-[14px] font-semibold leading-snug text-gray-800">
                               {i + 1}. {formatAbdmMedicationLabel(m.catalog)}
                             </p>
-                            {sig ? <p className="text-gray-600">{sig}</p> : null}
-                            {extra ? <p className="italic text-gray-500">{extra}</p> : null}
+                            {doseLines.length > 0 ? (
+                              <div className="mt-1 space-y-0.5">
+                                {doseLines.map((ln, di) => (
+                                  <p
+                                    key={di}
+                                    className={
+                                      di === 0
+                                        ? "leading-snug not-italic text-[#374151]"
+                                        : "text-[12px] leading-snug not-italic text-[#6B7280]"
+                                    }
+                                    style={di === 0 ? { fontSize: "13px" } : undefined}
+                                  >
+                                    {ln}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : null}
+                            {inst ? <p className="mt-1 italic text-gray-500">{inst}</p> : null}
                           </li>
                         );
                       })}
                     </ul>
                   )}
-
-                  {labSummaryItemsForPrint().length > 0 ? (
-                    <div className="mt-3 border-t border-gray-100 pt-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 print:text-xs">
-                        Attached lab summaries
-                      </p>
-                      <div className="mt-1.5 space-y-3">
-                        {labSummaryItemsForPrint().map((block) => (
-                          <div key={block.displayName}>
-                            <p className="text-[11px] font-semibold text-gray-800 print:text-sm">{block.displayName}</p>
-                            <ul className="mt-0.5 list-inside list-disc space-y-0.5 text-[10px] text-gray-700 print:text-xs">
-                              {block.entries.map((e, idx) => {
-                                const name = (e.parameter_name ?? "").trim() || "—";
-                                const val =
-                                  e.value_text?.trim() ||
-                                  (e.value_numeric != null && Number.isFinite(e.value_numeric)
-                                    ? String(e.value_numeric)
-                                    : "");
-                                const u = (e.unit ?? "").trim();
-                                const ref = (e.ref_range_text ?? "").trim();
-                                const valuePart = [val, u].filter(Boolean).join(" ");
-                                const line = valuePart
-                                  ? `${name}: ${valuePart}${ref ? ` (Ref: ${ref})` : ""}`
-                                  : `${name}${ref ? ` (Ref: ${ref})` : ""}`;
-                                return (
-                                  <li key={`${name}-${idx}`}>{line}</li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
 
                   {/* Procedures */}
                   {procedures.length > 0 && (
@@ -2113,26 +2326,160 @@ export default function PrescriptionModal({
                 </div>
               ) : null}
 
-              {/* QR + signature */}
-              <div className="mt-3 flex items-end justify-between">
-                <div className="flex h-12 w-12 items-center justify-center rounded border border-gray-200 bg-gray-50 text-[9px] font-medium text-gray-400 text-center leading-tight p-1 print:h-16 print:w-16 print:text-[11px]">
-                  Scan for Digital Dashboard &amp; reminders
-                </div>
+              {/* Doctor signature */}
+              <div className="mt-8 flex justify-end">
                 <div className="text-right">
+                  <div className="mb-2 ml-auto w-[120px] border-t border-[#D1D5DB]" aria-hidden />
                   <p className="text-[11px] font-bold text-gray-800 print:text-sm">{doctorTitle}</p>
                   <p className="text-[10px] text-gray-400 print:text-xs">
                     {doctorQualification}{doctorSpecialty ? ` · ${doctorSpecialty}` : ""}
                   </p>
-                  {doctorRegNo && (
-                    <p className="text-[10px] text-gray-400 print:text-xs">Reg. {doctorRegNo}</p>
-                  )}
+                  {doctorRegNo ? <p className="text-[10px] text-gray-400 print:text-xs">Reg. {doctorRegNo}</p> : null}
                 </div>
               </div>
+
+              {labPrintBlocks.length > 0 ? (
+                <div className="mt-10 border-t border-gray-200 pt-6">
+                  <p className="text-center text-[10px] font-semibold tracking-wide text-gray-600 print:text-xs">
+                    Lab reports attached on next page
+                  </p>
+                </div>
+              ) : null}
 
               <p className="mt-3 text-center text-[10px] text-gray-400 print:text-xs">
                 This is a digitally generated prescription via DocPad
                 <br />This prescription complies with EPS data requirements.
               </p>
+
+              {labPrintBlocks.length > 0 ? (
+                <section
+                  className="rx-print-lab-attachment mt-10 border-t-2 border-dashed border-slate-300 pt-8 print:mt-0 print:border-0 print:pt-8"
+                  aria-label="Laboratory investigation report"
+                >
+                  <div className="border-b border-gray-200 pb-2">
+                    {hospitalLetterhead ? (
+                      <HospitalLetterhead
+                        hospital={hospitalLetterhead}
+                        doctor={{
+                          full_name: doctorProfile
+                            ? [doctorProfile.first_name, doctorProfile.last_name].filter(Boolean).join(" ") || doctorName
+                            : doctorName,
+                          specialty: doctorProfile?.specialty ?? null,
+                          registration_no: doctorProfile?.registration_no ?? null,
+                        }}
+                        compact
+                      />
+                    ) : (
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-1.5">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-blue-100 print:h-7 print:w-7">
+                            <PillIcon className="h-3 w-3 text-blue-600 print:h-3.5 print:w-3.5" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold text-gray-900 print:text-xs">{clinicDisplayName}</p>
+                            <p className="text-[9px] text-gray-500 print:text-[10px]">DocPad Digital Health Network</p>
+                          </div>
+                        </div>
+                        <div className="text-right text-[9px] text-gray-500 print:text-[10px]">
+                          <p className="font-semibold text-gray-800">{doctorTitle}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <h2 className="mt-5 text-center text-sm font-bold uppercase tracking-wide text-gray-900 print:mt-6 print:text-base">
+                    Laboratory Investigation Report
+                  </h2>
+
+                  <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-gray-100 pb-3 text-[11px] text-gray-800 print:text-sm">
+                    <span className="font-semibold">
+                      {patientName}
+                      {patientAge != null ? `, ${patientAge}Y` : ""}
+                      {patientSex ? ` · ${patientSex.charAt(0).toUpperCase()}` : ""}
+                    </span>
+                    <span className="text-gray-600">Date: {todayStr}</span>
+                    <span className="text-gray-500">DocPad ID: {patientDisplayId}</span>
+                  </div>
+
+                  <div className="mt-5 space-y-8 print:space-y-10">
+                    {labPrintBlocks.map((block, bi) => {
+                      const s = block.slot;
+                      const meta = block.meta;
+                      const testTitle = (meta?.test_name ?? s.display_name ?? "Investigation").trim();
+                      const statusLabel = formatResultStatusLabel(meta?.result_status ?? null);
+                      const dateLine = formatLabReportDate(meta?.resulted_at ?? meta?.ordered_at ?? null);
+                      const orderedBy = meta?.ordered_by_label?.trim() || "—";
+                      return (
+                        <div key={`${s.ocr_upload_id}-${bi}`} className="rounded-lg border border-gray-200 bg-white print:border-gray-300">
+                          <div className="border-b border-gray-100 bg-slate-50/80 px-3 py-2 print:bg-slate-50">
+                            <p className="text-[11px] font-bold text-gray-900 print:text-sm">Test: {testTitle}</p>
+                            <p className="mt-1 text-[10px] text-gray-600 print:text-xs">
+                              <span>Date: {dateLine}</span>
+                              <span className="mx-2 text-gray-300">|</span>
+                              <span>Status: {statusLabel}</span>
+                            </p>
+                            <p className="mt-0.5 text-[10px] text-gray-600 print:text-xs">Ordered by: {orderedBy}</p>
+                          </div>
+                          <div className="overflow-x-auto px-1 py-2">
+                            <table className="w-full min-w-[420px] border-collapse border border-gray-200 text-[10px] print:text-[11px]">
+                              <thead>
+                                <tr className="border-b border-gray-200 bg-gray-50 text-left">
+                                  <th className="border-r border-gray-200 px-2 py-1.5 font-bold uppercase tracking-wide text-gray-600">
+                                    Parameter
+                                  </th>
+                                  <th className="border-r border-gray-200 px-2 py-1.5 font-bold uppercase tracking-wide text-gray-600">
+                                    Value
+                                  </th>
+                                  <th className="border-r border-gray-200 px-2 py-1.5 font-bold uppercase tracking-wide text-gray-600">
+                                    Unit
+                                  </th>
+                                  <th className="px-2 py-1.5 font-bold uppercase tracking-wide text-gray-600">Ref range</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {block.entries.map((e, ri) => {
+                                  const name = (e.parameter_name ?? "").trim() || "—";
+                                  const val =
+                                    e.value_text?.trim() ||
+                                    (e.value_numeric != null && Number.isFinite(e.value_numeric)
+                                      ? String(e.value_numeric)
+                                      : "—");
+                                  const u = (e.unit ?? "").trim() || "—";
+                                  const ref = (e.ref_range_text ?? "").trim() || "—";
+                                  const abnormal = e.is_abnormal === true;
+                                  const cell = abnormal ? "font-bold text-red-700" : "text-gray-800";
+                                  return (
+                                    <tr key={`${name}-${ri}`} className="border-b border-gray-100">
+                                      <td className={`border-r border-gray-100 px-2 py-1.5 ${cell}`}>{name}</td>
+                                      <td className={`border-r border-gray-100 px-2 py-1.5 tabular-nums ${cell}`}>{val}</td>
+                                      <td className={`border-r border-gray-100 px-2 py-1.5 ${cell}`}>{u}</td>
+                                      <td className={`px-2 py-1.5 ${cell}`}>{ref}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-10 flex justify-end border-t border-gray-100 pt-4 print:mt-12">
+                    <div className="text-right">
+                      <p className="text-[11px] font-bold text-gray-800 print:text-sm">{doctorTitle}</p>
+                      <p className="text-[10px] text-gray-400 print:text-xs">
+                        {doctorQualification}
+                        {doctorSpecialty ? ` · ${doctorSpecialty}` : ""}
+                      </p>
+                      {doctorRegNo ? (
+                        <p className="text-[10px] text-gray-400 print:text-xs">Reg. {doctorRegNo}</p>
+                      ) : null}
+                      <p className="mt-2 text-[9px] text-gray-400 print:text-xs">Signature</p>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
             </div>
           </div>
         </div>
@@ -2140,9 +2487,14 @@ export default function PrescriptionModal({
         {/* ── Footer ── */}
         <div className="border-t border-gray-200 bg-white px-6 py-3">
           {/* Error banner */}
-          {saveError && (
-            <p role="alert" className="mb-2 text-center text-xs font-medium text-red-600">{saveError}</p>
-          )}
+          {saveError ? (
+            <AlertBanner
+              severity="high"
+              title="Could not save prescription"
+              body={saveError}
+              className="mb-2"
+            />
+          ) : null}
           {templateToast && (
             <div
               role="status"
@@ -2172,6 +2524,7 @@ export default function PrescriptionModal({
                     disabled={
                       addedMedicines.length === 0 ||
                       isSaving ||
+                      isPrescriptionFinal ||
                       (whatsappNotificationsEnabled && isSendingWhatsApp) ||
                       Boolean(inlineDraft)
                     }
@@ -2184,9 +2537,14 @@ export default function PrescriptionModal({
               ) : null}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-medium text-gray-500">Rx Lang:</span>
-                <select className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 outline-none focus:border-blue-400">
-                  <option>English + Hindi (हिंदी)</option>
-                  <option>English only</option>
+                <select
+                  value={rxLang}
+                  onChange={(e) => setRxLang(e.target.value === "en-hi" ? "en-hi" : "en")}
+                  disabled={isPrescriptionFinal}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 outline-none focus:border-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="en-hi">English + Hindi (हिंदी)</option>
+                  <option value="en">English only</option>
                 </select>
               </div>
             </div>
@@ -2202,25 +2560,33 @@ export default function PrescriptionModal({
                 </button>
                 <button
                   type="button"
-                  onClick={handleSavePrescription}
+                  onClick={handleFinalizePrescription}
                   disabled={
-                    isSaving || (whatsappNotificationsEnabled && isSendingWhatsApp) || addedMedicines.length === 0 || Boolean(inlineDraft)
+                    isSaving ||
+                    isPrescriptionFinal ||
+                    (whatsappNotificationsEnabled && isSendingWhatsApp) ||
+                    addedMedicines.length === 0 ||
+                    Boolean(inlineDraft)
                   }
                   className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <PharmacyIcon className="h-4 w-4" />
-                  {isSaving ? "Saving…" : "Route to Pharmacy"}
+                  {isSaving ? "Finalizing…" : "Route to Pharmacy"}
                 </button>
                 <button
                   type="button"
-                  onClick={handleSavePrescription}
+                  onClick={handleFinalizePrescription}
                   disabled={
-                    isSaving || (whatsappNotificationsEnabled && isSendingWhatsApp) || addedMedicines.length === 0 || Boolean(inlineDraft)
+                    isSaving ||
+                    isPrescriptionFinal ||
+                    (whatsappNotificationsEnabled && isSendingWhatsApp) ||
+                    addedMedicines.length === 0 ||
+                    Boolean(inlineDraft)
                   }
                   className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <PrinterIcon className="h-4 w-4" />
-                  {isSaving ? "Saving…" : "Finalize Prescription"}
+                  {isSaving ? "Finalizing…" : "Finalize Prescription"}
                 </button>
                 {whatsappNotificationsEnabled ? (
                   <button
@@ -2228,6 +2594,7 @@ export default function PrescriptionModal({
                     onClick={handleWhatsAppSend}
                     disabled={
                       isSaving ||
+                      isPrescriptionFinal ||
                       isSendingWhatsApp ||
                       addedMedicines.length === 0 ||
                       !patientPhone ||

@@ -6,31 +6,48 @@
  */
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { CurrentUserBadge } from "../../components/CurrentUserBadge";
 import NewPatientModal from "../../components/NewPatientModal";
 import { AdmissionBillingSheet, type PendingAdmissionRow } from "../../components/reception/AdmissionBillingSheet";
 import { PendingLabPaymentsSection } from "../../components/reception/PendingLabPayments";
 import { fetchHospitalIdFromPractitionerAuthId } from "../../lib/authOrg";
+import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
 import { unwrapRpcArray } from "../../lib/ipdConsults";
 import { fetchDoctorAssignmentOptions } from "../../lib/doctorAssignmentOptions";
 import { enqueueReceptionWalkIn } from "../../lib/receptionEnqueue";
 import type { RegisteredPatientRow } from "../../lib/registerNewPatient";
 import { supabase } from "../../supabase";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
 
 const AdmitPatientModal = dynamic(
   () => import("@/app/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
   { ssr: false },
 );
 
+type ConsultationCharge = {
+  id: string;
+  source_id: string | null;
+  patient_id: string | null;
+  unit_price: number | null;
+  net_amount: number | null;
+  status: string | null;
+  charge_code_display: string | null;
+};
+
 type ReceptionTodayQueueRow = {
   id: string;
   hospital_id: string | null;
+  patient_id?: string | null;
   token_display: string | null;
   token_number: number | null;
   queue_status: string;
   assigned_room: string | null;
   patient_name: string | null;
+  patient_full_name?: string | null;
+  patient_docpad_id?: string | null;
   docpad_id: string | null;
   phone: string | null;
   age_years: number | null;
@@ -222,6 +239,10 @@ function ReceptionPageContent() {
   const [enrollDoctorId, setEnrollDoctorId] = useState("");
   const [practitioners, setPractitioners] = useState<{ id: string; full_name: string | null }[]>([]);
   const [practitionersLoading, setPractitionersLoading] = useState(false);
+  const [practitionerId, setPractitionerId] = useState<string | null>(null);
+  const [chargeByQueueId, setChargeByQueueId] = useState<Record<string, ConsultationCharge>>({});
+  const [collectingId, setCollectingId] = useState<string | null>(null);
+  const [overriddenQueueIds, setOverriddenQueueIds] = useState<Set<string>>(new Set());
   const [enrolling, setEnrolling] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
 
@@ -229,6 +250,7 @@ function ReceptionPageContent() {
   const [admitBedPrefill, setAdmitBedPrefill] = useState<{ wardId: string; bedId: string } | null>(null);
 
   const [receptionSection, setReceptionSection] = useState<"opd" | "pending" | "lab_payments">("opd");
+  const [pendingLabPaymentsCount, setPendingLabPaymentsCount] = useState(0);
   const [pendingRows, setPendingRows] = useState<PendingAdmissionRow[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingError, setPendingError] = useState<string | null>(null);
@@ -263,8 +285,26 @@ function ReceptionPageContent() {
         setQueue([]);
       }
     } else {
-      setQueue((data ?? []) as ReceptionTodayQueueRow[]);
+      const rows = (data ?? []) as ReceptionTodayQueueRow[];
+      setQueue(rows);
       if (!silent) setFetchError(null);
+
+      const ids = rows.map((r) => r.id).filter(Boolean);
+      if (ids.length > 0) {
+        const { data: charges } = await supabase
+          .from("charge_items")
+          .select("id, source_id, patient_id, unit_price, net_amount, status, charge_code_display")
+          .eq("source_type", "queue")
+          .in("source_id", ids);
+        const map: Record<string, ConsultationCharge> = {};
+        for (const c of charges ?? []) {
+          const rec = c as ConsultationCharge;
+          if (rec.source_id) map[rec.source_id] = rec;
+        }
+        setChargeByQueueId(map);
+      } else {
+        setChargeByQueueId({});
+      }
     }
     if (!silent) setLoading(false);
   }, []);
@@ -320,6 +360,24 @@ function ReceptionPageContent() {
   }, [loadQueue]);
 
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) return;
+      const { data: pr } = await supabase
+        .from("practitioners")
+        .select("id")
+        .or(practitionersOrFilterForAuthUid(uid))
+        .maybeSingle();
+      if (!cancelled && pr?.id) setPractitionerId(String(pr.id));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hospitalId) return;
     const channel = supabase
       .channel("reception-queue-rt")
@@ -335,6 +393,28 @@ function ReceptionPageContent() {
       void supabase.removeChannel(channel);
     };
   }, [hospitalId, loadQueue]);
+
+  useEffect(() => {
+    if (!hospitalId) return;
+    const ch = supabase
+      .channel("reception-consultation-charges-rt")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "charge_items", filter: `hospital_id=eq.${hospitalId}` },
+        (payload) => {
+          const rec = payload.new as ConsultationCharge & { source_type?: string };
+          if (rec.source_type === "queue" && rec.source_id) {
+            setChargeByQueueId((prev) => ({ ...prev, [rec.source_id!]: rec }));
+          }
+        },
+      )
+      .subscribe();
+    return () => void supabase.removeChannel(ch);
+  }, [hospitalId]);
+
+  useEffect(() => {
+    if (!hospitalId) setPendingLabPaymentsCount(0);
+  }, [hospitalId]);
 
   useEffect(() => {
     if (!hospitalId || receptionSection !== "pending") return;
@@ -408,6 +488,63 @@ function ReceptionPageContent() {
       return;
     }
     void loadQueue(hospitalId, { silent: true });
+  }
+
+  async function applyPaymentOverride(row: ReceptionTodayQueueRow) {
+    const confirmed = window.confirm(
+      "Allow patient to see doctor without payment? This will be logged.",
+    );
+    if (!confirmed) return;
+    const { error } = await supabase
+      .from("reception_queue")
+      .update({
+        payment_override: true,
+        payment_override_by: practitionerId,
+        payment_override_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    if (error) {
+      showToast(error.message || "Could not apply override");
+      return;
+    }
+    setOverriddenQueueIds((prev) => new Set([...prev, row.id]));
+    showToast("Override applied — patient will appear in doctor's queue");
+  }
+
+  async function collectConsultationFee(row: ReceptionTodayQueueRow, charge: ConsultationCharge) {
+    if (!hospitalId) {
+      showToast("No hospital context.");
+      return;
+    }
+    const pid = practitionerId;
+    if (!pid) {
+      showToast("No practitioner profile — sign in again.");
+      return;
+    }
+    setCollectingId(row.id);
+    const { error } = await supabase.rpc("record_lab_payment", {
+      p_charge_item_id: charge.id,
+      p_hospital_id: hospitalId,
+      p_patient_id: charge.patient_id,
+      p_amount: charge.net_amount ?? charge.unit_price,
+      p_payment_method: "cash",
+      p_collected_by: pid,
+      p_notes: null,
+    });
+    setCollectingId(null);
+
+    if (error) {
+      showToast(error.message || "Payment failed");
+      return;
+    }
+
+    setChargeByQueueId((prev) => ({
+      ...prev,
+      [row.id]: { ...charge, status: "billed" },
+    }));
+    showToast(
+      `Consultation fee collected · ₹${(Number(charge.net_amount ?? charge.unit_price) || 0).toFixed(0)}`,
+    );
   }
 
   function callNext(row: ReceptionTodayQueueRow) {
@@ -490,13 +627,19 @@ function ReceptionPageContent() {
               OPD queue, check-in, and IPD admissions awaiting deposit collection.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={btnPrimary} onClick={() => setNewPatientModalOpen(true)}>
-              + New patient
-            </button>
-            <button type="button" className={btnSecondary} onClick={() => showToast("Coming soon")}>
-              Lab billing
-            </button>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <Link
+              href="/reception/reconciliation"
+              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              Shift report
+            </Link>
+            <CurrentUserBadge className="shrink-0" />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={btnPrimary} onClick={() => setNewPatientModalOpen(true)}>
+                + New patient
+              </button>
+            </div>
           </div>
         </header>
 
@@ -523,12 +666,26 @@ function ReceptionPageContent() {
           </button>
           <button
             type="button"
-            className={receptionSection === "lab_payments" ? btnPrimary : btnSecondary}
+            className={`${receptionSection === "lab_payments" ? btnPrimary : btnSecondary} relative`}
             onClick={() => setReceptionSection("lab_payments")}
           >
             Pending lab payments
+            {pendingLabPaymentsCount > 0 ? (
+              <span
+                className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold leading-none text-white ring-2 ring-white"
+                aria-label={`${pendingLabPaymentsCount} pending lab payment${pendingLabPaymentsCount === 1 ? "" : "s"}`}
+              >
+                {pendingLabPaymentsCount > 99 ? "99+" : pendingLabPaymentsCount}
+              </span>
+            ) : null}
           </button>
         </div>
+
+        {hospitalId ? (
+          <div className={receptionSection === "lab_payments" ? "" : "hidden"} aria-hidden={receptionSection !== "lab_payments"}>
+            <PendingLabPaymentsSection hospitalId={hospitalId} onPendingCountChange={setPendingLabPaymentsCount} />
+          </div>
+        ) : null}
 
         {receptionSection === "opd" ? (
           <>
@@ -585,12 +742,23 @@ function ReceptionPageContent() {
                         const actions = queueRowActions(row.queue_status);
                         const tokenLabel =
                           row.token_display?.trim() || (row.token_number != null ? String(row.token_number) : "—");
+                        const pname = row.patient_name?.trim() || row.patient_full_name?.trim() || "—";
+                        const pidForAvatar = (row.patient_id ?? "").trim() || row.id;
+                        const docpad =
+                          row.docpad_id?.trim() || row.patient_docpad_id?.trim() || "—";
                         return (
                           <tr key={row.id} className="hover:bg-gray-50/80">
                             <td className="px-3 py-3 font-mono font-semibold text-gray-900">{tokenLabel}</td>
                             <td className="px-3 py-3 text-gray-800">
-                              <div className="font-medium">{row.patient_name?.trim() || "—"}</div>
-                              <div className="text-xs text-gray-500">{row.docpad_id?.trim() || "—"}</div>
+                              <div className="flex min-w-0 items-start gap-2">
+                                <span className="shrink-0 pt-0.5">
+                                  <PatientAvatar patientId={pidForAvatar} patientName={pname} size="sm" />
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="font-medium">{pname}</div>
+                                  <div className="text-xs text-gray-500">{docpad}</div>
+                                </div>
+                              </div>
                             </td>
                             <td className="px-3 py-3 text-gray-700">
                               <div>{row.doctor_name?.trim() || "—"}</div>
@@ -609,11 +777,42 @@ function ReceptionPageContent() {
                               {formatWaitingMinutesDisplay(row.queue_status, row)}
                             </td>
                             <td className="px-3 py-3 text-gray-700">
-                              <div>{formatMoney(row.bill_amount)}</div>
-                              <div className="text-xs text-gray-500">{row.billing_status?.trim() || "—"}</div>
-                              {row.payment_method?.trim() ? (
-                                <div className="text-xs text-gray-400">{row.payment_method}</div>
-                              ) : null}
+                              {(() => {
+                                const charge = chargeByQueueId[row.id];
+                                if (!charge) return <span className="text-gray-400">—</span>;
+                                if (charge.status === "billed") {
+                                  return (
+                                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-200">
+                                      Paid ✓
+                                    </span>
+                                  );
+                                }
+                                const net = charge.net_amount != null ? Number(charge.net_amount) : NaN;
+                                const amtLabel = Number.isFinite(net) ? `₹${net.toFixed(0)}` : "—";
+                                const collecting = collectingId === row.id;
+                                return (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="tabular-nums text-gray-900">{amtLabel}</span>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
+                                      disabled={collecting}
+                                      onClick={() => void collectConsultationFee(row, charge)}
+                                    >
+                                      {collecting ? "…" : "Collect"}
+                                    </button>
+                                    {!overriddenQueueIds.has(row.id) ? (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                                        onClick={() => void applyPaymentOverride(row)}
+                                      >
+                                        Override
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-3 py-3 text-right">
                               {actions.callNext || actions.complete || actions.noShow ? (
@@ -726,9 +925,7 @@ function ReceptionPageContent() {
               </div>
             )}
           </section>
-        ) : (
-          <PendingLabPaymentsSection hospitalId={hospitalId} />
-        )}
+        ) : null}
       </div>
 
       <NewPatientModal

@@ -24,11 +24,12 @@ function NewEncounterBootstrapInner() {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
+    const signal = controller.signal;
 
     void (async () => {
-      const { orgId } = await fetchAuthOrgId();
-      if (cancelled) return;
+      const { orgId } = await fetchAuthOrgId(signal);
+      if (signal.aborted) return;
       if (!orgId?.trim()) {
         setError("Your account is not linked to an organization.");
         setMessage("");
@@ -36,7 +37,7 @@ function NewEncounterBootstrapInner() {
       }
 
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (cancelled) return;
+      if (signal.aborted) return;
       const uid = authData.user?.id?.trim() ?? "";
       if (!uid) {
         setError(authErr?.message?.trim() ? `Could not verify sign-in: ${authErr.message}` : "You must be signed in.");
@@ -45,7 +46,7 @@ function NewEncounterBootstrapInner() {
       }
 
       const result = await createOpdEncounterForPatient(rawPid, orgId, uid, null);
-      if (cancelled) return;
+      if (signal.aborted) return;
       if (!result.ok) {
         setError(result.error);
         setMessage("");
@@ -62,9 +63,7 @@ function NewEncounterBootstrapInner() {
       router.replace(`/dashboard/opd/encounter/${newId}`);
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [router, searchParams]);
 
   return (

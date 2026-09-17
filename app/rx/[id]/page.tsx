@@ -2,7 +2,9 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
+import { personInitialsDisplay } from "@/app/lib/personInitialsDisplay";
 import { supabase } from "../../supabase";
+import { HospitalLetterhead, type HospitalLetterheadData, type DoctorLineData } from "../../components/HospitalLetterhead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,30 @@ type LabPrintBlock = {
   id: string;
   title: string;
   lines: string[];
+};
+
+type HospitalRow = {
+  name: string;
+  address_line1: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  logo_url: string | null;
+  tagline: string | null;
+  registration_no: string | null;
+  letterhead_color: string | null;
+  nabh_accredited: boolean;
+  nabh_certificate_number: string | null;
+  prescription_header_config?: unknown | null;
+};
+
+type DoctorRow = {
+  full_name: string | null;
+  specialty: string | null;
+  registration_no: string | null;
 };
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -103,6 +129,8 @@ export default function RxPage({ params }: { params: Promise<{ id: string }> }) 
   const [patient,        setPatient]        = useState<Patient | null>(null);
   const [prescriptions,  setPrescriptions]  = useState<Prescription[]>([]);
   const [labPrintBlocks, setLabPrintBlocks] = useState<LabPrintBlock[]>([]);
+  const [hospital,       setHospital]       = useState<HospitalRow | null>(null);
+  const [doctor,         setDoctor]         = useState<DoctorRow | null>(null);
   const [loading,        setLoading]        = useState(true);
   const [error,          setError]          = useState<string | null>(null);
 
@@ -116,7 +144,7 @@ export default function RxPage({ params }: { params: Promise<{ id: string }> }) 
       // 1. Fetch encounter
       const { data: enc, error: encErr } = await supabase
         .from("opd_encounters")
-        .select("id, encounter_number, encounter_date, chief_complaint, weight, blood_pressure, pulse, temperature, spo2, patient_id")
+        .select("id, encounter_number, encounter_date, chief_complaint, weight, blood_pressure, pulse, temperature, spo2, patient_id, hospital_id, doctor_id")
         .eq("id", encounterId)
         .maybeSingle();
 
@@ -126,6 +154,30 @@ export default function RxPage({ params }: { params: Promise<{ id: string }> }) 
         return;
       }
       setEncounter(enc as Encounter);
+
+      // Fetch hospital letterhead data
+      const encRow = enc as Record<string, unknown>;
+      const hospitalId = encRow.hospital_id as string | null;
+      const doctorId = encRow.doctor_id as string | null;
+
+      if (hospitalId) {
+        const { data: hosp } = await supabase
+          .from("hospitals")
+          .select("name, address_line1, city, state, pincode, phone, email, website, logo_url, tagline, registration_no, letterhead_color, nabh_accredited, nabh_certificate_number, prescription_header_config")
+          .eq("id", hospitalId)
+          .maybeSingle();
+        if (hosp) setHospital(hosp as HospitalRow);
+      }
+
+      // Fetch doctor info
+      if (doctorId) {
+        const { data: doc } = await supabase
+          .from("practitioners")
+          .select("full_name, specialty, registration_no")
+          .or(`id.eq.${doctorId},user_id.eq.${doctorId}`)
+          .maybeSingle();
+        if (doc) setDoctor(doc as DoctorRow);
+      }
 
       // 2. Fetch patient
       if (enc.patient_id) {
@@ -264,23 +316,22 @@ export default function RxPage({ params }: { params: Promise<{ id: string }> }) 
         style={{ WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
       >
 
-        {/* Hospital header */}
-        <div className="bg-blue-700 px-5 py-5 text-white print:bg-blue-700 print:text-white">
+        {/* Hospital letterhead header */}
+        <div className="bg-white px-5 py-5 print:px-6 print:py-5">
           <div className="mx-auto max-w-lg">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 font-bold text-lg">
-                D
+            {hospital ? (
+              <HospitalLetterhead
+                hospital={hospital as HospitalLetterheadData}
+                doctor={doctor as DoctorLineData | null}
+              />
+            ) : (
+              <div className="pb-2 border-b-2 border-blue-700">
+                <p className="text-lg font-bold text-gray-900">Prescription</p>
               </div>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-200 print:text-blue-200">
-                  DocPad Digital Prescription
-                </p>
-                <p className="text-sm font-bold leading-tight">Rameshwar Dass Memorial Hospital</p>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-blue-100">
-              <span>Rx No: <span className="font-semibold text-white">{encounter.encounter_number ?? encounterId.slice(0, 8).toUpperCase()}</span></span>
-              <span>Date: <span className="font-semibold text-white">{formatDate(encounter.encounter_date)}</span></span>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+              <span>Rx No: <span className="font-semibold text-gray-800">{encounter.encounter_number ?? encounterId.slice(0, 8).toUpperCase()}</span></span>
+              <span>Date: <span className="font-semibold text-gray-800">{formatDate(encounter.encounter_date)}</span></span>
             </div>
           </div>
         </div>
@@ -295,7 +346,7 @@ export default function RxPage({ params }: { params: Promise<{ id: string }> }) 
             <div className="flex items-start gap-3 px-4 py-3">
               {/* Avatar */}
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
-                {patientDisplayName.charAt(0).toUpperCase()}
+                {personInitialsDisplay(patientDisplayName.charAt(0))}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">

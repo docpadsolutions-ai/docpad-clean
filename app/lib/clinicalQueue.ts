@@ -19,13 +19,15 @@ export type DraftEncounterRow = ActiveEncounterRow;
 export async function fetchWaitingPatients(
   orgId: string | null,
   ctx: WaitingRoomFetchContext,
+  signal?: AbortSignal,
 ): Promise<WaitingPatientRow[]> {
-  return fetchMergedWaitingRoom(orgId, ctx);
+  return fetchMergedWaitingRoom(orgId, ctx, signal);
 }
 
 /** `opd_encounters` with `status` in `draft` or `in_progress`, with patient + vitals context. */
 export async function fetchDraftEncounters(
   orgId: string | null,
+  signal?: AbortSignal,
 ): Promise<DraftEncounterRow[]> {
-  return fetchActiveDraftEncounters(orgId);
+  return fetchActiveDraftEncounters(orgId, signal);
 }

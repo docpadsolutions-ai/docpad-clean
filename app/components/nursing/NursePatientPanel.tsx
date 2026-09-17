@@ -1,11 +1,27 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Lock } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/app/supabase";
+import { practitionerRoleRawFromRow } from "@/app/lib/practitionerAuthLookup";
+import { normalizePractitionerRole } from "@/app/lib/userRole";
+import IpdNursingVitalsTimeline from "./IpdNursingVitalsTimeline";
+import RecordIpdNursingVitalsModal from "./RecordIpdNursingVitalsModal";
+import ShiftHandoverNote from "../../../components/ipd/nursing/ShiftHandoverNote";
+import WoundDrainDoc from "../../../components/ipd/nursing/WoundDrainDoc";
+import { NursingProcedureLogger } from "../../../components/paramedical/NursingProcedureLogger";
+import MARView from "../../../components/ipd/nursing/MARView";
+import {
+  allergiesListFromPatient,
+  patientFromAdmission,
+  preAdmissionFrom,
+} from "@/app/lib/ipdAdmissionDisplay";
+import { normalizeIpdAdmissionBundle, rpcGetIpdAdmission } from "@/app/lib/ipdData";
 import type { NursingShiftUi } from "@/app/lib/nursingShift";
 import { cn } from "@/lib/utils";
+import { isMarSlotOverdue } from "@/components/ipd/nursing/marOverdue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,9 +46,118 @@ function todayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
-function isHighAlertDrug(name: string | null | undefined): boolean {
-  const t = (name ?? "").toLowerCase();
-  return ["insulin", "heparin", "kcl", "potassium chloride", "morphine", "warfarin"].some((x) => t.includes(x));
+function startOfLocalDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** First instant of admission calendar day in local TZ (from any ISO instant on that day). */
+function parseAdmissionLocalStart(iso: string): Date | null {
+  const t = s(iso);
+  if (!t) return null;
+  const ms = Date.parse(t);
+  if (Number.isNaN(ms)) return null;
+  return startOfLocalDay(new Date(ms));
+}
+
+function ymdFromLocalDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Hospital day 1 = admission local date; Day N = admission + (N − 1) calendar days. */
+function hospitalDayNumberForDate(admissionStart: Date, ref: Date): number {
+  const diffMs = startOfLocalDay(ref).getTime() - admissionStart.getTime();
+  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  return Math.max(1, diffDays + 1);
+}
+
+function calendarDateForHospitalDay(admissionStart: Date, dayNum: number): Date {
+  const d = new Date(admissionStart);
+  d.setDate(d.getDate() + (dayNum - 1));
+  return startOfLocalDay(d);
+}
+
+/** India (IST) calendar-day bounds for `timestamptz` filters on `recorded_at`. */
+function istDayBoundsIso(ymd: string): { startIso: string; endIso: string } {
+  return {
+    startIso: `${ymd}T00:00:00+05:30`,
+    endIso: `${ymd}T23:59:59+05:30`,
+  };
+}
+
+/** Local calendar day bounds as UTC ISO strings for timestamptz filters (inclusive end). */
+function localDayBoundsUtcIso(ymd: string): { startIso: string; endIso: string } {
+  const parts = ymd.split("-").map((x) => Number.parseInt(x, 10));
+  const y = parts[0];
+  const mo = parts[1];
+  const da = parts[2];
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(da)) {
+    const n = new Date();
+    const iso = n.toISOString();
+    return { startIso: iso, endIso: iso };
+  }
+  const start = new Date(y, mo - 1, da, 0, 0, 0, 0);
+  const end = new Date(y, mo - 1, da, 23, 59, 59, 999);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
+
+function asRec(v: unknown): Record<string, unknown> | null {
+  return v != null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+function triBool(v: unknown): string {
+  if (v === true) return "Yes";
+  if (v === false) return "No";
+  return "—";
+}
+
+function formatCurrentMedicationsField(v: unknown): string {
+  if (v == null) return "—";
+  if (Array.isArray(v)) {
+    const parts = v.map((x) => {
+      if (typeof x === "string") return x.trim();
+      if (x && typeof x === "object") {
+        const o = x as Record<string, unknown>;
+        return s(o.name ?? o.label ?? o.medication ?? o.text ?? o.brand_name);
+      }
+      return s(x);
+    });
+    const t = parts.filter(Boolean).join(", ").trim();
+    return t || "—";
+  }
+  const str = s(v);
+  return str || "—";
+}
+
+function consentTitleFromRow(row: Record<string, unknown>): string {
+  const nested = asRec(row.consent_type) ?? asRec(row.type) ?? asRec(row.ipd_consent_type);
+  return (
+    s(row.type_name) ||
+    s(row.display_name) ||
+    s(nested?.display_name) ||
+    s(nested?.type_name) ||
+    s(nested?.name) ||
+    s(row.consent_type_name) ||
+    s(row.name) ||
+    "Consent"
+  );
+}
+
+function consentStatusLabel(row: Record<string, unknown>): string {
+  const st = s(row.status).toLowerCase();
+  if (st === "signed" || st === "obtained" || st === "completed") return "Signed";
+  if (st === "waived") return "Waived";
+  if (st === "pending") return "Pending";
+  return s(row.status) || "—";
+}
+
+/** Attribution line: avoid doubling an existing "Dr." prefix. */
+function displayDoctorAttribution(name: string): string {
+  const t = name.trim();
+  if (!t) return "—";
+  return /^dr\.?\s/i.test(t) ? t : `Dr. ${t}`;
 }
 
 function fallRiskLevel(score: number): "Low" | "Medium" | "High" {
@@ -48,6 +173,8 @@ export type NursePatientPanelProps = {
   nursePractitionerId: string;
   /** Ward shift used for care plan (same as portal selector). */
   selectedShift: NursingShiftUi;
+  /** Admission instant (ISO). Hospital Day 1 = local calendar date of admission. */
+  admittedAt: string;
   admissionId: string;
   patientId: string;
   patientName: string;
@@ -61,8 +188,6 @@ export type NursePatientPanelProps = {
 };
 
 type VitalsHistoryRow = Record<string, unknown>;
-
-type MarRow = Record<string, unknown>;
 
 type DoctorOrderRow = Record<string, unknown>;
 
@@ -85,6 +210,7 @@ export default function NursePatientPanel({
   hospitalId,
   nursePractitionerId,
   selectedShift,
+  admittedAt,
   admissionId,
   patientId,
   patientName,
@@ -96,39 +222,58 @@ export default function NursePatientPanel({
   allergiesText,
   onVitalsSaved,
 }: NursePatientPanelProps) {
-  const [tab, setTab] = useState<"vitals" | "mar" | "orders" | "care">("vitals");
+  const [tab, setTab] = useState<
+    "vitals" | "mar" | "orders" | "care" | "handover" | "wound" | "procedures" | "doctor" | "file"
+  >("vitals");
+
+  const admissionStart = useMemo(() => parseAdmissionLocalStart(admittedAt), [admittedAt]);
+
+  const maxHospitalDay = useMemo(() => {
+    if (!admissionStart) return 1;
+    return hospitalDayNumberForDate(admissionStart, new Date());
+  }, [admissionStart]);
+
+  const [selectedDay, setSelectedDay] = useState(1);
+
+  /** Reset default day only when opening the panel or switching admissions — not when `admittedAt` string churns (same admission). */
+  const dayTabResetAdmissionRef = useRef<string>("");
+
+  const selectedCalendarYmd = useMemo(() => {
+    if (!admissionStart) return todayYmd();
+    return ymdFromLocalDate(calendarDateForHospitalDay(admissionStart, selectedDay));
+  }, [admissionStart, selectedDay]);
+
+  const minVitalsYmd = useMemo(() => {
+    if (!admissionStart) return "2000-01-01";
+    return ymdFromLocalDate(admissionStart);
+  }, [admissionStart]);
+
+  const maxSelectableYmd = useMemo(() => {
+    if (!admissionStart) return todayYmd();
+    return ymdFromLocalDate(calendarDateForHospitalDay(admissionStart, maxHospitalDay));
+  }, [admissionStart, maxHospitalDay]);
+
+  const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
+  const [recorderShowGcs, setRecorderShowGcs] = useState(false);
+
+  const [ipdContextLoading, setIpdContextLoading] = useState(false);
+  const [admissionBundle, setAdmissionBundle] = useState<Record<string, unknown> | null>(null);
+
+  const [doctorNoteLoading, setDoctorNoteLoading] = useState(false);
+  const [doctorNoteRow, setDoctorNoteRow] = useState<Record<string, unknown> | null>(null);
+  const [doctorInv, setDoctorInv] = useState<Record<string, unknown>[]>([]);
+  const [doctorTx, setDoctorTx] = useState<Record<string, unknown>[]>([]);
+  const [doctorAuthorName, setDoctorAuthorName] = useState<string>("");
 
   const [vitalsLoading, setVitalsLoading] = useState(false);
   const [vitalsHistory, setVitalsHistory] = useState<VitalsHistoryRow[]>([]);
-  const [showVitalsForm, setShowVitalsForm] = useState(false);
-  const [vitalsSaving, setVitalsSaving] = useState(false);
-  const [bpSys, setBpSys] = useState("");
-  const [bpDia, setBpDia] = useState("");
-  const [hr, setHr] = useState("");
-  const [temp, setTemp] = useState("");
-  const [spo2, setSpo2] = useState("");
-  const [rr, setRr] = useState("");
-  const [pain, setPain] = useState(0);
-  const [weight, setWeight] = useState("");
-  const [gcs, setGcs] = useState("");
-
-  const [marLoading, setMarLoading] = useState(false);
-  const [marRows, setMarRows] = useState<MarRow[]>([]);
-  const [giveMarId, setGiveMarId] = useState<string | null>(null);
-  const [giveDose, setGiveDose] = useState("");
-  const [giveRoute, setGiveRoute] = useState("");
-  const [giveIvSite, setGiveIvSite] = useState("");
-  const [giveTime, setGiveTime] = useState("");
-  const [giveNotes, setGiveNotes] = useState("");
-  const [giveAdverse, setGiveAdverse] = useState(false);
-  const [giveVerifier, setGiveVerifier] = useState("");
-  const [holdMarId, setHoldMarId] = useState<string | null>(null);
-  const [holdReason, setHoldReason] = useState("");
-  const [marBusy, setMarBusy] = useState(false);
 
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [orders, setOrders] = useState<DoctorOrderRow[]>([]);
   const [orderBusyId, setOrderBusyId] = useState<string | null>(null);
+
+  /** Overdue pending MAR doses for the selected hospital day (panel + ward list). */
+  const [marOverdueCount, setMarOverdueCount] = useState(0);
 
   const [careLoading, setCareLoading] = useState(false);
   const [careRow, setCareRow] = useState<CarePlanRow>(null);
@@ -146,44 +291,84 @@ export default function NursePatientPanel({
 
   const loadVitalsHistory = useCallback(async () => {
     setVitalsLoading(true);
+    const dateStr = selectedCalendarYmd;
+    const { startIso, endIso } = istDayBoundsIso(dateStr);
     const { data, error } = await supabase
-      .from("ipd_vitals")
+      .from("ipd_nursing_vitals")
       .select("*")
       .eq("admission_id", admissionId)
-      .order("recorded_at", { ascending: false })
-      .limit(5);
+      .gte("recorded_at", startIso)
+      .lte("recorded_at", endIso)
+      .order("recorded_at", { ascending: true });
     setVitalsLoading(false);
     if (error) {
       toast.error(error.message);
       return;
     }
-    setVitalsHistory((data ?? []) as VitalsHistoryRow[]);
-  }, [admissionId]);
-
-  const loadMar = useCallback(async () => {
-    setMarLoading(true);
-    const { data, error } = await supabase.rpc("get_nurse_mar_for_patient", {
-      p_admission_id: admissionId,
-      p_date: todayYmd(),
+    const rows = (data ?? []) as VitalsHistoryRow[];
+    const ids = [...new Set(rows.map((r) => s(r.recorded_by)).filter(Boolean))];
+    const nameMap = new Map<string, string>();
+    if (ids.length > 0) {
+      const { data: prs, error: pErr } = await supabase.from("practitioners").select("id, full_name").in("id", ids);
+      if (!pErr && prs) {
+        for (const p of prs as { id: string; full_name?: unknown }[]) {
+          nameMap.set(s(p.id), s(p.full_name) || "—");
+        }
+      }
+    }
+    const merged = rows.map((r) => {
+      const rid = s(r.recorded_by);
+      return {
+        ...r,
+        practitioners: { full_name: nameMap.get(rid) ?? "—" },
+      };
     });
-    setMarLoading(false);
-    if (error) {
-      toast.error(error.message);
-      setMarRows([]);
+    setVitalsHistory(merged);
+  }, [admissionId, selectedCalendarYmd]);
+
+  const refreshMarOverdueCount = useCallback(async () => {
+    const aid = s(admissionId);
+    const ymd = selectedCalendarYmd;
+    if (!aid || !ymd) {
+      setMarOverdueCount(0);
       return;
     }
-    const list = (Array.isArray(data) ? data : []) as MarRow[];
-    setMarRows(list);
-  }, [admissionId]);
+    const { data, error } = await supabase
+      .from("ipd_mar")
+      .select("scheduled_date, scheduled_time, status")
+      .eq("admission_id", aid)
+      .eq("scheduled_date", ymd)
+      .eq("status", "pending");
+    if (error) {
+      console.warn("[NursePatientPanel] MAR overdue:", error.message);
+      setMarOverdueCount(0);
+      return;
+    }
+    let n = 0;
+    for (const raw of Array.isArray(data) ? data : []) {
+      const o = raw as Record<string, unknown>;
+      const sd = s(o.scheduled_date);
+      const stime = s(o.scheduled_time);
+      if (isMarSlotOverdue(sd || ymd, stime)) n += 1;
+    }
+    setMarOverdueCount(n);
+  }, [admissionId, selectedCalendarYmd]);
+
+  const onMarOverdueFromView = useCallback((n: number) => {
+    setMarOverdueCount(n);
+  }, []);
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
+    const { startIso, endIso } = localDayBoundsUtcIso(selectedCalendarYmd);
     const { data, error } = await supabase
       .from("ipd_doctor_orders")
       .select("*")
       .eq("admission_id", admissionId)
       .eq("order_category", "nursing")
       .eq("status", "active")
+      .gte("created_at", startIso)
+      .lte("created_at", endIso)
       .order("created_at", { ascending: true });
     setOrdersLoading(false);
     if (error) {
@@ -192,7 +377,7 @@ export default function NursePatientPanel({
       return;
     }
     setOrders((data ?? []) as DoctorOrderRow[]);
-  }, [admissionId]);
+  }, [admissionId, selectedCalendarYmd]);
 
   const loadCare = useCallback(async () => {
     setCareLoading(true);
@@ -200,7 +385,7 @@ export default function NursePatientPanel({
       .from("ipd_nursing_care_plans")
       .select("*")
       .eq("admission_id", admissionId)
-      .eq("plan_date", todayYmd())
+      .eq("plan_date", selectedCalendarYmd)
       .eq("shift", selectedShift)
       .maybeSingle();
     setCareLoading(false);
@@ -263,138 +448,195 @@ export default function NursePatientPanel({
       setEduGiven("");
       setEduUnderstood(false);
     }
-  }, [admissionId, selectedShift]);
+  }, [admissionId, selectedShift, selectedCalendarYmd]);
+
+  const loadIpdEncounterContext = useCallback(async () => {
+    if (!admissionId) return;
+    setIpdContextLoading(true);
+    try {
+      const { data: raw, error: admErr } = await rpcGetIpdAdmission(supabase, admissionId);
+      if (admErr) {
+        toast.error(admErr.message);
+        setAdmissionBundle(null);
+      } else {
+        setAdmissionBundle(normalizeIpdAdmissionBundle(raw) as Record<string, unknown> | null);
+      }
+    } finally {
+      setIpdContextLoading(false);
+    }
+  }, [admissionId]);
+
+  const loadDoctorNoteForSelectedDay = useCallback(async () => {
+    if (!admissionId) {
+      setDoctorNoteRow(null);
+      setDoctorInv([]);
+      setDoctorTx([]);
+      setDoctorAuthorName("");
+      return;
+    }
+    const { startIso, endIso } = localDayBoundsUtcIso(selectedCalendarYmd);
+    setDoctorNoteLoading(true);
+    try {
+      const { data: notes, error: nErr } = await supabase
+        .from("ipd_progress_notes")
+        .select("*")
+        .eq("admission_id", admissionId)
+        .gte("created_at", startIso)
+        .lte("created_at", endIso)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (nErr) {
+        toast.error(nErr.message);
+        setDoctorNoteRow(null);
+        setDoctorInv([]);
+        setDoctorTx([]);
+        setDoctorAuthorName("");
+        return;
+      }
+      const note = Array.isArray(notes) && notes.length > 0 ? (notes[0] as Record<string, unknown>) : null;
+      if (!note) {
+        setDoctorNoteRow(null);
+        setDoctorInv([]);
+        setDoctorTx([]);
+        setDoctorAuthorName("");
+        return;
+      }
+      const nid = s(note.id);
+      setDoctorNoteRow(note);
+      const [invR, txR] = await Promise.all([
+        supabase
+          .from("ipd_investigation_orders")
+          .select("*")
+          .eq("progress_note_id", nid)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("ipd_treatments")
+          .select("*")
+          .eq("progress_note_id", nid)
+          .order("ordered_date", { ascending: false }),
+      ]);
+      setDoctorInv((invR.data ?? []) as Record<string, unknown>[]);
+      setDoctorTx((txR.data ?? []) as Record<string, unknown>[]);
+
+      let name = s(note.authored_by_name);
+      const aid = s(note.authored_by);
+      if (!name && aid) {
+        const { data: pr } = await supabase.from("practitioners").select("full_name").eq("id", aid).maybeSingle();
+        name = s(pr?.full_name);
+      }
+      setDoctorAuthorName(name);
+    } finally {
+      setDoctorNoteLoading(false);
+    }
+  }, [admissionId, selectedCalendarYmd]);
+
+  useEffect(() => {
+    if (!open || !admissionId) return;
+    void loadIpdEncounterContext();
+  }, [open, admissionId, loadIpdEncounterContext]);
+
+  useEffect(() => {
+    if (!open) {
+      dayTabResetAdmissionRef.current = "";
+      return;
+    }
+    if (!admissionStart) return;
+    const key = admissionId;
+    if (dayTabResetAdmissionRef.current === key) return;
+    dayTabResetAdmissionRef.current = key;
+    const def = hospitalDayNumberForDate(admissionStart, new Date());
+    setSelectedDay(def);
+  }, [open, admissionId, admissionStart]);
+
+  useEffect(() => {
+    setSelectedDay((d) => Math.min(Math.max(1, d), maxHospitalDay));
+  }, [maxHospitalDay]);
+
+  useEffect(() => {
+    if (!open || tab !== "doctor") return;
+    void loadDoctorNoteForSelectedDay();
+  }, [open, tab, selectedCalendarYmd, loadDoctorNoteForSelectedDay]);
+
+  useEffect(() => {
+    if (!open || !nursePractitionerId) return;
+    void (async () => {
+      const { data, error } = await supabase.from("practitioners").select("role, user_role").eq("id", nursePractitionerId).maybeSingle();
+      if (error || !data) {
+        setRecorderShowGcs(false);
+        return;
+      }
+      const raw = practitionerRoleRawFromRow(data as { role?: unknown; user_role?: unknown });
+      const n = normalizePractitionerRole(raw);
+      setRecorderShowGcs(n === "nurse" || n === "doctor");
+    })();
+  }, [open, nursePractitionerId]);
 
   useEffect(() => {
     if (!open || !admissionId) return;
     void loadVitalsHistory();
-    void loadMar();
-    void loadOrders();
-    void loadCare();
-  }, [open, admissionId, loadVitalsHistory, loadMar, loadOrders, loadCare]);
+  }, [open, admissionId, selectedCalendarYmd, loadVitalsHistory]);
 
   useEffect(() => {
-    if (!giveMarId) return;
-    const row = marRows.find((x) => s(x.id) === giveMarId);
-    if (!row) return;
-    setGiveDose(s(row.dose ?? row.scheduled_dose));
-    setGiveRoute(s(row.route));
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    setGiveTime(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
-    setGiveNotes("");
-    setGiveAdverse(false);
-    setGiveIvSite("");
-    setGiveVerifier("");
-  }, [giveMarId, marRows]);
-
-  const marBySlot = useMemo(() => {
-    const map = new Map<string, MarRow[]>();
-    for (const r of marRows) {
-      const slot = s(r.scheduled_time ?? r.slot_time ?? r.due_time ?? "—") || "—";
-      const list = map.get(slot) ?? [];
-      list.push(r);
-      map.set(slot, list);
+    if (!open) {
+      setMarOverdueCount(0);
+      return;
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [marRows]);
+    void refreshMarOverdueCount();
+  }, [open, refreshMarOverdueCount]);
 
-  async function saveVitals() {
-    setVitalsSaving(true);
-    const payload: Record<string, unknown> = {
-      hospital_id: hospitalId,
-      admission_id: admissionId,
-      patient_id: patientId,
-      recorded_by: nursePractitionerId,
-      recorded_at: new Date().toISOString(),
-      bp_systolic: bpSys.trim() ? Number.parseFloat(bpSys) : null,
-      bp_diastolic: bpDia.trim() ? Number.parseFloat(bpDia) : null,
-      heart_rate: hr.trim() ? Number.parseFloat(hr) : null,
-      temperature_c: temp.trim() ? Number.parseFloat(temp) : null,
-      spo2: spo2.trim() ? Number.parseFloat(spo2) : null,
-      respiratory_rate: rr.trim() ? Number.parseFloat(rr) : null,
-      pain_score: pain,
-      weight_kg: weight.trim() ? Number.parseFloat(weight) : null,
-      gcs_total: gcs.trim() ? Number.parseInt(gcs, 10) : null,
+  useEffect(() => {
+    if (!open || !admissionId) return;
+    const dateStr = selectedCalendarYmd;
+    const channel = supabase
+      .channel(`vitals-${admissionId}-${dateStr}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "ipd_nursing_vitals",
+          filter: `admission_id=eq.${admissionId}`,
+        },
+        (payload) => {
+          const row = payload.new as VitalsHistoryRow;
+          const ra = s(row.recorded_at);
+          if (!ra) return;
+          const t = Date.parse(ra);
+          if (Number.isNaN(t)) return;
+          const start = Date.parse(`${dateStr}T00:00:00+05:30`);
+          const end = Date.parse(`${dateStr}T23:59:59+05:30`);
+          if (t < start || t > end) return;
+
+          void (async () => {
+            const rid = s(row.recorded_by);
+            let merged: VitalsHistoryRow = { ...row, practitioners: { full_name: "—" } };
+            if (rid) {
+              const { data: pr } = await supabase.from("practitioners").select("full_name").eq("id", rid).maybeSingle();
+              merged = {
+                ...row,
+                practitioners: { full_name: s((pr as { full_name?: unknown } | null)?.full_name) || "—" },
+              };
+            }
+            setVitalsHistory((prev) => {
+              const id = s(merged.id);
+              if (id && prev.some((p) => s(p.id) === id)) return prev;
+              return [...prev, merged];
+            });
+          })();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
     };
-    const { error } = await supabase.from("ipd_vitals").insert(payload);
-    setVitalsSaving(false);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("Vitals saved");
-    setShowVitalsForm(false);
-    setBpSys("");
-    setBpDia("");
-    setHr("");
-    setTemp("");
-    setSpo2("");
-    setRr("");
-    setPain(0);
-    setWeight("");
-    setGcs("");
-    onVitalsSaved();
-    void loadVitalsHistory();
-  }
+  }, [open, admissionId, selectedCalendarYmd]);
 
-  async function saveMarGiven(row: MarRow) {
-    const id = s(row.id);
-    if (!id) return;
-    const high = isHighAlertDrug(s(row.drug_name ?? row.medication_name));
-    if (high && !giveVerifier.trim()) {
-      toast.error("High-alert medication: enter verifying nurse ID.");
-      return;
-    }
-    setMarBusy(true);
-    const adminTime = giveTime.trim() ? new Date(giveTime).toISOString() : new Date().toISOString();
-    const patch: Record<string, unknown> = {
-      status: "given",
-      administered_at: adminTime,
-      administered_by: nursePractitionerId,
-      actual_dose_given: giveDose.trim() || null,
-      actual_route: giveRoute.trim() || null,
-      iv_site: giveIvSite.trim() || null,
-      notes: giveNotes.trim() || null,
-      adverse_event: giveAdverse,
-    };
-    if (high && giveVerifier.trim()) {
-      patch.verified_by = giveVerifier.trim();
-    }
-    const { error } = await supabase.from("ipd_mar").update(patch).eq("id", id);
-    setMarBusy(false);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("Medication recorded");
-    setGiveMarId(null);
-    void loadMar();
-  }
-
-  async function saveMarHold() {
-    if (!holdMarId || !holdReason.trim()) {
-      toast.error("Hold reason required");
-      return;
-    }
-    setMarBusy(true);
-    const { error } = await supabase
-      .from("ipd_mar")
-      .update({
-        status: "held",
-        hold_reason: holdReason.trim(),
-      })
-      .eq("id", holdMarId);
-    setMarBusy(false);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("Medication held");
-    setHoldMarId(null);
-    setHoldReason("");
-    void loadMar();
-  }
+  useEffect(() => {
+    if (!open || !admissionId) return;
+    void loadOrders();
+    void loadCare();
+  }, [open, admissionId, selectedCalendarYmd, loadOrders, loadCare]);
 
   async function ackOrder(orderId: string) {
     setOrderBusyId(orderId);
@@ -439,7 +681,7 @@ export default function NursePatientPanel({
       hospital_id: hospitalId,
       admission_id: admissionId,
       patient_id: patientId,
-      plan_date: todayYmd(),
+      plan_date: selectedCalendarYmd,
       shift: selectedShift,
       nursing_diagnosis: careDiag.trim() || null,
       patient_goal: careGoal.trim() || null,
@@ -476,10 +718,43 @@ export default function NursePatientPanel({
   const fs = num(fallScore);
   const fallLevel = fs != null && !Number.isNaN(fs) ? fallRiskLevel(fs) : null;
 
+  const mergedAdmissionForFile = useMemo(() => {
+    if (!admissionBundle) return null;
+    const adm = asRec(admissionBundle.admission) ?? {};
+    return {
+      ...adm,
+      patient: admissionBundle.patient,
+      pre_admission: admissionBundle.pre_admission,
+      ward: admissionBundle.ward,
+      bed: admissionBundle.bed,
+    } as Record<string, unknown>;
+  }, [admissionBundle]);
+
+  const patientForFile = patientFromAdmission(mergedAdmissionForFile);
+  const preForFile = preAdmissionFrom(mergedAdmissionForFile);
+  const fileAllergies = useMemo(() => allergiesListFromPatient(patientForFile), [patientForFile]);
+  const fileBloodGroup = s(patientForFile?.blood_group ?? patientForFile?.blood_type);
+  const filePmh = s(preForFile?.pmh_text);
+  const fileCurrentMeds = formatCurrentMedicationsField(preForFile?.current_medications);
+  const fileConsents = useMemo(() => {
+    const c = admissionBundle?.consents;
+    return Array.isArray(c) ? (c as Record<string, unknown>[]) : [];
+  }, [admissionBundle]);
+
+  const doctorNoteStatus = s(doctorNoteRow?.status).toLowerCase();
+  const isDoctorNoteDraft = doctorNoteStatus === "draft";
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-l border-gray-200 bg-white shadow-xl">
+    <>
+      <button
+        type="button"
+        aria-label="Close patient panel"
+        className="fixed inset-0 z-40 cursor-default bg-transparent"
+        onClick={onClose}
+      />
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-l border-gray-200 bg-white shadow-xl">
       <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-lg font-bold text-gray-900">{patientName}</p>
@@ -489,6 +764,39 @@ export default function NursePatientPanel({
           <p className="mt-1 text-xs text-gray-600">
             Doctor: {doctorName ? `Dr. ${doctorName}` : "—"}
           </p>
+          {ipdContextLoading && !admissionBundle && !admissionStart ? (
+            <p className="mt-2 text-[10px] text-gray-400">Loading admission…</p>
+          ) : admissionStart ? (
+            <div className="mt-2 flex flex-wrap gap-1.5" role="tablist" aria-label="Hospital day">
+              {Array.from({ length: maxHospitalDay }, (_, i) => {
+                const d = i + 1;
+                const ymd = ymdFromLocalDate(calendarDateForHospitalDay(admissionStart, d));
+                const isToday = ymd === todayYmd();
+                const isSel = selectedDay === d;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setSelectedDay(d)}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
+                      isSel
+                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                        : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50",
+                      isToday && !isSel && "ring-2 ring-emerald-400/80",
+                    )}
+                  >
+                    Day {d}
+                    {isToday ? <span className="ml-1 font-normal opacity-90">· Today</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-2 text-[10px] text-amber-800">
+              Admission date missing — day filters use today only. Vitals use recorded time in your timezone.
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -504,12 +812,24 @@ export default function NursePatientPanel({
         </div>
       ) : null}
 
-      <div className="flex gap-1 border-b border-gray-200 px-3 py-2">
+      <div className="flex flex-wrap gap-1 border-b border-gray-200 px-3 py-2">
         <button type="button" className={tabBtn(tab === "vitals")} onClick={() => setTab("vitals")}>
           Vitals
         </button>
-        <button type="button" className={tabBtn(tab === "mar")} onClick={() => setTab("mar")}>
+        <button
+          type="button"
+          className={cn(tabBtn(tab === "mar"), "inline-flex items-center gap-1.5")}
+          onClick={() => setTab("mar")}
+        >
           Meds
+          {marOverdueCount > 0 ? (
+            <span
+              className="inline-flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white tabular-nums ring-2 ring-white/90"
+              aria-label={`${marOverdueCount} overdue dose${marOverdueCount > 1 ? "s" : ""}`}
+            >
+              {marOverdueCount > 99 ? "99+" : marOverdueCount}
+            </span>
+          ) : null}
         </button>
         <button type="button" className={tabBtn(tab === "orders")} onClick={() => setTab("orders")}>
           Orders
@@ -517,260 +837,112 @@ export default function NursePatientPanel({
         <button type="button" className={tabBtn(tab === "care")} onClick={() => setTab("care")}>
           Care plan
         </button>
+        <button type="button" className={tabBtn(tab === "handover")} onClick={() => setTab("handover")}>
+          Handover
+        </button>
+        <button type="button" className={tabBtn(tab === "wound")} onClick={() => setTab("wound")}>
+          Wound / drain
+        </button>
+        <button type="button" className={tabBtn(tab === "procedures")} onClick={() => setTab("procedures")}>
+          Procedure log
+        </button>
+        <button type="button" className={tabBtn(tab === "doctor")} onClick={() => setTab("doctor")}>
+          Doctor&apos;s Notes
+        </button>
+        <button type="button" className={tabBtn(tab === "file")} onClick={() => setTab("file")}>
+          Patient File
+        </button>
       </div>
+
+      {marOverdueCount > 0 ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <span aria-hidden>⚠️</span>
+          <span>
+            {marOverdueCount} dose{marOverdueCount > 1 ? "s" : ""} overdue for{" "}
+            <time dateTime={selectedCalendarYmd} className="font-semibold tabular-nums">
+              {selectedCalendarYmd}
+            </time>{" "}
+            — open <span className="font-semibold">Meds</span> to administer or mark held/omitted.
+          </span>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {tab === "vitals" ? (
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-gray-900">Vitals</p>
-              <Button type="button" size="sm" className="h-8" onClick={() => setShowVitalsForm((v) => !v)}>
-                {showVitalsForm ? "Cancel" : "Record vitals"}
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Vitals timeline</p>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Viewing{" "}
+                  <time dateTime={selectedCalendarYmd} className="font-medium text-gray-800">
+                    {selectedCalendarYmd}
+                  </time>
+                  {selectedCalendarYmd === todayYmd() ? " · Today" : null}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Label htmlFor="ipd-vitals-date" className="text-[10px] uppercase text-gray-500">
+                    Date
+                  </Label>
+                  <Input
+                    id="ipd-vitals-date"
+                    type="date"
+                    className="h-9 w-[11rem] text-sm"
+                    value={selectedCalendarYmd}
+                    min={minVitalsYmd}
+                    max={maxSelectableYmd}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!v || !admissionStart) return;
+                      const dayNum = hospitalDayNumberForDate(admissionStart, new Date(`${v}T12:00:00`));
+                      setSelectedDay(Math.min(Math.max(1, dayNum), maxHospitalDay));
+                    }}
+                  />
+                </div>
+              </div>
+              <Button type="button" className="h-9 shrink-0" onClick={() => setVitalsModalOpen(true)}>
+                + Record Vitals Now
               </Button>
             </div>
-            {showVitalsForm ? (
-              <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">BP sys</Label>
-                    <Input className="mt-1 h-9" value={bpSys} onChange={(e) => setBpSys(e.target.value.replace(/\D/g, "").slice(0, 3))} />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">BP dia</Label>
-                    <Input className="mt-1 h-9" value={bpDia} onChange={(e) => setBpDia(e.target.value.replace(/\D/g, "").slice(0, 3))} />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">HR</Label>
-                    <Input className="mt-1 h-9" value={hr} onChange={(e) => setHr(e.target.value.replace(/\D/g, "").slice(0, 3))} />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">Temp °C</Label>
-                    <Input className="mt-1 h-9" value={temp} onChange={(e) => setTemp(e.target.value.replace(/[^\d.]/g, "").slice(0, 5))} />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">SpO₂</Label>
-                    <Input className="mt-1 h-9" value={spo2} onChange={(e) => setSpo2(e.target.value.replace(/\D/g, "").slice(0, 3))} />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">RR</Label>
-                    <Input className="mt-1 h-9" value={rr} onChange={(e) => setRr(e.target.value.replace(/\D/g, "").slice(0, 3))} />
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-[10px] uppercase text-gray-500">Pain (0–10)</Label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    step={1}
-                    value={pain}
-                    onChange={(e) => setPain(Number.parseInt(e.target.value, 10))}
-                    className="mt-2 w-full accent-blue-600"
-                  />
-                  <p className="text-xs text-gray-600">{pain}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">Weight (kg, opt)</Label>
-                    <Input className="mt-1 h-9" value={weight} onChange={(e) => setWeight(e.target.value.replace(/[^\d.]/g, "").slice(0, 6))} />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] uppercase text-gray-500">GCS (opt)</Label>
-                    <Input className="mt-1 h-9" value={gcs} onChange={(e) => setGcs(e.target.value.replace(/\D/g, "").slice(0, 2))} />
-                  </div>
-                </div>
-                <Button type="button" disabled={vitalsSaving} onClick={() => void saveVitals()}>
-                  {vitalsSaving ? "Saving…" : "Save vitals"}
-                </Button>
-              </div>
-            ) : null}
 
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Last 5 readings</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Readings</p>
               {vitalsLoading ? (
                 <div className="mt-2 space-y-2">
                   {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-8 animate-pulse rounded bg-gray-100" />
+                    <div key={i} className="h-20 animate-pulse rounded-lg bg-gray-100" />
                   ))}
                 </div>
-              ) : vitalsHistory.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-500">No vitals recorded yet.</p>
               ) : (
-                <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-gray-50 text-[10px] uppercase text-gray-500">
-                      <tr>
-                        <th className="px-2 py-1.5">Time</th>
-                        <th className="px-2 py-1.5">BP</th>
-                        <th className="px-2 py-1.5">HR</th>
-                        <th className="px-2 py-1.5">T</th>
-                        <th className="px-2 py-1.5">SpO₂</th>
-                        <th className="px-2 py-1.5">Pain</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vitalsHistory.map((v) => {
-                        const rec = s(v.recorded_at);
-                        const t = rec ? formatDistanceToNow(new Date(rec), { addSuffix: true }) : "—";
-                        const sys = num(v.bp_systolic);
-                        const dia = num(v.bp_diastolic);
-                        const bp = sys != null && dia != null ? `${Math.round(sys)}/${Math.round(dia)}` : "—";
-                        return (
-                          <tr key={s(v.id)} className="border-t border-gray-100">
-                            <td className="px-2 py-1.5 text-gray-600">{t}</td>
-                            <td className="px-2 py-1.5">{bp}</td>
-                            <td className="px-2 py-1.5">{v.heart_rate != null ? String(v.heart_rate) : "—"}</td>
-                            <td className="px-2 py-1.5">{v.temperature_c != null ? String(v.temperature_c) : "—"}</td>
-                            <td className="px-2 py-1.5">{v.spo2 != null ? String(v.spo2) : "—"}</td>
-                            <td className="px-2 py-1.5">{v.pain_score != null ? String(v.pain_score) : "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="mt-2">
+                  <IpdNursingVitalsTimeline rows={vitalsHistory} />
                 </div>
               )}
             </div>
+
+            <RecordIpdNursingVitalsModal
+              open={vitalsModalOpen}
+              onClose={() => setVitalsModalOpen(false)}
+              hospitalId={hospitalId}
+              admissionId={admissionId}
+              patientId={patientId}
+              recordedByPractitionerId={nursePractitionerId}
+              showGcsField={recorderShowGcs}
+              onSaved={() => {
+                onVitalsSaved();
+                void loadVitalsHistory();
+              }}
+            />
           </div>
         ) : null}
 
         {tab === "mar" ? (
-          <div className="space-y-4">
-            {marLoading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-100" />
-                ))}
-              </div>
-            ) : marBySlot.length === 0 ? (
-              <p className="text-sm text-gray-500">No MAR entries for today.</p>
-            ) : (
-              marBySlot.map(([slot, rows]) => (
-                <div key={slot}>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">{slot}</p>
-                  <div className="mt-2 space-y-2">
-                    {rows.map((r) => {
-                      const id = s(r.id);
-                      const drug = s(r.drug_name ?? r.medication_name ?? "Medication");
-                      const dose = s(r.dose ?? r.scheduled_dose);
-                      const route = s(r.route);
-                      const st = s(r.status ?? "pending").toLowerCase();
-                      const high = isHighAlertDrug(drug);
-                      const isGive = giveMarId === id;
-                      return (
-                        <div key={id} className="rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-sm">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                              <p className="font-semibold text-gray-900">
-                                {drug}{" "}
-                                {high ? (
-                                  <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-800">HIGH ALERT</span>
-                                ) : null}
-                              </p>
-                              <p className="text-xs text-gray-600">
-                                {dose} · {route}
-                              </p>
-                            </div>
-                            <span
-                              className={cn(
-                                "rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize",
-                                st === "given" && "bg-emerald-100 text-emerald-800",
-                                st === "pending" && "bg-amber-100 text-amber-900",
-                                st === "held" && "bg-red-100 text-red-800",
-                                st === "omitted" && "bg-gray-100 text-gray-600",
-                              )}
-                            >
-                              {st}
-                            </span>
-                          </div>
-                          {st === "pending" ? (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Button type="button" size="sm" variant="default" className="h-8" onClick={() => setGiveMarId(id)}>
-                                Mark given
-                              </Button>
-                              <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setHoldMarId(id)}>
-                                Hold
-                              </Button>
-                            </div>
-                          ) : null}
-                          {isGive ? (
-                            <div className="mt-3 space-y-2 rounded-lg border border-blue-100 bg-blue-50/50 p-3 text-xs">
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <Label className="text-[10px] uppercase">Actual dose</Label>
-                                  <Input className="mt-1 h-8 text-xs" value={giveDose} onChange={(e) => setGiveDose(e.target.value)} />
-                                </div>
-                                <div>
-                                  <Label className="text-[10px] uppercase">Route</Label>
-                                  <Input className="mt-1 h-8 text-xs" value={giveRoute} onChange={(e) => setGiveRoute(e.target.value)} />
-                                </div>
-                              </div>
-                              {giveRoute.toLowerCase().includes("iv") ? (
-                                <div>
-                                  <Label className="text-[10px] uppercase">IV site</Label>
-                                  <Input className="mt-1 h-8 text-xs" value={giveIvSite} onChange={(e) => setGiveIvSite(e.target.value)} />
-                                </div>
-                              ) : null}
-                              <div>
-                                <Label className="text-[10px] uppercase">Time given</Label>
-                                <Input
-                                  className="mt-1 h-8 text-xs"
-                                  type="datetime-local"
-                                  value={giveTime}
-                                  onChange={(e) => setGiveTime(e.target.value)}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-[10px] uppercase">Notes</Label>
-                                <Textarea className="mt-1 min-h-[48px] text-xs" value={giveNotes} onChange={(e) => setGiveNotes(e.target.value)} />
-                              </div>
-                              <label className="flex items-center gap-2 text-xs">
-                                <input type="checkbox" checked={giveAdverse} onChange={(e) => setGiveAdverse(e.target.checked)} />
-                                Adverse event
-                              </label>
-                              {high ? (
-                                <div>
-                                  <Label className="text-[10px] uppercase text-red-800">Verifying nurse (practitioner ID)</Label>
-                                  <Input
-                                    className="mt-1 h-8 border-red-200 text-xs"
-                                    value={giveVerifier}
-                                    onChange={(e) => setGiveVerifier(e.target.value)}
-                                    placeholder="Required"
-                                  />
-                                </div>
-                              ) : null}
-                              <div className="flex gap-2">
-                                <Button type="button" size="sm" disabled={marBusy} onClick={() => void saveMarGiven(r)}>
-                                  Save
-                                </Button>
-                                <Button type="button" size="sm" variant="ghost" onClick={() => setGiveMarId(null)}>
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
-            {holdMarId ? (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                <Label className="text-xs">Hold reason</Label>
-                <Textarea className="mt-1 text-sm" value={holdReason} onChange={(e) => setHoldReason(e.target.value)} rows={2} />
-                <div className="mt-2 flex gap-2">
-                  <Button type="button" size="sm" disabled={marBusy} onClick={() => void saveMarHold()}>
-                    Confirm hold
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => setHoldMarId(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </div>
+          <MARView
+            admissionId={admissionId}
+            hospitalId={hospitalId}
+            viewDateYmd={selectedCalendarYmd}
+            onOverdueCountChange={onMarOverdueFromView}
+          />
         ) : null}
 
         {tab === "orders" ? (
@@ -782,7 +954,7 @@ export default function NursePatientPanel({
                 ))}
               </div>
             ) : orders.length === 0 ? (
-              <p className="text-sm text-gray-500">No active nursing orders.</p>
+              <p className="text-sm text-gray-500">No active nursing orders for this day.</p>
             ) : (
               orders.map((o) => {
                 const oid = s(o.id);
@@ -927,7 +1099,231 @@ export default function NursePatientPanel({
             )}
           </div>
         ) : null}
+
+        {tab === "handover" ? (
+          <ShiftHandoverNote
+            admissionId={admissionId}
+            patientId={patientId}
+            hospitalId={hospitalId}
+            nursePractitionerId={nursePractitionerId}
+            patientName={patientName}
+            bedLabel={bedLabel}
+            wardName={wardName}
+            shiftUi={selectedShift}
+            shiftDateYmd={todayYmd()}
+          />
+        ) : null}
+
+        {tab === "wound" ? (
+          <WoundDrainDoc
+            admissionId={admissionId}
+            patientId={patientId}
+            hospitalId={hospitalId}
+            practitionerId={nursePractitionerId}
+          />
+        ) : null}
+
+        {tab === "procedures" ? (
+          <NursingProcedureLogger
+            hospitalId={hospitalId}
+            patientId={patientId}
+            admissionId={admissionId}
+            className="border-0 bg-transparent p-0 shadow-none"
+          />
+        ) : null}
+
+        {tab === "doctor" ? (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-600">
+              <span aria-hidden>🔒</span> Read only · Clinical notes by {displayDoctorAttribution(doctorAuthorName)}
+            </p>
+            {isDoctorNoteDraft ? (
+              <div className="rounded-lg border border-amber-200/90 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                Draft — doctor hasn&apos;t signed yet
+              </div>
+            ) : null}
+            {doctorNoteLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-100" />
+                ))}
+              </div>
+            ) : !doctorNoteRow ? (
+              <p className="text-sm text-gray-500">
+                No doctor progress note for {selectedCalendarYmd}. Notes are filtered by the day tabs above (created time in
+                your timezone).
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-gray-200 bg-gray-50/90 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Subjective</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-900">
+                    {s(doctorNoteRow.subjective_text) || "—"}
+                  </p>
+                  <dl className="mt-3 grid gap-2 text-xs text-gray-800 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-gray-500">Pain score (0–10)</dt>
+                      <dd className="font-medium tabular-nums">
+                        {num(doctorNoteRow.pain_score) != null ? String(num(doctorNoteRow.pain_score)) : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-500">Sleep</dt>
+                      <dd className="font-medium">{triBool(doctorNoteRow.sleep_ok)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-500">Bowel</dt>
+                      <dd className="font-medium">{triBool(doctorNoteRow.bowel_ok)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-500">Bladder</dt>
+                      <dd className="font-medium">{triBool(doctorNoteRow.bladder_ok)}</dd>
+                    </div>
+                    {s(doctorNoteRow.appetite) ? (
+                      <div className="sm:col-span-2">
+                        <dt className="text-gray-500">Appetite</dt>
+                        <dd className="font-medium">{s(doctorNoteRow.appetite)}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50/90 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Examination findings</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-900">
+                    {s(doctorNoteRow.objective_text) || "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50/90 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Assessment</p>
+                  <p className="mt-2 text-sm">
+                    <span className="text-gray-500">Condition: </span>
+                    <span className="font-medium text-gray-900">{s(doctorNoteRow.condition_status) || "—"}</span>
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-900">
+                    {s(doctorNoteRow.assessment_text) || "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50/90 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Plan</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-900">
+                    {s(doctorNoteRow.plan_narrative) || "—"}
+                  </p>
+                  {s(doctorNoteRow.medical_surgical_notes) ? (
+                    <div className="mt-3 border-t border-gray-200 pt-3">
+                      <p className="text-[11px] font-semibold text-gray-500">Surgical plan</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                        {s(doctorNoteRow.medical_surgical_notes)}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="mt-3 border-t border-gray-200 pt-3">
+                    <p className="text-[11px] font-semibold text-gray-500">Medications ordered</p>
+                    {doctorTx.length === 0 ? (
+                      <p className="mt-1 text-sm text-gray-500">None recorded for this day</p>
+                    ) : (
+                      <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-gray-900">
+                        {doctorTx.map((t, i) => (
+                          <li key={s(t.id) || i}>
+                            {s(t.brand_name ?? t.medication_name ?? t.drug_name ?? t.name ?? "Medication")}
+                            {s(t.dose) ? ` — ${s(t.dose)}` : ""}
+                            {s(t.route) ? ` (${s(t.route)})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="mt-3 border-t border-gray-200 pt-3">
+                    <p className="text-[11px] font-semibold text-gray-500">Investigations ordered</p>
+                    {doctorInv.length === 0 ? (
+                      <p className="mt-1 text-sm text-gray-500">None recorded for this day</p>
+                    ) : (
+                      <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-gray-900">
+                        {doctorInv.map((inv, i) => (
+                          <li key={s(inv.id) || i}>
+                            {s(inv.test_name ?? inv.investigation_name ?? inv.name ?? inv.short_code ?? "Investigation")}
+                            {s(inv.status) ? ` — ${s(inv.status)}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {tab === "file" ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+              <Lock className="h-3.5 w-3.5 shrink-0 text-black" strokeWidth={2.5} aria-hidden />
+              <span>Patient file — read-only</span>
+            </div>
+            {ipdContextLoading && !admissionBundle ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-12 animate-pulse rounded-lg bg-gray-100" />
+                ))}
+              </div>
+            ) : (
+              <>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <Lock className="h-3 w-3 text-black" aria-hidden />
+                    Known allergies
+                  </div>
+                  <p className="mt-2 text-sm text-gray-900">
+                    {fileAllergies.length > 0 ? fileAllergies.join(", ") : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <Lock className="h-3 w-3 text-black" aria-hidden />
+                    Blood group
+                  </div>
+                  <p className="mt-2 text-sm text-gray-900">{fileBloodGroup || "—"}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <Lock className="h-3 w-3 text-black" aria-hidden />
+                    Past medical history (pre-admission)
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-900">{filePmh || "—"}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <Lock className="h-3 w-3 text-black" aria-hidden />
+                    Current medications (pre-admission)
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-900">{fileCurrentMeds}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <Lock className="h-3 w-3 text-black" aria-hidden />
+                    Consents on file
+                  </div>
+                  {fileConsents.length === 0 ? (
+                    <p className="mt-2 text-sm text-gray-500">—</p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {fileConsents.map((c, i) => (
+                        <li
+                          key={s(c.id) || `c-${i}`}
+                          className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5 text-sm text-gray-900"
+                        >
+                          <span className="font-medium">{consentTitleFromRow(c)}</span>
+                          <span className="text-xs text-gray-600">{consentStatusLabel(c)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
+    </>
   );
 }

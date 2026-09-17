@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { duplicateActiveAdmissionMessage, parseAdmitPatientRpcResult } from "@/app/lib/ipdData";
+import {
+  patientIdsWithSimilarNamePeer,
+  similarFullNamesToSelected,
+  similarPatientNamesWarningBody,
+} from "@/app/lib/patientNameSimilarity";
 import {
   type BedAvailabilityRow,
   fetchBedAvailability,
@@ -348,6 +355,15 @@ export function AdmitPatientModal({
     };
   }, [open, hospitalId, effectivePatientId, patientSearch]);
 
+  const patientSearchNameEntries = useMemo(
+    () => patientResults.map((p) => ({ id: p.id, fullName: p.label })),
+    [patientResults],
+  );
+  const patientSearchSimilarIds = useMemo(
+    () => patientIdsWithSimilarNamePeer(patientSearchNameEntries),
+    [patientSearchNameEntries],
+  );
+
   const filteredDoctors = useMemo(() => {
     const q = doctorQuery.trim().toLowerCase();
     if (!q) return practitioners;
@@ -527,6 +543,26 @@ export function AdmitPatientModal({
       setSubmitError(error.message);
       return;
     }
+    const outcome = parseAdmitPatientRpcResult(data);
+    if (outcome.kind === "duplicate_active_admission") {
+      setSubmitting(false);
+      const dupId = outcome.existingAdmissionId;
+      toast.warning("Already admitted", {
+        description: duplicateActiveAdmissionMessage(outcome.admissionNumber),
+        ...(dupId
+          ? {
+              action: {
+                label: "Open in IPD",
+                onClick: () => {
+                  window.location.assign(`/ipd/admissions/${encodeURIComponent(dupId)}`);
+                },
+              },
+            }
+          : {}),
+      });
+      onClose();
+      return;
+    }
     const parsed = parseAdmitResult(data);
     if (!parsed) {
       setSubmitting(false);
@@ -640,15 +676,42 @@ export function AdmitPatientModal({
                         <li key={p.id}>
                           <button
                             type="button"
-                            className="w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                            className={cn(
+                              "w-full px-3 py-2 text-left text-sm hover:bg-gray-50",
+                              patientSearchSimilarIds.has(p.id)
+                                ? "border-l-4 border-amber-400/90 bg-amber-50 text-gray-900"
+                                : "text-gray-900",
+                            )}
                             onClick={() => {
+                              const entries = patientResults.map((r) => ({
+                                id: r.id,
+                                fullName: r.label,
+                              }));
+                              const body = similarPatientNamesWarningBody(
+                                p.label,
+                                similarFullNamesToSelected(p.id, p.label, entries),
+                              );
+                              if (body) {
+                                toast.warning("Similar patient names", { description: body });
+                              }
                               setResolvedPatientId(p.id);
                               setPatientName(p.label);
                               setPatientSearch("");
                               setPatientResults([]);
                             }}
                           >
-                            {p.label}
+                            <span className="font-medium">
+                              {p.label}
+                              {patientSearchSimilarIds.has(p.id) ? (
+                                <span
+                                  className="ml-1 text-amber-600"
+                                  title="Similar name in this list"
+                                  aria-label="Similar name warning"
+                                >
+                                  ⚠️
+                                </span>
+                              ) : null}
+                            </span>
                           </button>
                         </li>
                       ))}

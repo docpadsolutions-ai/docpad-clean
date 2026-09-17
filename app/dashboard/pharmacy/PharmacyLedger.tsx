@@ -1,5 +1,7 @@
 "use client";
 
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+
 /** Row from `pharmacy_dispensed_prescriptions` (`SELECT *`); core columns used in UI. */
 export type PharmacyLedgerRow = Record<string, unknown> & {
   prescription_id: string;
@@ -93,6 +95,8 @@ export function PharmacyLedger({
         <tbody>
           {rows.map((r) => {
             const id = String(r.prescription_id ?? "").trim();
+            const pname = String(r.patient_name ?? "").trim() || "—";
+            const pidForAvatar = String((r as { patient_id?: unknown }).patient_id ?? id);
             const open = () => {
               if (id) onRowClick(id);
             };
@@ -113,10 +117,11 @@ export function PharmacyLedger({
                 <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-700">
                   {formatDispensedDate(r.dispensed_at)}
                 </td>
-                <td className="max-w-[180px] px-4 py-3 text-slate-900">
-                  <span className="line-clamp-2 font-medium">
-                    {String(r.patient_name ?? "").trim() || "—"}
-                  </span>
+                <td className="max-w-[220px] px-4 py-3 text-slate-900">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <PatientAvatar patientId={pidForAvatar} patientName={pname} size="sm" />
+                    <span className="line-clamp-2 font-medium">{pname}</span>
+                  </div>
                 </td>
                 <td className="max-w-[220px] px-4 py-3 text-slate-800">
                   <span className="line-clamp-2">{String(r.medicine_name ?? "").trim() || "—"}</span>

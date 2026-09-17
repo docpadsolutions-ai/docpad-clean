@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
 import { supabase } from "@/app/supabase";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { HospitalLetterhead, type HospitalLetterheadData } from "../../../components/HospitalLetterhead";
 
 export type HospitalProfile = {
   id: string;
@@ -86,6 +87,13 @@ type FormState = {
   nabh_valid_until: string;
 };
 
+type LetterheadFormState = {
+  logo_url: string;
+  tagline: string;
+  registration_no: string;
+  letterhead_color: string;
+};
+
 function formatDisplayDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso + "T12:00:00");
@@ -110,6 +118,20 @@ export default function HospitalProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+
+  // Letterhead state
+  const [letterheadForm, setLetterheadForm] = useState<LetterheadFormState>({
+    logo_url: "",
+    tagline: "",
+    registration_no: "",
+    letterhead_color: "#1d4ed8",
+  });
+  const [letterheadSaving, setLetterheadSaving] = useState(false);
+  const [letterheadSaveError, setLetterheadSaveError] = useState<string | null>(null);
+  const [letterheadSaveSuccess, setLetterheadSaveSuccess] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const loadProfile = useCallback(async (hid: string) => {
     setLoading(true);
@@ -151,8 +173,90 @@ export default function HospitalProfilePage() {
       }
       setHospitalId(id);
       await loadProfile(id);
+
+      // Ensure the hospital-assets storage bucket exists (create once on first use)
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = (buckets ?? []).some((b) => b.name === "hospital-assets");
+      if (!bucketExists) {
+        await supabase.storage.createBucket("hospital-assets", { public: true });
+      }
+
+      // Load existing letterhead fields
+      const { data: lh } = await supabase
+        .from("hospitals")
+        .select("logo_url, tagline, registration_no, letterhead_color")
+        .eq("id", id)
+        .maybeSingle();
+      if (lh) {
+        setLetterheadForm({
+          logo_url: (lh as Record<string, unknown>).logo_url as string ?? "",
+          tagline: (lh as Record<string, unknown>).tagline as string ?? "",
+          registration_no: (lh as Record<string, unknown>).registration_no as string ?? "",
+          letterhead_color: ((lh as Record<string, unknown>).letterhead_color as string) || "#1d4ed8",
+        });
+      }
     })();
   }, [loadProfile]);
+
+  const handleLogoUpload = useCallback(
+    async (file: File) => {
+      if (!hospitalId) return;
+      setLogoUploadError(null);
+
+      if (file.size > 2 * 1024 * 1024) {
+        setLogoUploadError("File too large. Maximum size is 2 MB.");
+        return;
+      }
+      const allowed = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml"];
+      if (!allowed.includes(file.type)) {
+        setLogoUploadError("Only PNG, JPG, or SVG files are accepted.");
+        return;
+      }
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "png";
+      const path = `${hospitalId}/logo.${ext}`;
+
+      setLogoUploading(true);
+      const { error: uploadErr } = await supabase.storage
+        .from("hospital-assets")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      setLogoUploading(false);
+
+      if (uploadErr) {
+        setLogoUploadError(uploadErr.message);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("hospital-assets")
+        .getPublicUrl(path);
+      const publicUrl = urlData?.publicUrl ?? "";
+      setLetterheadForm((f) => ({ ...f, logo_url: publicUrl }));
+    },
+    [hospitalId],
+  );
+
+  const saveLetterhead = useCallback(async () => {
+    if (!hospitalId) return;
+    setLetterheadSaveError(null);
+    setLetterheadSaveSuccess(false);
+    setLetterheadSaving(true);
+    const { error: updateErr } = await supabase
+      .from("hospitals")
+      .update({
+        logo_url: letterheadForm.logo_url.trim() || null,
+        tagline: letterheadForm.tagline.trim() || null,
+        registration_no: letterheadForm.registration_no.trim() || null,
+        letterhead_color: letterheadForm.letterhead_color.trim() || "#1d4ed8",
+      })
+      .eq("id", hospitalId);
+    setLetterheadSaving(false);
+    if (updateErr) {
+      setLetterheadSaveError(updateErr.message);
+      return;
+    }
+    setLetterheadSaveSuccess(true);
+    setTimeout(() => setLetterheadSaveSuccess(false), 3000);
+  }, [hospitalId, letterheadForm]);
 
   const startEdit = useCallback(() => {
     if (!profile) return;
@@ -286,6 +390,7 @@ export default function HospitalProfilePage() {
         ) : profile && form ? (
           <>
             <Card className="border-border shadow-sm">
+
               <CardHeader className="flex flex-col gap-4 border-b border-border sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -504,6 +609,168 @@ export default function HospitalProfilePage() {
                   </div>
                 </CardContent>
               )}
+            </Card>
+
+            {/* ── Prescription Letterhead Settings ─────────────────────────── */}
+            <Card className="border-border shadow-sm">
+              <CardHeader className="border-b border-border">
+                <CardTitle className="text-lg">Prescription letterhead</CardTitle>
+                <CardDescription>
+                  Logo, tagline, and brand color that appear on every printed prescription.
+                </CardDescription>
+              </CardHeader>
+
+              <CardContent className="space-y-6 pt-6">
+                <div className="grid gap-5 sm:grid-cols-2">
+
+                  {/* Logo upload */}
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Hospital logo</Label>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, or SVG · max 2 MB. Displayed in the top-left corner of the prescription.</p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {letterheadForm.logo_url.trim() ? (
+                        <img
+                          src={letterheadForm.logo_url.trim()}
+                          alt="Hospital logo preview"
+                          className="h-16 w-auto rounded border border-border object-contain bg-gray-50 p-1"
+                        />
+                      ) : (
+                        <div className="flex h-16 w-32 items-center justify-center rounded border border-dashed border-border bg-gray-50 text-xs text-muted-foreground">
+                          No logo yet
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={logoUploading}
+                        >
+                          {logoUploading ? "Uploading…" : "Upload logo"}
+                        </Button>
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) void handleLogoUpload(file);
+                            e.target.value = "";
+                          }}
+                        />
+                        {logoUploadError ? (
+                          <p className="text-xs text-red-600" role="alert">{logoUploadError}</p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Direct URL fallback */}
+                    <div className="mt-2 space-y-1">
+                      <Label htmlFor="lh-logo-url" className="text-xs text-muted-foreground">
+                        Or paste a logo URL directly
+                      </Label>
+                      <Input
+                        id="lh-logo-url"
+                        type="url"
+                        placeholder="https://example.com/logo.png"
+                        value={letterheadForm.logo_url}
+                        onChange={(e) => setLetterheadForm((f) => ({ ...f, logo_url: e.target.value }))}
+                        className="text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Tagline */}
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="lh-tagline">Tagline</Label>
+                    <Input
+                      id="lh-tagline"
+                      placeholder="e.g. Caring for your health since 1985"
+                      value={letterheadForm.tagline}
+                      onChange={(e) => setLetterheadForm((f) => ({ ...f, tagline: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* Registration No. */}
+                  <div className="space-y-2">
+                    <Label htmlFor="lh-reg">Registration No.</Label>
+                    <Input
+                      id="lh-reg"
+                      placeholder="e.g. MH/2003/123456"
+                      className="font-mono text-sm"
+                      value={letterheadForm.registration_no}
+                      onChange={(e) => setLetterheadForm((f) => ({ ...f, registration_no: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* Brand color */}
+                  <div className="space-y-2">
+                    <Label htmlFor="lh-color">Brand color</Label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        id="lh-color"
+                        type="color"
+                        value={letterheadForm.letterhead_color}
+                        onChange={(e) => setLetterheadForm((f) => ({ ...f, letterhead_color: e.target.value }))}
+                        className="h-10 w-14 cursor-pointer rounded border border-input p-0.5"
+                      />
+                      <Input
+                        value={letterheadForm.letterhead_color}
+                        onChange={(e) => setLetterheadForm((f) => ({ ...f, letterhead_color: e.target.value }))}
+                        className="w-32 font-mono text-sm uppercase"
+                        maxLength={7}
+                        placeholder="#1d4ed8"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">Used for the divider line on prescriptions.</p>
+                  </div>
+                </div>
+
+                {/* Save button + status */}
+                <div className="flex items-center gap-3 pt-2 border-t border-border">
+                  <Button
+                    type="button"
+                    onClick={() => void saveLetterhead()}
+                    disabled={letterheadSaving}
+                  >
+                    {letterheadSaving ? "Saving…" : "Save letterhead settings"}
+                  </Button>
+                  {letterheadSaveSuccess ? (
+                    <p className="text-sm text-green-600 font-medium">Saved successfully.</p>
+                  ) : null}
+                  {letterheadSaveError ? (
+                    <p className="text-sm text-red-600" role="alert">{letterheadSaveError}</p>
+                  ) : null}
+                </div>
+
+                {/* Live preview */}
+                <div className="space-y-2 pt-4 border-t border-border">
+                  <p className="text-sm font-medium text-foreground">Letterhead preview</p>
+                  <p className="text-xs text-muted-foreground">Updates live as you edit above. This is how it will appear on printed prescriptions.</p>
+                  <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
+                    <HospitalLetterhead
+                      hospital={{
+                        name: profile.name,
+                        address_line1: profile.address_line1,
+                        city: profile.city,
+                        state: profile.state,
+                        pincode: profile.pincode,
+                        phone: profile.phone,
+                        email: profile.email,
+                        website: profile.website,
+                        nabh_accredited: profile.nabh_accredited,
+                        nabh_certificate_number: profile.nabh_certificate_number,
+                        logo_url: letterheadForm.logo_url || null,
+                        tagline: letterheadForm.tagline || null,
+                        registration_no: letterheadForm.registration_no || null,
+                        letterhead_color: letterheadForm.letterhead_color || "#1d4ed8",
+                      } satisfies HospitalLetterheadData}
+                    />
+                  </div>
+                </div>
+              </CardContent>
             </Card>
           </>
         ) : null}

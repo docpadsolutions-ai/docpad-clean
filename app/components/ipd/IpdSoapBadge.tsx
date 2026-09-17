@@ -1,3 +1,5 @@
+import { personInitialsDisplay } from "@/app/lib/personInitialsDisplay";
+
 export function IpdSoapBadge({
   letter,
   title,
@@ -19,7 +21,7 @@ export function IpdSoapBadge({
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm ring-1 ring-black/10 dark:ring-white/10 ${map[color]}`}
       >
-        {letter}
+        {personInitialsDisplay(letter)}
       </div>
       <div>
         <p className="text-sm font-bold text-foreground dark:text-white">{title}</p>

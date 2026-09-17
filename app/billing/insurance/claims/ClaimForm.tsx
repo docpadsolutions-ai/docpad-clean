@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
 import { supabase } from "@/app/supabase";
+import { PatientActionConfirmPopover } from "@/src/components/patient/patient-action-confirm-popover";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,10 +44,16 @@ type ClaimFormValues = z.infer<typeof claimFormSchema>;
 type CompanyOpt = { id: string; name: string };
 
 const formLabel = "mb-1.5 block text-sm font-medium text-slate-800 dark:text-gray-200";
+/** Dark theme inputs — insurance module */
 const formControl =
-  "border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus-visible:border-blue-500 dark:focus-visible:ring-blue-500";
+  "border border-gray-700 bg-gray-800 text-white placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white";
 const helperText = "text-sm text-slate-600 dark:text-gray-400";
 const sectionHeader = "text-lg font-semibold text-slate-900 dark:text-white";
+const insCard = "shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:shadow-none";
+const insSecondaryBtn =
+  "border border-gray-700 bg-gray-800 text-white hover:bg-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700";
+const insErrorBanner = "rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-red-400";
+const insSelectContent = "border border-gray-700 bg-gray-900 text-white";
 
 export type ClaimFormVariant = "edit" | "view";
 
@@ -64,6 +72,14 @@ export function ClaimForm({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [patientName, setPatientName] = useState("");
+  const [claimPatientId, setClaimPatientId] = useState("");
+  const [confirmPatient, setConfirmPatient] = useState<{
+    id: string;
+    full_name: string | null;
+    docpad_id: string | null;
+    age_years: number | null;
+    sex: string | null;
+  } | null>(null);
   const [claimNumber, setClaimNumber] = useState("");
   const [status, setStatus] = useState("");
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
@@ -110,6 +126,30 @@ export function ClaimForm({
 
         setPatientName(String(row.patient_full_name ?? "—"));
         setClaimNumber(String(row.claim_number ?? ""));
+
+        const { data: crow } = await supabase.from("insurance_claims").select("patient_id").eq("id", claimId).maybeSingle();
+        const pid = crow?.patient_id != null ? String(crow.patient_id).trim() : "";
+        setClaimPatientId(pid);
+        if (pid) {
+          const { data: pat } = await supabase
+            .from("patients")
+            .select("id, full_name, docpad_id, age_years, sex")
+            .eq("id", pid)
+            .maybeSingle();
+          if (pat?.id) {
+            setConfirmPatient({
+              id: String(pat.id),
+              full_name: pat.full_name ?? null,
+              docpad_id: pat.docpad_id ?? null,
+              age_years: pat.age_years ?? null,
+              sex: pat.sex ?? null,
+            });
+          } else {
+            setConfirmPatient(null);
+          }
+        } else {
+          setConfirmPatient(null);
+        }
 
         reset({
           billedAmount: n(row.billed_amount),
@@ -180,7 +220,7 @@ export function ClaimForm({
 
   if (loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center bg-slate-50 p-6 dark:bg-slate-950 dark:text-slate-300">
+      <div className="flex min-h-[40vh] items-center justify-center bg-slate-50 p-6 dark:bg-transparent dark:text-gray-300">
         Loading…
       </div>
     );
@@ -189,52 +229,72 @@ export function ClaimForm({
   if (loadError) {
     return (
       <div className="mx-auto max-w-lg space-y-4 p-6">
-        <p className="text-red-600 dark:text-red-400">{loadError}</p>
-        <Button type="button" variant="outline" asChild>
+        <p className={insErrorBanner}>{loadError}</p>
+        <Button type="button" variant="outline" className={insSecondaryBtn} asChild>
           <Link href="/billing/insurance">Back to insurance</Link>
         </Button>
       </div>
     );
   }
 
+  const avatarPid = (confirmPatient?.id ?? claimPatientId).trim();
+  const avatarName = confirmPatient?.full_name?.trim() || patientName || "Patient";
+
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8 dark:bg-slate-950">
+    <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4 md:p-6 lg:p-8 dark:bg-transparent">
       <div className="mx-auto max-w-2xl space-y-6">
+        {patientName ? (
+          <div className="sticky top-0 z-20 -mx-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:-mx-6 lg:-mx-8 dark:border-gray-800 dark:bg-gray-900/95">
+            <PatientAvatar patientId={avatarPid || claimId} patientName={avatarName} size="lg" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{avatarName}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-gray-400">
+                Claim {claimNumber || "—"}
+                {status ? (
+                  <>
+                    {" "}
+                    · <span className="capitalize">{status.replace(/_/g, " ")}</span>
+                  </>
+                ) : null}
+              </p>
+            </div>
+          </div>
+        ) : null}
         <header>
           <Link href="/billing/insurance" className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">
             ← Insurance
           </Link>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">{title}</h1>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{title}</h1>
           <p className={cn("mt-1", helperText)}>
             {readOnly
               ? "Read-only. Approved and settled amounts reflect payer and payment records."
               : "Edit details, save your draft, or submit to the payer."}
           </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Status: <span className="font-medium capitalize text-slate-700 dark:text-slate-200">{status.replace(/_/g, " ")}</span>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+            Status: <span className="font-medium capitalize text-slate-700 dark:text-gray-200">{status.replace(/_/g, " ")}</span>
           </p>
         </header>
 
-        <Card>
-          <CardHeader>
+        <Card className={insCard}>
+          <CardHeader className="border-b border-slate-200 dark:border-gray-800">
             <CardTitle className={sectionHeader}>Claim</CardTitle>
-            <CardDescription className={helperText}>Identifiers and patient.</CardDescription>
+            <CardDescription className={`${helperText} dark:text-gray-400`}>Identifiers and patient.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div>
               <span className={formLabel}>Claim number</span>
-              <p className="font-mono font-medium text-slate-900 dark:text-slate-50">{claimNumber || "—"}</p>
+              <p className="font-mono font-medium text-slate-900 dark:text-white">{claimNumber || "—"}</p>
             </div>
             <div>
               <span className={formLabel}>Patient</span>
-              <p className="font-medium text-slate-900 dark:text-slate-50">{patientName}</p>
+              <p className="font-medium text-slate-900 dark:text-white">{patientName}</p>
             </div>
           </CardContent>
         </Card>
 
         <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-          <Card>
-            <CardHeader>
+          <Card className={insCard}>
+            <CardHeader className="border-b border-slate-200 dark:border-gray-800">
               <CardTitle className={sectionHeader}>Amounts</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -244,7 +304,7 @@ export function ClaimForm({
                 </Label>
                 <Input
                   id="cl-billed"
-                  className={cn("h-9 w-full rounded-md shadow-sm", formControl)}
+                  className={cn("h-9 w-full rounded-md", formControl)}
                   type="number"
                   inputMode="decimal"
                   min={0}
@@ -252,7 +312,7 @@ export function ClaimForm({
                   disabled={readOnly}
                   {...register("billedAmount", { setValueAs: numFromInput })}
                 />
-                {errors.billedAmount ? <p className="mt-1 text-xs text-red-600">{errors.billedAmount.message}</p> : null}
+                {errors.billedAmount ? <p className="mt-1 text-xs text-red-400">{errors.billedAmount.message}</p> : null}
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -261,7 +321,7 @@ export function ClaimForm({
                   </Label>
                   <Input
                     id="cl-appr"
-                    className={cn("h-9 w-full rounded-md shadow-sm", formControl)}
+                    className={cn("h-9 w-full rounded-md", formControl)}
                     type="number"
                     min={0}
                     step="0.01"
@@ -276,7 +336,7 @@ export function ClaimForm({
                   </Label>
                   <Input
                     id="cl-set"
-                    className={cn("h-9 w-full rounded-md shadow-sm", formControl)}
+                    className={cn("h-9 w-full rounded-md", formControl)}
                     type="number"
                     min={0}
                     step="0.01"
@@ -289,8 +349,8 @@ export function ClaimForm({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
+          <Card className={insCard}>
+            <CardHeader className="border-b border-slate-200 dark:border-gray-800">
               <CardTitle className={sectionHeader}>Payer & dates</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -301,10 +361,10 @@ export function ClaimForm({
                   onValueChange={(v) => setValue("insuranceCompanyId", v === "__none__" ? "" : v)}
                   disabled={readOnly}
                 >
-                  <SelectTrigger className={cn("h-9 w-full rounded-md shadow-sm", formControl)}>
+                  <SelectTrigger className={cn("h-9 w-full rounded-md", formControl)}>
                     <SelectValue placeholder="Not specified" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className={insSelectContent}>
                     <SelectItem value="__none__">Not specified</SelectItem>
                     {companies.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
@@ -318,18 +378,18 @@ export function ClaimForm({
                 <Label htmlFor="cl-due" className={formLabel}>
                   Settlement due
                 </Label>
-                <Input id="cl-due" type="date" className={cn("h-9 w-full rounded-md shadow-sm", formControl)} disabled={readOnly} {...register("settlementDueDate")} />
+                <Input id="cl-due" type="date" className={cn("h-9 w-full rounded-md", formControl)} disabled={readOnly} {...register("settlementDueDate")} />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
+          <Card className={insCard}>
+            <CardHeader className="border-b border-slate-200 dark:border-gray-800">
               <CardTitle className={sectionHeader}>Notes</CardTitle>
             </CardHeader>
             <CardContent>
               <Textarea
-                className={cn("min-h-[100px] w-full rounded-md px-3 py-2 text-sm shadow-sm", formControl)}
+                className={cn("min-h-[100px] w-full rounded-md px-3 py-2 text-sm", formControl)}
                 disabled={readOnly}
                 placeholder="Internal notes…"
                 {...register("notes")}
@@ -338,17 +398,30 @@ export function ClaimForm({
           </Card>
 
           <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="outline" asChild>
+            <Button type="button" variant="outline" className={insSecondaryBtn} asChild>
               <Link href="/billing/insurance">Cancel</Link>
             </Button>
             {!readOnly ? (
               <>
-                <Button type="button" variant="secondary" disabled={saving} onClick={() => void saveDraft()}>
+                <Button type="button" variant="secondary" className={insSecondaryBtn} disabled={saving} onClick={() => void saveDraft()}>
                   {saving ? "Saving…" : "Save draft"}
                 </Button>
-                <Button type="button" disabled={saving} onClick={() => void submitClaim()}>
-                  {saving ? "Submitting…" : "Submit claim"}
-                </Button>
+                <PatientActionConfirmPopover
+                  patientId={confirmPatient?.id ?? ""}
+                  patientName={confirmPatient?.full_name?.trim() || patientName || "Patient"}
+                  ageYears={confirmPatient?.age_years ?? null}
+                  sex={confirmPatient?.sex ?? null}
+                  docpadId={confirmPatient?.docpad_id ?? null}
+                  actionNoun="claim submission"
+                  disabled={saving || !confirmPatient?.id}
+                  onConfirm={() => void submitClaim()}
+                  side="top"
+                  align="end"
+                >
+                  <Button type="button" disabled={saving || !confirmPatient?.id}>
+                    {saving ? "Submitting…" : "Submit claim"}
+                  </Button>
+                </PatientActionConfirmPopover>
               </>
             ) : null}
           </div>

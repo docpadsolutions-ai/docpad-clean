@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 import ClinicalQueueRow, { displayToken } from "../../components/ClinicalQueueRow";
-import type { DraftEncounterRow } from "../../lib/clinicalQueue";
+import { patientIdsWithSimilarNamePeer } from "../../lib/patientNameSimilarity";
+import type { DraftEncounterRow, WaitingPatientRow } from "../../lib/clinicalQueue";
 import { useClinicalCommandCenter } from "./useClinicalCommandCenter";
+import { useKeyboardNav } from "@/src/hooks/use-keyboard-nav";
+import { KeyboardShortcutsHelp } from "@/src/components/ui/keyboard-shortcuts-help";
 
 const WAITING_BADGE = "bg-amber-50 text-amber-700 ring-amber-200";
 
@@ -72,6 +76,55 @@ export default function ClinicalCommandCenterQueue() {
   const rowsDrafts = drafts.length === 0;
   const empty = showWaiting ? rowsWaiting : rowsDrafts;
 
+  const waitingSimilarIds = useMemo(
+    () => patientIdsWithSimilarNamePeer(waiting.map((r) => ({ id: r.patientId, fullName: r.patientName }))),
+    [waiting],
+  );
+  const draftsSimilarIds = useMemo(
+    () => patientIdsWithSimilarNamePeer(drafts.map((r) => ({ id: r.patientId, fullName: r.patientName }))),
+    [drafts],
+  );
+
+  const [queueFilter, setQueueFilter] = useState("");
+  const queueSearchRef = useRef<HTMLInputElement>(null);
+
+  const filteredWaiting = useMemo(() => {
+    const q = queueFilter.trim().toLowerCase();
+    if (!q) return waiting;
+    return waiting.filter((r) => {
+      const blob = [r.patientName, r.primaryDisplay, r.chiefComplaint ?? "", r.docpadId ?? ""]
+        .join(" ")
+        .toLowerCase();
+      return blob.includes(q);
+    });
+  }, [waiting, queueFilter]);
+
+  const filteredDrafts = useMemo(() => {
+    const q = queueFilter.trim().toLowerCase();
+    if (!q) return drafts;
+    return drafts.filter((r) => {
+      const blob = [r.patientName, r.chiefComplaint ?? "", r.encounterToken ?? ""].join(" ").toLowerCase();
+      return blob.includes(q);
+    });
+  }, [drafts, queueFilter]);
+
+  const displayRows: readonly (WaitingPatientRow | DraftEncounterRow)[] = showWaiting
+    ? filteredWaiting
+    : filteredDrafts;
+  const filteredOut =
+    !empty && displayRows.length === 0 && Boolean(queueFilter.trim());
+
+  const queueKb = useKeyboardNav(displayRows, (row, _index) => {
+    if (showWaiting) void onWaitingRowClick(row as WaitingPatientRow);
+    else onDraftRowClick(row as DraftEncounterRow);
+  }, {
+    searchInputRef: queueSearchRef,
+    onClearSelection: () => {
+      setQueueFilter("");
+    },
+    enabled: !loading && displayRows.length > 0,
+  });
+
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
       <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 lg:px-6">
@@ -92,13 +145,36 @@ export default function ClinicalCommandCenterQueue() {
             </Link>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <TabButton active={showWaiting} onClick={setWaitingTab} count={waiting.length}>
             Waiting room
           </TabButton>
           <TabButton active={!showWaiting} onClick={setDraftsTab} count={drafts.length}>
             Returning / drafts
           </TabButton>
+          <div className="ml-auto flex min-w-[min(100%,14rem)] max-w-sm flex-1 items-center gap-2 sm:min-w-[12rem]">
+            <label htmlFor="ccc-queue-filter" className="sr-only">
+              Filter patients
+            </label>
+            <input
+              id="ccc-queue-filter"
+              ref={queueSearchRef}
+              type="search"
+              value={queueFilter}
+              onChange={(e) => setQueueFilter(e.target.value)}
+              placeholder="Filter…"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              autoComplete="off"
+            />
+            <KeyboardShortcutsHelp
+              entries={[
+                { keys: "↑ / ↓", label: "Move highlight" },
+                { keys: "Enter", label: "Open selected patient" },
+                { keys: "Esc", label: "Clear highlight & filter" },
+                { keys: "/", label: "Focus filter" },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -117,6 +193,8 @@ export default function ClinicalCommandCenterQueue() {
         <div className="flex justify-center py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
         </div>
+      ) : filteredOut ? (
+        <div className="px-6 py-12 text-center text-sm text-slate-600">No rows match your filter.</div>
       ) : empty ? (
         <div className="px-6 py-16 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
@@ -146,27 +224,46 @@ export default function ClinicalCommandCenterQueue() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="whitespace-nowrap px-5 py-3 lg:px-6">Token</th>
-                <th className="min-w-[160px] px-3 py-3">Patient</th>
-                <th className="min-w-[200px] px-3 py-3">Vitals</th>
-                <th className="min-w-[200px] px-3 py-3">Chief complaint</th>
-                <th className="whitespace-nowrap px-3 py-3">Status</th>
-                <th className="whitespace-nowrap px-5 py-3 text-right lg:px-6"> </th>
+          <table
+            role="grid"
+            aria-label={showWaiting ? "Waiting room patients" : "Returning and draft charts"}
+            aria-rowcount={displayRows.length}
+            className="w-full min-w-[900px] text-left text-sm"
+          >
+            <thead role="rowgroup">
+              <tr role="row" className="border-b border-slate-100 bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th role="columnheader" className="whitespace-nowrap px-5 py-3 lg:px-6">
+                  Token
+                </th>
+                <th role="columnheader" className="min-w-[160px] px-3 py-3">
+                  Patient
+                </th>
+                <th role="columnheader" className="min-w-[200px] px-3 py-3">
+                  Vitals
+                </th>
+                <th role="columnheader" className="min-w-[200px] px-3 py-3">
+                  Chief complaint
+                </th>
+                <th role="columnheader" className="whitespace-nowrap px-3 py-3">
+                  Status
+                </th>
+                <th role="columnheader" className="whitespace-nowrap px-5 py-3 text-right lg:px-6">
+                  {" "}
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody role="rowgroup" className="divide-y divide-slate-100">
               {showWaiting
-                ? waiting.map((row) => {
+                ? filteredWaiting.map((row, rowIndex) => {
                     const meta =
                       row.docpadId?.trim() && row.ageGender?.trim()
                         ? `${row.ageGender} · ${row.docpadId.trim()}`
                         : row.docpadId?.trim() || row.ageGender || "—";
                     return (
                       <ClinicalQueueRow
+                        ref={queueKb.assignRowRef(rowIndex)}
                         key={row.rowKey}
+                        patientId={row.patientId}
                         primaryColumn={row.primaryDisplay}
                         patientName={row.patientName}
                         patientMeta={meta}
@@ -182,14 +279,18 @@ export default function ClinicalCommandCenterQueue() {
                         actionLabel="Start chart"
                         onClick={() => void onWaitingRowClick(row)}
                         disabled={startingRowKey === row.rowKey}
+                        hasSimilarName={waitingSimilarIds.has(row.patientId)}
+                        keyboardSelected={queueKb.isRowSelected(rowIndex)}
                       />
                     );
                   })
-                : drafts.map((row) => {
+                : filteredDrafts.map((row, rowIndex) => {
                     const { label, badgeClass } = draftStatusMeta(row.status);
                     return (
                       <ClinicalQueueRow
+                        ref={queueKb.assignRowRef(rowIndex)}
                         key={row.encounterId}
+                        patientId={row.patientId}
                         primaryColumn={displayToken(row.encounterToken)}
                         patientName={row.patientName}
                         patientMeta={row.ageGender}
@@ -199,6 +300,8 @@ export default function ClinicalCommandCenterQueue() {
                         statusBadgeClassName={badgeClass}
                         actionLabel="Open file"
                         onClick={() => onDraftRowClick(row)}
+                        hasSimilarName={draftsSimilarIds.has(row.patientId)}
+                        keyboardSelected={queueKb.isRowSelected(rowIndex)}
                       />
                     );
                   })}

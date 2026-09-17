@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ConfirmationTooltip } from "@/src/components/patient/patient-action-confirm-popover";
 import { cn } from "@/lib/utils";
 
 export type OrderInvestigationCatalogRow = {
@@ -39,6 +40,11 @@ export default function OrderInvestigationModal({
   onCancel,
   onConfirm,
   busy,
+  patientId,
+  patientName,
+  patientAgeYears,
+  patientSex,
+  patientDocpadId,
 }: {
   open: boolean;
   test: OrderInvestigationCatalogRow | null;
@@ -48,6 +54,12 @@ export default function OrderInvestigationModal({
   onCancel: () => void;
   onConfirm: (priority: Priority) => void | Promise<void>;
   busy?: boolean;
+  /** When set, "Confirm Order" requires patient confirmation (IPD). */
+  patientId?: string | null;
+  patientName?: string | null;
+  patientAgeYears?: number | null;
+  patientSex?: string | null;
+  patientDocpadId?: string | null;
 }) {
   const [priority, setPriority] = useState<Priority>("routine");
 
@@ -168,14 +180,38 @@ export default function OrderInvestigationModal({
           >
             Cancel
           </button>
-          <button
-            type="button"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-            onClick={() => void onConfirm(priority)}
-            disabled={busy}
-          >
-            {busy ? "Placing…" : "Confirm Order"}
-          </button>
+          {patientId?.trim() ? (
+            <ConfirmationTooltip
+              patientId={patientId.trim()}
+              patientName={s(patientName) || "Patient"}
+              ageYears={patientAgeYears ?? null}
+              sex={patientSex ?? null}
+              docpadId={patientDocpadId?.trim() ? patientDocpadId.trim() : null}
+              actionNoun="investigation order"
+              disabled={busy}
+              onConfirm={() => void onConfirm(priority)}
+              side="top"
+              align="end"
+              confirmLabel={busy ? "…" : "Confirm Order"}
+            >
+              <button
+                type="button"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                disabled={busy}
+              >
+                {busy ? "Placing…" : "Generate Bill / Finalize Charges"}
+              </button>
+            </ConfirmationTooltip>
+          ) : (
+            <button
+              type="button"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              onClick={() => void onConfirm(priority)}
+              disabled={busy}
+            >
+              {busy ? "Placing…" : "Confirm Order"}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo } from "react";
 
 /** Single Rx line: use `data.medication` object (not an array). Display dosage, quantity, etc. */
 export type ReceiptMedicationLine = {
+  /** Present on encounter-combined receipts (for dispense / preview patch). */
+  prescription_id?: string | null;
   name: string | null;
   dosage: string | null;
   frequency: string | null;
@@ -24,6 +26,8 @@ export type PrescriptionReceiptPayload = {
     sex: string | null;
   };
   medication: ReceiptMedicationLine;
+  /** When set (encounter receipt), table shows all lines; `medication` mirrors the first for compatibility. */
+  medications?: ReceiptMedicationLine[];
   pharmacist: { name: string | null; registration: string | null };
   hospital: { name: string | null };
   dispensed_at: string | null;
@@ -80,6 +84,8 @@ function quantityFromParts(dispensed: number | null, total: number | null): stri
 }
 
 function parseMedicationObject(x: Record<string, unknown>): ReceiptMedicationLine {
+  const prescription_id =
+    x.prescription_id != null ? readStr(x.prescription_id) : x.id != null ? readStr(x.id) : null;
   const name =
     x.name != null
       ? readStr(x.name)
@@ -98,6 +104,7 @@ function parseMedicationObject(x: Record<string, unknown>): ReceiptMedicationLin
     quantity = quantityFromParts(dispensed_quantity, total_quantity);
   }
   return {
+    prescription_id,
     name,
     dosage,
     frequency: readStr(x.frequency)?.trim() || null,
@@ -111,6 +118,7 @@ function parseMedicationObject(x: Record<string, unknown>): ReceiptMedicationLin
 
 function emptyMedication(): ReceiptMedicationLine {
   return {
+    prescription_id: null,
     name: null,
     dosage: null,
     frequency: null,
@@ -132,6 +140,30 @@ export function withMedicationDispensedQuantity(
     ...medication,
     dispensed_quantity: dispensedQuantity,
     quantity: qty ?? String(dispensedQuantity),
+  };
+}
+
+/** Apply queue draft dispensed quantities to an encounter receipt (matches `prescription_id` on each line). */
+export function patchEncounterReceiptMedications(
+  payload: PrescriptionReceiptPayload,
+  patches: { prescriptionId: string; dispensedQuantity: number }[],
+): PrescriptionReceiptPayload {
+  const byId = new Map(patches.map((p) => [p.prescriptionId, p.dispensedQuantity]));
+  const source =
+    payload.medications && payload.medications.length > 0
+      ? payload.medications
+      : [payload.medication];
+  const next = source.map((m) => {
+    const id = m.prescription_id?.trim();
+    if (!id) return m;
+    const d = byId.get(id);
+    if (d == null) return m;
+    return withMedicationDispensedQuantity(m, d);
+  });
+  return {
+    ...payload,
+    medications: next.length > 0 ? next : undefined,
+    medication: next[0] ?? payload.medication,
   };
 }
 
@@ -183,14 +215,21 @@ function parseReceiptPayload(data: unknown): PrescriptionReceiptPayload | null {
     };
   }
 
+  let medications: ReceiptMedicationLine[] | undefined;
+  if (Array.isArray(o.medications) && o.medications.length > 0) {
+    medications = o.medications
+      .filter((x): x is Record<string, unknown> => x != null && typeof x === "object" && !Array.isArray(x))
+      .map((x) => parseMedicationObject(x));
+  }
+
   const mRaw = o.medication;
   let medication: ReceiptMedicationLine;
-  if (mRaw != null && typeof mRaw === "object" && !Array.isArray(mRaw)) {
+  if (medications && medications.length > 0) {
+    medication = medications[0]!;
+  } else if (mRaw != null && typeof mRaw === "object" && !Array.isArray(mRaw)) {
     medication = parseMedicationObject(mRaw as Record<string, unknown>);
   } else if (Array.isArray(mRaw) && mRaw.length > 0 && typeof mRaw[0] === "object" && mRaw[0] !== null) {
     medication = parseMedicationObject(mRaw[0] as Record<string, unknown>);
-  } else if (Array.isArray(o.medications) && o.medications.length > 0 && typeof o.medications[0] === "object") {
-    medication = parseMedicationObject(o.medications[0] as Record<string, unknown>);
   } else {
     medication = emptyMedication();
     if (o.medicine_name != null) {
@@ -225,6 +264,7 @@ function parseReceiptPayload(data: unknown): PrescriptionReceiptPayload | null {
     receipt_number: o.receipt_number != null ? readStr(o.receipt_number) : null,
     patient,
     medication,
+    medications: medications && medications.length > 0 ? medications : undefined,
     pharmacist,
     hospital,
     dispensed_at: dispensedAt,
@@ -296,9 +336,13 @@ export function PrescriptionReceiptModal({
     return formatReceiptNumberFromPrescriptionId(prescriptionId);
   }, [payload, prescriptionId]);
 
-  if (!open) return null;
+  const medRows = useMemo(() => {
+    if (!payload) return [];
+    if (payload.medications && payload.medications.length > 0) return payload.medications;
+    return payload.medication ? [payload.medication] : [];
+  }, [payload]);
 
-  const m = payload?.medication;
+  if (!open) return null;
 
   return (
     <div className="receipt-modal-root fixed inset-0 z-50 flex items-center justify-center p-4 print:static print:inset-auto print:z-auto print:block print:p-0">
@@ -421,18 +465,25 @@ export function PrescriptionReceiptModal({
                       </tr>
                     </thead>
                     <tbody>
-                      {m ? (
-                        <tr>
-                          <td className="receipt-med-td border border-slate-100 px-2 py-2 font-medium">
-                            {(m.name ?? "—").trim()}
-                          </td>
-                          <td className="receipt-med-td border border-slate-100 px-2 py-2">{m.dosage?.trim() || "—"}</td>
-                          <td className="receipt-med-td border border-slate-100 px-2 py-2">{m.frequency?.trim() || "—"}</td>
-                          <td className="receipt-med-td border border-slate-100 px-2 py-2">{m.duration?.trim() || "—"}</td>
-                          <td className="receipt-med-td receipt-med-td-qty border border-slate-100 px-2 py-2 text-right tabular-nums">
-                            {m.quantity?.trim() || "—"}
-                          </td>
-                        </tr>
+                      {medRows.length > 0 ? (
+                        medRows.map((m, idx) => (
+                          <tr key={m.prescription_id ?? `row-${idx}`}>
+                            <td className="receipt-med-td border border-slate-100 px-2 py-2 font-medium">
+                              <span className="block">{(m.name ?? "—").trim()}</span>
+                              {m.instructions?.trim() && medRows.length > 1 ? (
+                                <span className="mt-0.5 block text-[11px] font-normal text-slate-600 print:text-[8pt]">
+                                  {m.instructions.trim()}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="receipt-med-td border border-slate-100 px-2 py-2">{m.dosage?.trim() || "—"}</td>
+                            <td className="receipt-med-td border border-slate-100 px-2 py-2">{m.frequency?.trim() || "—"}</td>
+                            <td className="receipt-med-td border border-slate-100 px-2 py-2">{m.duration?.trim() || "—"}</td>
+                            <td className="receipt-med-td receipt-med-td-qty border border-slate-100 px-2 py-2 text-right tabular-nums">
+                              {m.quantity?.trim() || "—"}
+                            </td>
+                          </tr>
+                        ))
                       ) : (
                         <tr>
                           <td className="receipt-med-td border border-slate-100 px-2 py-2" colSpan={5}>
@@ -443,10 +494,10 @@ export function PrescriptionReceiptModal({
                     </tbody>
                   </table>
                 </div>
-                {m?.instructions?.trim() ? (
+                {medRows.length === 1 && medRows[0]?.instructions?.trim() ? (
                   <p className="mt-2 text-xs text-slate-600 print:text-[9pt] print:text-black">
                     <span className="font-medium text-slate-700 print:text-black">Instructions:</span>{" "}
-                    {m.instructions.trim()}
+                    {medRows[0].instructions!.trim()}
                   </p>
                 ) : null}
               </section>

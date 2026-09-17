@@ -1,13 +1,19 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { AppWorkspaceProvider } from "../contexts/AppWorkspaceContext";
+import { CurrentUserBadge } from "../components/CurrentUserBadge";
 import { RoleSidebar } from "../components/RoleSidebar";
 import { useAppRole } from "../hooks/useAppRole";
 import { rawRoleHasAdminPrivileges } from "../lib/userRole";
 
 function DashboardLayoutShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const { role, roleRaw, loading } = useAppRole();
   const r = role ?? "doctor";
+
+  const showHeaderUserBadge =
+    !pathname.startsWith("/reception") && !pathname.startsWith("/nursing");
 
   const showAdminConsoleLink =
     role !== "nurse" && rawRoleHasAdminPrivileges(roleRaw) && r === "doctor";
@@ -23,7 +29,14 @@ function DashboardLayoutShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <RoleSidebar role={r} showAdminConsoleLink={showAdminConsoleLink} />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {showHeaderUserBadge ? (
+          <header className="flex shrink-0 items-center justify-end border-b border-border px-4 py-2.5">
+            <CurrentUserBadge />
+          </header>
+        ) : null}
+        {children}
+      </div>
     </div>
   );
 }

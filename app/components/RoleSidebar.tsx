@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Stethoscope } from "lucide-react";
+import { ConciergeBell, Stethoscope } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { unwrapRpcArray } from "../lib/ipdConsults";
@@ -18,6 +18,34 @@ const SIDEBAR_EXPANDED_KEY = "docpad-sidebar-expanded";
 function navS(v: unknown): string {
   if (v == null) return "";
   return String(v).trim();
+}
+
+type EnabledModulesFlags = { pharmacy?: boolean; lab?: boolean; ipd?: boolean; billing?: boolean };
+
+function isModuleEnabled(modules: unknown, key: keyof EnabledModulesFlags): boolean {
+  if (modules == null) return true;
+  if (typeof modules !== "object" || modules === null) return true;
+  const v = (modules as Record<string, unknown>)[key as string];
+  if (v === false) return false;
+  return true;
+}
+
+/** Hide nav items when a flag is false; if `enabled_modules` is null/undefined, all modules on. */
+function shouldShowNavItemForModules(item: NavItem, enabledModules: unknown): boolean {
+  const href = item.href;
+  if (href === "/dashboard/pharmacy" || href.startsWith("/dashboard/pharmacy/")) {
+    return isModuleEnabled(enabledModules, "pharmacy");
+  }
+  if (href === "/lab" || href.startsWith("/lab/")) {
+    return isModuleEnabled(enabledModules, "lab");
+  }
+  if (href === "/dashboard/ipd" || href.startsWith("/dashboard/ipd/") || href === "/ipd/consults" || href.startsWith("/ipd/consults/")) {
+    return isModuleEnabled(enabledModules, "ipd");
+  }
+  if (href === "/billing" || href.startsWith("/billing/")) {
+    return isModuleEnabled(enabledModules, "billing");
+  }
+  return true;
 }
 
 function ChevronLeftIcon({ className }: { className?: string }) {
@@ -101,12 +129,7 @@ function navIconForLabel(label: string): ReactNode {
     );
   }
   if (key === "reception") {
-    return (
-      <svg className={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
-        <path d="M4 19V5a2 2 0 012-2h12a2 2 0 012 2v14" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M4 19h16M9 19v-4h6v4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
+    return <ConciergeBell className={`${box} fill-none`} strokeWidth={1.75} aria-hidden />;
   }
   if (key === "bed management") {
     return (
@@ -286,7 +309,47 @@ export function RoleSidebar({
   showAdminConsoleLink?: boolean;
 }) {
   const pathname = usePathname() ?? "";
-  const items = sidebarItemsForRole(role);
+  const [hospitalEnabledModules, setHospitalEnabledModules] = useState<unknown | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const uid = user?.id;
+      if (!uid) {
+        if (!cancelled) setHospitalEnabledModules(null);
+        return;
+      }
+      const { data: pr } = await supabase
+        .from("practitioners")
+        .select("hospital_id")
+        .or(`id.eq.${uid},user_id.eq.${uid}`)
+        .maybeSingle();
+      const hid = pr?.hospital_id;
+      if (!hid) {
+        if (!cancelled) setHospitalEnabledModules(null);
+        return;
+      }
+      const { data: row } = await supabase
+        .from("hospitals")
+        .select("enabled_modules")
+        .eq("id", hid)
+        .maybeSingle();
+      if (cancelled) return;
+      const mod = (row as { enabled_modules?: unknown } | null)?.enabled_modules;
+      setHospitalEnabledModules(mod ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const items = sidebarItemsForRole(role).filter((item) => {
+    if (hospitalEnabledModules === undefined) return true;
+    return shouldShowNavItemForModules(item, hospitalEnabledModules);
+  });
   const onAdminPath = pathname === "/admin" || pathname.startsWith("/admin/");
   const baseId = useId();
 

@@ -18,6 +18,7 @@ import TimeWheelPicker, {
   time12hTo24hForDb,
 } from "../../../components/TimeWheelPicker";
 import OtRoomDropdown from "../../../components/OtRoomDropdown";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";
 import { Label } from "../../../../components/ui/label";
@@ -210,6 +211,10 @@ export default function ScheduleSurgeryModal({
   const patient = asRec(admissionData?.patient);
   const doctor = asRec(admissionData?.doctor);
   const patientId = s(patient?.id ?? admission?.patient_id);
+  const patientDisplayName = useMemo(
+    () => s(patient?.full_name) || s(patient?.name) || "Patient",
+    [patient],
+  );
   const surgeryIdExisting = s(admission?.surgery_id);
   const [procedureName, setProcedureName] = useState("");
   const [procedureSnomed, setProcedureSnomed] = useState("");
@@ -502,13 +507,23 @@ export default function ScheduleSurgeryModal({
         className="relative z-10 flex max-h-[min(92vh,800px)] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
-          <h2 id={titleId} className="text-lg font-bold text-gray-900">
-            Schedule Surgery
-          </h2>
+        <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <PatientAvatar
+              patientId={patientId || admissionId}
+              patientName={patientDisplayName}
+              size="lg"
+            />
+            <div className="min-w-0">
+              <h2 id={titleId} className="text-lg font-bold text-gray-900">
+                Schedule Surgery
+              </h2>
+              <p className="mt-0.5 truncate text-sm text-gray-600">{patientDisplayName}</p>
+            </div>
+          </div>
           <button
             type="button"
-            className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+            className="shrink-0 rounded-lg p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
             onClick={() => close()}
           >
             <X className="h-5 w-5" />

@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "../../../../components/ui/table";
 import { useSupabase } from "../hooks/useSupabase";
+import { useToast } from "@/src/components/ui/toast-provider";
 
 type VendorRow = {
   id: string;
@@ -93,6 +94,7 @@ function parseVendorRows(raw: unknown): VendorRow[] {
 }
 
 export default function PharmacyVendorsPage() {
+  const { toast } = useToast();
   const supabase = useSupabase();
   const vendorFetchGen = useRef(0);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
@@ -220,7 +222,7 @@ export default function PharmacyVendorsPage() {
     const { error } = await supabase.rpc("deactivate_vendor", { p_vendor_id: row.id });
     setDeactivatingId(null);
     if (error) {
-      window.alert(error.message);
+      toast.error({ title: "Could not deactivate vendor", body: error.message });
       return;
     }
     void load();

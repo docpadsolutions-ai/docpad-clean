@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CurrentUserBadge } from "@/app/components/CurrentUserBadge";
 import { supabase } from "@/app/supabase";
 import { fetchHospitalIdFromPractitionerAuthId } from "../../../lib/authOrg";
 import {
@@ -391,20 +392,23 @@ export default function ReceptionBedsPage() {
             <h1 className="text-2xl font-bold tracking-tight text-gray-900">Bed management</h1>
             <p className="mt-1 text-sm text-gray-600">Live ward map and transfers — reception portal</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={btnSecondary}
-              disabled={refreshing || loading}
-              onClick={() => void load({ silent: true })}
-              aria-label="Refresh bed data"
-            >
-              <RefreshCw className={cn("mr-2 inline h-4 w-4", refreshing && "animate-spin")} />
-              Refresh
-            </button>
-            <Link href="/reception" className={btnSecondary}>
-              ← Reception queue
-            </Link>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <CurrentUserBadge className="shrink-0" />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={btnSecondary}
+                disabled={refreshing || loading}
+                onClick={() => void load({ silent: true })}
+                aria-label="Refresh bed data"
+              >
+                <RefreshCw className={cn("mr-2 inline h-4 w-4", refreshing && "animate-spin")} />
+                Refresh
+              </button>
+              <Link href="/reception" className={btnSecondary}>
+                ← Reception queue
+              </Link>
+            </div>
           </div>
         </header>
 

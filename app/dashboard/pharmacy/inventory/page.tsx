@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { fetchHospitalIdFromPractitionerUser } from "../../../lib/authOrg";
 import { supabase } from "../../../supabase";
 import { InventoryItemModal, type InventoryTableRow } from "./InventoryItemModal";
+import { useToast } from "@/src/components/ui/toast-provider";
 
 function matchesSearch(row: InventoryTableRow, q: string): boolean {
   const t = q.trim().toLowerCase();
@@ -108,6 +109,7 @@ function SortableTh({
 }
 
 export default function PharmacyInventoryPage() {
+  const { toast } = useToast();
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [orgError, setOrgError] = useState<string | null>(null);
 
@@ -257,12 +259,12 @@ export default function PharmacyInventoryPage() {
       const { error } = await supabase.rpc("deactivate_inventory_item", { p_item_id: row.id });
       setDeletingId(null);
       if (error) {
-        window.alert(error.message);
+        toast.error({ title: "Could not deactivate item", body: error.message });
         return;
       }
       if (hospitalId) void loadRows(hospitalId);
     },
-    [hospitalId, loadRows],
+    [hospitalId, loadRows, toast],
   );
 
   return (

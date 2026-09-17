@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 import { NewPatientRegistrationForm } from "../../../components/NewPatientRegistrationForm";
 import { createOpdEncounterForPatient } from "../../../lib/createOpdEncounterForPatient";
 import { fetchAuthOrgId } from "../../../lib/authOrg";
+import { sx } from "../../../lib/supabaseAbort";
 import { supabase } from "../../../supabase";
 
 // ─── Style constants ──────────────────────────────────────────────────────────
@@ -283,54 +284,48 @@ function NewOpdVisitPageInner() {
   const [encounterError, setEncounterError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const signal = controller.signal;
     void (async () => {
-      const { orgId: oid } = await fetchAuthOrgId();
+      const { orgId: oid } = await fetchAuthOrgId(signal);
+      if (signal.aborted) return;
       setOrgId(oid);
     })();
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const signal = controller.signal;
     const appt = searchParams.get("appointmentId")?.trim() ?? "";
     const pat = searchParams.get("patientId")?.trim() ?? "";
+
+    async function loadPatientLabel(patientId: string) {
+      const res = await sx(
+        supabase.from("patients").select("full_name, docpad_id").eq("id", patientId).maybeSingle(),
+        signal,
+      );
+      if (signal.aborted) return;
+      const p = res.data as PatientNameDocpadRow | null;
+      if (p?.full_name) setPreloadedPatientLabel(String(p.full_name));
+      if (p?.docpad_id) setCreatedDocpadId(String(p.docpad_id));
+    }
 
     if (appt && pat) {
       setQueueAppointmentId(appt);
       setNewPatientDbId(pat);
       setCreatedDocpadId("");
-
-      supabase
-        .from("patients")
-        .select("full_name, docpad_id")
-        .eq("id", pat)
-        .maybeSingle()
-        .then((res) => {
-          const p = res.data as PatientNameDocpadRow | null;
-          if (p?.full_name) setPreloadedPatientLabel(String(p.full_name));
-          if (p?.docpad_id) setCreatedDocpadId(String(p.docpad_id));
-        });
-
+      void loadPatientLabel(pat);
       setStep(3);
-      return;
-    }
-
-    if (pat && !appt) {
+    } else if (pat && !appt) {
       setQueueAppointmentId(null);
       setNewPatientDbId(pat);
       setCreatedDocpadId("");
-
-      supabase
-        .from("patients")
-        .select("full_name, docpad_id")
-        .eq("id", pat)
-        .maybeSingle()
-        .then((res) => {
-          const p = res.data as PatientNameDocpadRow | null;
-          if (p?.full_name) setPreloadedPatientLabel(String(p.full_name));
-          if (p?.docpad_id) setCreatedDocpadId(String(p.docpad_id));
-        });
-
+      void loadPatientLabel(pat);
       setStep(3);
     }
+
+    return () => controller.abort();
   }, [searchParams]);
 
   async function handleStartEncounter() {

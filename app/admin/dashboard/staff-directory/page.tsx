@@ -1,6 +1,6 @@
 "use client";
 
-import { formatDistanceToNow, isValid, parseISO } from "date-fns";
+import { addDays, format, formatDistanceToNow, isValid, parseISO } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
@@ -52,6 +52,23 @@ function todayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
+function defaultAssignmentEndYmd(startYmd: string): string {
+  const s = parseISO(startYmd);
+  if (!isValid(s)) return todayYmd();
+  return format(addDays(s, 30), "yyyy-MM-dd");
+}
+
+/** Display e.g. "17 Apr – 17 May 2026" */
+function formatAssignmentRangeDisplay(startYmd: string, endYmd: string): string {
+  const s = parseISO(startYmd);
+  const e = parseISO(endYmd);
+  if (!isValid(s) || !isValid(e)) return "";
+  if (s.getFullYear() !== e.getFullYear()) {
+    return `${format(s, "d MMM yyyy")} – ${format(e, "d MMM yyyy")}`;
+  }
+  return `${format(s, "d MMM")} – ${format(e, "d MMM yyyy")}`;
+}
+
 function isNurseRole(r: StaffDirectoryRow): boolean {
   return /\bnurse\b/i.test(r.role) || /\bnurse\b/i.test(r.sub_role);
 }
@@ -86,8 +103,10 @@ export default function StaffDirectoryPage() {
   const [wardAssignmentsToday, setWardAssignmentsToday] = useState<Record<string, string>>({});
   const [wardOptions, setWardOptions] = useState<{ id: string; name: string }[]>([]);
   const [wardAssignOpenId, setWardAssignOpenId] = useState<string | null>(null);
-  const [assignDate, setAssignDate] = useState(todayYmd);
-  const [assignWardId, setAssignWardId] = useState("");
+  const [assignStartDate, setAssignStartDate] = useState(todayYmd);
+  const [assignEndDate, setAssignEndDate] = useState(() => defaultAssignmentEndYmd(todayYmd()));
+  const [assignSelectedWardIds, setAssignSelectedWardIds] = useState<Set<string>>(() => new Set());
+  const [assignSlotLoading, setAssignSlotLoading] = useState(false);
   const [assignShift, setAssignShift] = useState<"Morning" | "Afternoon" | "Night" | "General">("Morning");
   const [assignSaving, setAssignSaving] = useState(false);
   const [assignerPractitionerId, setAssignerPractitionerId] = useState<string | null>(null);
@@ -169,8 +188,14 @@ export default function StaffDirectoryPage() {
 
     const ymd = todayYmd();
     const [{ data: wardsData, error: wErr }, { data: assignsData, error: aErr }] = await Promise.all([
-      supabase.from("ipd_wards").select("id, name").eq("hospital_id", hid).order("name"),
-      supabase.from("ward_staff_assignments").select("practitioner_id, shift, ward_id").eq("hospital_id", hid).eq("assigned_date", ymd),
+      supabase.from("ipd_wards").select("id, name").eq("hospital_id", hid).eq("is_active", true).order("name"),
+      supabase
+        .from("ward_staff_assignments")
+        .select("practitioner_id, shift, ward_id, start_date, end_date")
+        .eq("hospital_id", hid)
+        .lte("start_date", ymd)
+        .gte("end_date", ymd)
+        .eq("is_active", true),
     ]);
     if (wErr) console.warn("[staff-directory] ipd_wards:", wErr.message);
     if (aErr) console.warn("[staff-directory] ward_staff_assignments:", aErr.message);
@@ -183,16 +208,42 @@ export default function StaffDirectoryPage() {
       })),
     );
     const wmap = new Map(wards.map((w) => [String(w.id), String(w.name ?? "Ward")]));
-    const amap: Record<string, string> = {};
+    const amap: Record<
+      string,
+      { wards: string[]; shift: string; minStart: string; maxEnd: string }
+    > = {};
     for (const raw of assignsData ?? []) {
       const a = raw as Record<string, unknown>;
       const pid = String(a.practitioner_id ?? "");
       const wid = String(a.ward_id ?? "");
       const shift = String(a.shift ?? "").trim();
+      const sd = a.start_date != null ? String(a.start_date).slice(0, 10) : "";
+      const ed = a.end_date != null ? String(a.end_date).slice(0, 10) : "";
       const wn = wmap.get(wid) ?? "Ward";
-      if (pid) amap[pid] = shift ? `${wn} · ${shift}` : wn;
+      if (!pid) continue;
+      if (!amap[pid]) {
+        amap[pid] = {
+          wards: [],
+          shift: shift || "",
+          minStart: sd || ymd,
+          maxEnd: ed || ymd,
+        };
+      }
+      amap[pid].wards.push(wn);
+      if (shift && !amap[pid].shift) amap[pid].shift = shift;
+      if (sd && sd < amap[pid].minStart) amap[pid].minStart = sd;
+      if (ed && ed > amap[pid].maxEnd) amap[pid].maxEnd = ed;
     }
-    setWardAssignmentsToday(amap);
+    const summary: Record<string, string> = {};
+    for (const [pid, { wards: wlist, shift, minStart, maxEnd }] of Object.entries(amap)) {
+      const uniq = [...new Set(wlist)];
+      const wardPart =
+        uniq.length === 0 ? "—" : uniq.length <= 2 ? uniq.join(", ") : `${uniq.length} wards`;
+      const range = formatAssignmentRangeDisplay(minStart, maxEnd);
+      const rangePart = range ? ` · ${range}` : "";
+      summary[pid] = shift ? `${wardPart} · ${shift}${rangePart}` : `${wardPart}${rangePart}`;
+    }
+    setWardAssignmentsToday(summary);
     setLoading(false);
   }, []);
 
@@ -233,6 +284,41 @@ export default function StaffDirectoryPage() {
   useEffect(() => {
     setSubRoleFilter("all");
   }, [roleFilter]);
+
+  useEffect(() => {
+    if (!wardAssignOpenId) {
+      setAssignSelectedWardIds(new Set());
+      setAssignSlotLoading(false);
+      return;
+    }
+    if (!hospitalId) return;
+    let cancelled = false;
+    setAssignSlotLoading(true);
+    void (async () => {
+      const { data, error } = await supabase
+        .from("ward_staff_assignments")
+        .select("ward_id")
+        .eq("hospital_id", hospitalId)
+        .eq("practitioner_id", wardAssignOpenId)
+        .eq("shift", assignShift)
+        .lte("start_date", assignEndDate)
+        .gte("end_date", assignStartDate)
+        .eq("is_active", true);
+      if (cancelled) return;
+      setAssignSlotLoading(false);
+      if (error) {
+        console.warn("[staff-directory] load ward assignment slot:", error.message);
+        setAssignSelectedWardIds(new Set());
+        return;
+      }
+      setAssignSelectedWardIds(
+        new Set((data ?? []).map((row) => String((row as { ward_id?: unknown }).ward_id ?? "")).filter(Boolean)),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wardAssignOpenId, hospitalId, assignStartDate, assignEndDate, assignShift]);
 
   const roleOptions = useMemo(() => {
     const fromData = new Set<string>();
@@ -289,29 +375,104 @@ export default function StaffDirectoryPage() {
         toast.error("Could not resolve your practitioner ID for assignment.");
         return;
       }
-      if (!assignWardId) {
-        toast.error("Select a ward.");
+      if (assignEndDate < assignStartDate) {
+        toast.error("End date must be on or after start date.");
         return;
       }
       setAssignSaving(true);
-      const { error } = await supabase.from("ward_staff_assignments").insert({
-        hospital_id: hospitalId,
-        practitioner_id: nurseId,
-        ward_id: assignWardId,
-        shift: assignShift,
-        assigned_date: assignDate,
-        assigned_by: assignerPractitionerId,
-      });
-      setAssignSaving(false);
-      if (error) {
-        toast.error(error.message);
+
+      const { data: existingRows, error: exErr } = await supabase
+        .from("ward_staff_assignments")
+        .select("id, ward_id, is_active")
+        .eq("hospital_id", hospitalId)
+        .eq("practitioner_id", nurseId)
+        .eq("shift", assignShift)
+        .eq("is_active", true)
+        .lte("start_date", assignEndDate)
+        .gte("end_date", assignStartDate);
+
+      if (exErr) {
+        setAssignSaving(false);
+        toast.error(exErr.message);
         return;
       }
-      toast.success("Ward assignment saved");
+
+      const byWard = new Map(
+        (existingRows ?? []).map((row) => [
+          String((row as { ward_id?: unknown }).ward_id ?? ""),
+          row as { id: string; ward_id: string; is_active: boolean | null },
+        ]),
+      );
+
+      const selected = assignSelectedWardIds;
+
+      const toDeactivate = [...byWard.entries()]
+        .filter(([wid, row]) => wid && !selected.has(wid) && row.is_active !== false)
+        .map(([, row]) => row.id);
+
+      if (toDeactivate.length > 0) {
+        const { error: deErr } = await supabase
+          .from("ward_staff_assignments")
+          .update({ is_active: false })
+          .in("id", toDeactivate);
+        if (deErr) {
+          setAssignSaving(false);
+          toast.error(deErr.message);
+          return;
+        }
+      }
+
+      for (const ward_id of selected) {
+        const ex = byWard.get(ward_id);
+        if (ex) {
+          const { error: upErr } = await supabase
+            .from("ward_staff_assignments")
+            .update({
+              start_date: assignStartDate,
+              end_date: assignEndDate,
+              is_active: true,
+              assigned_by: assignerPractitionerId,
+            })
+            .eq("id", ex.id);
+          if (upErr) {
+            setAssignSaving(false);
+            toast.error(upErr.message);
+            return;
+          }
+        } else {
+          const { error: insErr } = await supabase.from("ward_staff_assignments").insert({
+            hospital_id: hospitalId,
+            practitioner_id: nurseId,
+            ward_id,
+            shift: assignShift,
+            start_date: assignStartDate,
+            end_date: assignEndDate,
+            assigned_by: assignerPractitionerId,
+            is_active: true,
+          });
+          if (insErr) {
+            setAssignSaving(false);
+            toast.error(insErr.message);
+            return;
+          }
+        }
+      }
+
+      setAssignSaving(false);
+      const n = selected.size;
+      toast.success(`Assigned to ${n} ward${n === 1 ? "" : "s"}`);
       setWardAssignOpenId(null);
       await load(hospitalId);
     },
-    [hospitalId, assignerPractitionerId, assignWardId, assignShift, assignDate, load],
+    [
+      hospitalId,
+      assignerPractitionerId,
+      assignSelectedWardIds,
+      assignShift,
+      assignStartDate,
+      assignEndDate,
+      load,
+    ],
   );
 
   const emptyAfterLoad = !loading && !error && rows.length === 0;
@@ -463,9 +624,9 @@ export default function StaffDirectoryPage() {
                             >
                               <TableCell className="font-medium text-foreground">
                                 <div>{r.full_name}</div>
-                                {isNurseRole(r) ? (
+                                    {isNurseRole(r) ? (
                                   <div className="mt-0.5 text-xs text-muted-foreground">
-                                    {wardAssignmentsToday[r.id] ?? "Not assigned today"}
+                                    {wardAssignmentsToday[r.id] ?? "No ward assignment for today"}
                                   </div>
                                 ) : null}
                               </TableCell>
@@ -503,9 +664,10 @@ export default function StaffDirectoryPage() {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setWardAssignOpenId((id) => (id === r.id ? null : r.id));
-                                        setAssignDate(todayYmd());
+                                        const t = todayYmd();
+                                        setAssignStartDate(t);
+                                        setAssignEndDate(defaultAssignmentEndYmd(t));
                                         setAssignShift("Morning");
-                                        setAssignWardId(wardOptions[0]?.id ?? "");
                                       }}
                                     >
                                       Assign to ward
@@ -524,28 +686,81 @@ export default function StaffDirectoryPage() {
                                     <p className="text-sm font-semibold text-foreground">Ward assignment</p>
                                     <div className="grid gap-3 sm:grid-cols-2">
                                       <div className="space-y-1.5">
-                                        <Label htmlFor={`ward-date-${r.id}`}>Date</Label>
+                                        <Label htmlFor={`ward-start-${r.id}`}>Start date</Label>
                                         <Input
-                                          id={`ward-date-${r.id}`}
+                                          id={`ward-start-${r.id}`}
                                           type="date"
-                                          value={assignDate}
-                                          onChange={(e) => setAssignDate(e.target.value)}
+                                          value={assignStartDate}
+                                          onChange={(e) => setAssignStartDate(e.target.value)}
                                         />
                                       </div>
                                       <div className="space-y-1.5">
-                                        <Label htmlFor={`ward-sel-${r.id}`}>Ward</Label>
-                                        <Select value={assignWardId} onValueChange={setAssignWardId}>
-                                          <SelectTrigger id={`ward-sel-${r.id}`}>
-                                            <SelectValue placeholder="Select ward" />
-                                          </SelectTrigger>
-                                          <SelectContent>
+                                        <Label htmlFor={`ward-end-${r.id}`}>End date</Label>
+                                        <Input
+                                          id={`ward-end-${r.id}`}
+                                          type="date"
+                                          value={assignEndDate}
+                                          min={assignStartDate}
+                                          onChange={(e) => setAssignEndDate(e.target.value)}
+                                        />
+                                      </div>
+                                      {assignEndDate < assignStartDate ? (
+                                        <p className="text-sm text-red-600 sm:col-span-2" role="alert">
+                                          End date must be on or after start date.
+                                        </p>
+                                      ) : null}
+                                      <div className="space-y-1.5 sm:col-span-2">
+                                        <Label>Wards</Label>
+                                        {assignSlotLoading ? (
+                                          <p className="text-sm text-muted-foreground">Loading wards…</p>
+                                        ) : wardOptions.length === 0 ? (
+                                          <p className="text-sm text-muted-foreground">No active wards for this hospital.</p>
+                                        ) : (
+                                          <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-border bg-muted/20 p-3">
+                                            <label className="flex cursor-pointer items-center gap-2 border-b border-border pb-2 text-sm font-semibold">
+                                              <input
+                                                type="checkbox"
+                                                className="h-4 w-4 rounded border-border"
+                                                checked={
+                                                  wardOptions.length > 0 &&
+                                                  wardOptions.every((w) => assignSelectedWardIds.has(w.id))
+                                                }
+                                                onChange={() => {
+                                                  const allOn =
+                                                    wardOptions.length > 0 &&
+                                                    wardOptions.every((w) => assignSelectedWardIds.has(w.id));
+                                                  if (allOn) {
+                                                    setAssignSelectedWardIds(new Set());
+                                                  } else {
+                                                    setAssignSelectedWardIds(new Set(wardOptions.map((w) => w.id)));
+                                                  }
+                                                }}
+                                              />
+                                              All wards
+                                            </label>
                                             {wardOptions.map((w) => (
-                                              <SelectItem key={w.id} value={w.id}>
-                                                {w.name}
-                                              </SelectItem>
+                                              <label
+                                                key={w.id}
+                                                className="flex cursor-pointer items-center gap-2 text-sm"
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  className="h-4 w-4 rounded border-border"
+                                                  checked={assignSelectedWardIds.has(w.id)}
+                                                  onChange={() => {
+                                                    setAssignSelectedWardIds((prev) => {
+                                                      const next = new Set(prev);
+                                                      if (next.has(w.id)) next.delete(w.id);
+                                                      else next.add(w.id);
+                                                      return next;
+                                                    });
+                                                  }}
+                                                />
+                                                <span>{w.name}</span>
+                                              </label>
                                             ))}
-                                          </SelectContent>
-                                        </Select>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                     <div className="space-y-1.5">
@@ -569,7 +784,16 @@ export default function StaffDirectoryPage() {
                                       </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
-                                      <Button type="button" size="sm" disabled={assignSaving} onClick={() => void saveWardAssignment(r.id)}>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        disabled={
+                                          assignSaving ||
+                                          assignSlotLoading ||
+                                          assignEndDate < assignStartDate
+                                        }
+                                        onClick={() => void saveWardAssignment(r.id)}
+                                      >
                                         {assignSaving ? "Saving…" : "Save assignment"}
                                       </Button>
                                       <Button type="button" size="sm" variant="outline" onClick={() => setWardAssignOpenId(null)}>

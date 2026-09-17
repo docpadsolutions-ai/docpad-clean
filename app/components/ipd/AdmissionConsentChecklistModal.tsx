@@ -2,14 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { supabase } from "../../../lib/supabase";
 import { IPD_ADMISSION_CONSENT_CATALOG } from "./ipdConsentCatalog";
-import { devBypassIpdConsents, IPD_DEFAULT_HOSPITAL_ID } from "@/app/lib/ipdConstants";
+import { devBypassIpdConsents, IPD_DEFAULT_HOSPITAL_ID } from "../../lib/ipdConstants";
 import {
+  duplicateActiveAdmissionMessage,
   linkPreAdmissionAssessmentToAdmission,
   parseFirstWardBedFromAvailability,
   rpcAdmitPatient,
-} from "@/app/lib/ipdData";
+} from "../../lib/ipdData";
+import { personInitialsDisplay } from "../../lib/personInitialsDisplay";
+import RequestCustomConsentModal, { type CustomConsentFormPayload } from "./RequestCustomConsentModal";
 
 export type AdmissionConsentChecklistModalProps = {
   open: boolean;
@@ -36,8 +40,8 @@ export type AdmissionConsentChecklistModalProps = {
 function initials(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean);
   if (p.length === 0) return "?";
-  if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
-  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+  if (p.length === 1) return personInitialsDisplay(p[0].slice(0, 2));
+  return personInitialsDisplay(p[0][0] + p[p.length - 1][0]);
 }
 
 export default function AdmissionConsentChecklistModal({
@@ -64,6 +68,8 @@ export default function AdmissionConsentChecklistModal({
   /** Local “obtained” flags for UI before rows exist in DB */
   const [localObtained, setLocalObtained] = useState<Record<string, boolean>>({});
   const [wardLabel, setWardLabel] = useState(wardBedLabel);
+  const [customModalOpen, setCustomModalOpen] = useState(false);
+  const [stagedCustomConsents, setStagedCustomConsents] = useState<CustomConsentFormPayload[]>([]);
 
   useEffect(() => {
     setWardLabel(wardBedLabel);
@@ -73,6 +79,8 @@ export default function AdmissionConsentChecklistModal({
     if (!open) {
       setLocalObtained({});
       setErr(null);
+      setStagedCustomConsents([]);
+      setCustomModalOpen(false);
       return;
     }
     void (async () => {
@@ -106,7 +114,7 @@ export default function AdmissionConsentChecklistModal({
     }
     setBusy(true);
     try {
-      const { admissionId, error } = await rpcAdmitPatient(supabase, {
+      const { admissionId, error, duplicateActiveAdmission } = await rpcAdmitPatient(supabase, {
         p_hospital_id: hospitalId,
         p_patient_id: patientId,
         p_opd_encounter_id: opdEncounterId,
@@ -117,6 +125,24 @@ export default function AdmissionConsentChecklistModal({
         p_primary_diagnosis_display: pPrimaryDiagnosisDisplay,
         p_pre_admission_assessment_id: preAdmissionAssessmentId?.trim() || undefined,
       });
+      if (duplicateActiveAdmission) {
+        const dupId = duplicateActiveAdmission.id;
+        toast.warning("Already admitted", {
+          description: duplicateActiveAdmissionMessage(duplicateActiveAdmission.admissionNumber),
+          ...(dupId
+            ? {
+                action: {
+                  label: "Open in IPD",
+                  onClick: () => {
+                    window.location.assign(`/ipd/admissions/${encodeURIComponent(dupId)}`);
+                  },
+                },
+              }
+            : {}),
+        });
+        onClose();
+        return;
+      }
       if (error || !admissionId) {
         setErr(error?.message ?? "Admission failed");
         return;
@@ -130,6 +156,28 @@ export default function AdmissionConsentChecklistModal({
         );
         if (linkErr) {
           setErr(linkErr.message);
+          return;
+        }
+      }
+      for (const c of stagedCustomConsents) {
+        const notesParts: string[] = [];
+        if (c.clinicalReason.trim()) notesParts.push(`Clinical reason: ${c.clinicalReason.trim()}`);
+        const { error: ce } = await supabase.from("ipd_consents").insert({
+          hospital_id: hospitalId,
+          admission_id: admissionId,
+          patient_id: patientId,
+          consent_type: "custom",
+          is_custom: true,
+          custom_title: c.customTitle.trim(),
+          custom_description: c.customDescription.trim(),
+          status: "pending",
+          requested_by: admittingDoctorId.trim(),
+          requested_at: new Date().toISOString(),
+          notes: notesParts.length ? notesParts.join("\n") : null,
+          fhir_json: { urgency: c.urgency },
+        });
+        if (ce) {
+          setErr(ce.message);
           return;
         }
       }
@@ -150,6 +198,8 @@ export default function AdmissionConsentChecklistModal({
     pPrimaryDiagnosisDisplay,
     pPrimaryDiagnosisIcd10,
     preAdmissionAssessmentId,
+    stagedCustomConsents,
+    patientId,
   ]);
 
   if (!open) return null;
@@ -260,6 +310,61 @@ export default function AdmissionConsentChecklistModal({
               ))}
             </ul>
           </div>
+
+          <details className="mt-5 rounded-xl border border-dashed border-amber-200/80 bg-amber-50/40 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/20">
+            <summary className="cursor-pointer list-none text-sm font-medium text-amber-950 hover:underline dark:text-amber-100 [&::-webkit-details-marker]:hidden">
+              Need an additional consent? → + Add Custom Consent
+            </summary>
+            <div className="mt-3 space-y-2 pb-1">
+              {stagedCustomConsents.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Optional. Request a hospital-specific consent; it will be saved when you complete admission.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {stagedCustomConsents.map((c, idx) => (
+                    <li
+                      key={`${c.customTitle}-${idx}`}
+                      className="flex items-start justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground">{c.customTitle}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2">{c.customDescription}</p>
+                        <p className="mt-1 text-[10px] font-medium text-amber-800 dark:text-amber-200">
+                          {c.urgency === "urgent" ? "Urgent" : "Routine"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onClick={() =>
+                          setStagedCustomConsents((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setCustomModalOpen(true)}
+                className="w-full rounded-lg border border-amber-300/80 bg-white px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-100/80 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-50 dark:hover:bg-amber-900/50"
+              >
+                + Add Custom Consent
+              </button>
+            </div>
+          </details>
+
+          <RequestCustomConsentModal
+            open={customModalOpen}
+            onClose={() => setCustomModalOpen(false)}
+            mode="stage"
+            onStage={(payload) => setStagedCustomConsents((prev) => [...prev, payload])}
+          />
 
           <div className="mt-4">
             <div className="mb-1 flex gap-0.5">

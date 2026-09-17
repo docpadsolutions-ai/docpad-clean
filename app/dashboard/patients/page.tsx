@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ClinicalQueueRow from "../../components/ClinicalQueueRow";
+import { useKeyboardNav } from "@/src/hooks/use-keyboard-nav";
+import { KeyboardShortcutsHelp } from "@/src/components/ui/keyboard-shortcuts-help";
+import { patientIdsWithSimilarNamePeer } from "../../lib/patientNameSimilarity";
 import { createEncounterFromAppointment } from "../../lib/opdEncounterFromAppointment";
 import type { PatientQueueVitals } from "../../lib/patientQueueData";
 import { vitalsFromJson } from "../../lib/patientQueueData";
 import { fetchAuthOrgId } from "../../lib/authOrg";
+import { isSupabaseAbortError, sx } from "../../lib/supabaseAbort";
 import { supabase } from "../../supabase";
 
 type NestedPatient = {
@@ -64,7 +68,7 @@ export default function PatientsPage() {
   const [startingAppointmentId, setStartingAppointmentId] = useState<string | null>(null);
   const startLock = useRef(false);
 
-  const loadWaitingRoom = useCallback(async (oid: string | null) => {
+  const loadWaitingRoom = useCallback(async (oid: string | null, signal?: AbortSignal) => {
     setLoading(true);
     setFetchError(null);
 
@@ -83,11 +87,20 @@ export default function PatientsPage() {
       .eq("hospital_id", id)
       .order("created_at", { ascending: true });
 
-    const { data, error } = await q;
+    const { data, error } = await sx(q, signal);
 
     if (error) {
+      if (isSupabaseAbortError(error)) {
+        setLoading(false);
+        return;
+      }
       setFetchError(error.message);
       setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    if (signal?.aborted) {
       setLoading(false);
       return;
     }
@@ -97,12 +110,19 @@ export default function PatientsPage() {
 
     const linked = new Set<string>();
     if (apptIds.length > 0) {
-      const { data: encs, error: encErr } = await supabase
-        .from("opd_encounters")
-        .select("appointment_id")
-        .eq("hospital_id", id)
-        .in("appointment_id", apptIds);
+      const { data: encs, error: encErr } = await sx(
+        supabase
+          .from("opd_encounters")
+          .select("appointment_id")
+          .eq("hospital_id", id)
+          .in("appointment_id", apptIds),
+        signal,
+      );
       if (encErr) {
+        if (isSupabaseAbortError(encErr)) {
+          setLoading(false);
+          return;
+        }
         setFetchError(encErr.message);
         setRows([]);
         setLoading(false);
@@ -152,10 +172,11 @@ export default function PatientsPage() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { orgId: oid, error } = await fetchAuthOrgId();
-      if (cancelled) return;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    void (async () => {
+      const { orgId: oid, error } = await fetchAuthOrgId(signal);
+      if (signal.aborted) return;
       setOrgId(oid);
       if (error) {
         setFetchError(error.message);
@@ -163,12 +184,18 @@ export default function PatientsPage() {
         setLoading(false);
         return;
       }
-      await loadWaitingRoom(oid);
+      await loadWaitingRoom(oid, signal);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [loadWaitingRoom]);
+
+  const similarNamePatientIds = useMemo(
+    () => patientIdsWithSimilarNamePeer(rows.map((r) => ({ id: r.patientId, fullName: r.patientName }))),
+    [rows],
+  );
+
+  const [patientListFilter, setPatientListFilter] = useState("");
+  const patientListSearchRef = useRef<HTMLInputElement>(null);
 
   const onRowClick = useCallback(
     async (row: WaitingRow) => {
@@ -191,6 +218,23 @@ export default function PatientsPage() {
     },
     [orgId, loadWaitingRoom, router],
   );
+
+  const filteredRows = useMemo(() => {
+    const q = patientListFilter.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const blob = [r.patientName, r.patientMeta, r.timeLabel, r.chiefComplaint ?? ""].join(" ").toLowerCase();
+      return blob.includes(q);
+    });
+  }, [rows, patientListFilter]);
+
+  const patientsKb = useKeyboardNav(filteredRows, (row) => void onRowClick(row), {
+    searchInputRef: patientListSearchRef,
+    onClearSelection: () => setPatientListFilter(""),
+    enabled: !loading && filteredRows.length > 0 && rows.length > 0,
+  });
+
+  const filteredOutPatients = !loading && rows.length > 0 && filteredRows.length === 0 && Boolean(patientListFilter.trim());
 
   return (
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-6 lg:p-8">
@@ -218,9 +262,34 @@ export default function PatientsPage() {
       </div>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <h2 className="text-lg font-bold text-slate-900">Waiting room</h2>
-          <p className="text-xs text-slate-500">Joined on patients(full_name, age_years, sex)</p>
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Waiting room</h2>
+            <p className="text-xs text-slate-500">Joined on patients(full_name, age_years, sex)</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="patients-waiting-filter" className="sr-only">
+              Filter patient list
+            </label>
+            <input
+              id="patients-waiting-filter"
+              ref={patientListSearchRef}
+              type="search"
+              value={patientListFilter}
+              onChange={(e) => setPatientListFilter(e.target.value)}
+              placeholder="Filter…"
+              className="w-full min-w-[10rem] max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              autoComplete="off"
+            />
+            <KeyboardShortcutsHelp
+              entries={[
+                { keys: "↑ / ↓", label: "Move highlight" },
+                { keys: "Enter", label: "Start chart" },
+                { keys: "Esc", label: "Clear highlight & filter" },
+                { keys: "/", label: "Focus filter" },
+              ]}
+            />
+          </div>
         </div>
 
         {fetchError ? (
@@ -231,23 +300,47 @@ export default function PatientsPage() {
           </div>
         ) : rows.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-slate-600">No waiting appointments.</div>
+        ) : filteredOutPatients ? (
+          <div className="px-6 py-12 text-center text-sm text-slate-600">No rows match your filter.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="whitespace-nowrap px-5 py-3 lg:px-6">Time</th>
-                  <th className="min-w-[160px] px-3 py-3">Patient</th>
-                  <th className="min-w-[200px] px-3 py-3">Vitals</th>
-                  <th className="min-w-[200px] px-3 py-3">Chief complaint</th>
-                  <th className="whitespace-nowrap px-3 py-3">Status</th>
-                  <th className="whitespace-nowrap px-5 py-3 text-right lg:px-6"> </th>
+            <table
+              role="grid"
+              aria-label="Waiting room patients"
+              aria-rowcount={filteredRows.length}
+              className="w-full min-w-[900px] text-left text-sm"
+            >
+              <thead role="rowgroup">
+                <tr
+                  role="row"
+                  className="border-b border-slate-100 bg-slate-50/90 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                >
+                  <th role="columnheader" className="whitespace-nowrap px-5 py-3 lg:px-6">
+                    Time
+                  </th>
+                  <th role="columnheader" className="min-w-[160px] px-3 py-3">
+                    Patient
+                  </th>
+                  <th role="columnheader" className="min-w-[200px] px-3 py-3">
+                    Vitals
+                  </th>
+                  <th role="columnheader" className="min-w-[200px] px-3 py-3">
+                    Chief complaint
+                  </th>
+                  <th role="columnheader" className="whitespace-nowrap px-3 py-3">
+                    Status
+                  </th>
+                  <th role="columnheader" className="whitespace-nowrap px-5 py-3 text-right lg:px-6">
+                    {" "}
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((row) => (
+              <tbody role="rowgroup" className="divide-y divide-slate-100">
+                {filteredRows.map((row, rowIndex) => (
                   <ClinicalQueueRow
+                    ref={patientsKb.assignRowRef(rowIndex)}
                     key={row.appointmentId}
+                    patientId={row.patientId}
                     primaryColumn={row.timeLabel}
                     patientName={row.patientName}
                     patientMeta={row.patientMeta}
@@ -259,6 +352,8 @@ export default function PatientsPage() {
                     onClick={() => void onRowClick(row)}
                     disabled={startingAppointmentId === row.appointmentId}
                     secondaryLink={{ href: `/dashboard/patients/${row.patientId}/insurance`, label: "Insurance card" }}
+                    hasSimilarName={similarNamePatientIds.has(row.patientId)}
+                    keyboardSelected={patientsKb.isRowSelected(rowIndex)}
                   />
                 ))}
               </tbody>

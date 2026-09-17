@@ -10,6 +10,7 @@ import {
   practitionerHeaderTitle,
 } from "../../lib/practitionerHeader";
 import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
+import { sx } from "../../lib/supabaseAbort";
 import { supabase } from "../../supabase";
 import IpdClinicalCommandCenter from "./IpdClinicalCommandCenter";
 import WardCensusTab from "./WardCensusTab";
@@ -35,11 +36,12 @@ export default function IpdDashboardPage() {
   const [headerLoading, setHeaderLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const signal = controller.signal;
     void (async () => {
       setHeaderLoading(true);
-      const { orgId, error: orgErr } = await fetchAuthOrgId();
-      if (cancelled) return;
+      const { orgId, error: orgErr } = await fetchAuthOrgId(signal);
+      if (signal.aborted) return;
 
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData.user?.id;
@@ -49,12 +51,15 @@ export default function IpdDashboardPage() {
       if (uid) {
         tasks.push(
           (async () => {
-            const { data: profile, error } = await supabase
-              .from("practitioners")
-              .select("first_name, last_name, full_name, role, user_role, specialty, qualification")
-              .or(practitionersOrFilterForAuthUid(uid))
-              .maybeSingle();
-            if (cancelled) return;
+            const { data: profile, error } = await sx(
+              supabase
+                .from("practitioners")
+                .select("first_name, last_name, full_name, role, user_role, specialty, qualification")
+                .or(practitionersOrFilterForAuthUid(uid))
+                .maybeSingle(),
+              signal,
+            );
+            if (signal.aborted) return;
             if (error || !profile) {
               setHeaderTitle(null);
               setHeaderSubtitle(null);
@@ -84,12 +89,11 @@ export default function IpdDashboardPage() {
         setHospitalId(orgId);
         tasks.push(
           (async () => {
-            const { data: org } = await supabase
-              .from("organizations")
-              .select("name")
-              .eq("id", orgId)
-              .maybeSingle();
-            if (cancelled) return;
+            const { data: org } = await sx(
+              supabase.from("organizations").select("name").eq("id", orgId).maybeSingle(),
+              signal,
+            );
+            if (signal.aborted) return;
             const n = org?.name != null ? String(org.name).trim() : "";
             setHospitalName(n || null);
           })(),
@@ -100,11 +104,9 @@ export default function IpdDashboardPage() {
       }
 
       await Promise.all(tasks);
-      if (!cancelled) setHeaderLoading(false);
+      if (!signal.aborted) setHeaderLoading(false);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, []);
 
   const todayLabel = useMemo(

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../supabase";
+import { useToast } from "@/src/components/ui/toast-provider";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
@@ -50,6 +51,7 @@ export function PharmacyExpiringStockWidget({
   countsError,
   onMarkedExpired,
 }: Props) {
+  const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [rows, setRows] = useState<ExpiringStockRow[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -85,13 +87,13 @@ export function PharmacyExpiringStockWidget({
       const { error } = await supabase.rpc("mark_expired_stock", { p_restock_line_id: restockLineId });
       setBusyId(null);
       if (error) {
-        window.alert(error.message);
+        toast.error({ title: "Could not mark expired", body: error.message });
         return;
       }
       if (hospitalId?.trim()) void loadList(hospitalId.trim());
       onMarkedExpired();
     },
-    [hospitalId, loadList, onMarkedExpired],
+    [hospitalId, loadList, onMarkedExpired, toast],
   );
 
   const total = criticalCount + warningCount;

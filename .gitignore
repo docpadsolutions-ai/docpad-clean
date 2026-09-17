@@ -24,3 +24,14 @@ app/snomed/
 **/.DS_Store
 .cursor/
 tsconfig.tsbuildinfo
+
+# Large source data (re-download from CMS when needed)
+*icd10cm-order-*.txt
+
+# Local tool settings and debug/sample images (may contain patient data)
+.claude/settings.local.json
+services/ecg-digitizer/*.jpg
+services/ecg-digitizer/*.png
+
+# Keep Python microservice source under version control
+!services/**/*.py

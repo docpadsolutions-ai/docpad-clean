@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { unwrapRpcArray } from "../../lib/ipdConsults";
+import { isSupabaseAbortError, sx } from "../../lib/supabaseAbort";
 import { supabase } from "../../supabase";
 
 export type IpdDoctorAdmissionSummaryRow = {
   admission_id: string;
+  patient_id?: string | null;
   /** Human-readable ref e.g. IPD-2026-000001 */
   admission_number?: string | null;
   /** Admit date/time for display (tooltip on HD badge) */
@@ -38,6 +40,7 @@ export type IpdCommandTab = "all" | "post_op" | "discharge" | "pending_admission
 /** Row shape from `get_pending_admissions` RPC (hospital-scoped). */
 export type PendingIpdAdmissionRow = {
   admission_id: string;
+  patient_id?: string | null;
   admission_number?: string | null;
   admission_type?: string | null;
   admitted_at?: string | null;
@@ -78,6 +81,7 @@ export function normalizeIpdSummaryRow(raw: Record<string, unknown>): IpdDoctorA
 
   return {
     admission_id: id,
+    patient_id: toStr(raw.patient_id),
     admission_number:
       toStr(raw.admission_number) ??
       toStr(raw.ipd_admission_number) ??
@@ -193,6 +197,7 @@ function normalizePendingAdmissionRow(raw: Record<string, unknown>): PendingIpdA
   if (!id) return null;
   return {
     admission_id: id,
+    patient_id: toStr(raw.patient_id),
     admission_number: toStr(raw.admission_number) ?? toStr(raw.ipd_admission_number),
     admission_type: toStr(raw.admission_type),
     admitted_at:
@@ -225,15 +230,17 @@ export function useIpdDoctorAdmissions(hospitalId: string | null) {
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingError, setPendingError] = useState<string | null>(null);
 
-  const load = useCallback(async (opts?: { silent?: boolean }) => {
+  const load = useCallback(async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
     const silent = opts?.silent === true;
+    const signal = opts?.signal;
     if (!silent) {
       setLoading(true);
       setFetchError(null);
     }
     try {
-      const { data, error } = await supabase.from("ipd_doctor_admissions_summary").select("*");
+      const { data, error } = await sx(supabase.from("ipd_doctor_admissions_summary").select("*"), signal);
       if (error) {
+        if (isSupabaseAbortError(error)) return;
         if (!silent) setFetchError(error.message);
         setRows([]);
         return;
@@ -251,19 +258,27 @@ export function useIpdDoctorAdmissions(hospitalId: string | null) {
     }
   }, []);
 
-  const loadPending = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadPending = useCallback(async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
     if (!hospitalId) {
       setPendingRows([]);
       setPendingLoading(false);
       return;
     }
     const silent = opts?.silent === true;
+    const signal = opts?.signal;
     if (!silent) {
       setPendingLoading(true);
       setPendingError(null);
     }
-    const { data, error } = await supabase.rpc("get_pending_admissions", { p_hospital_id: hospitalId });
+    const { data, error } = await sx(
+      supabase.rpc("get_pending_admissions", { p_hospital_id: hospitalId }),
+      signal,
+    );
     if (error) {
+      if (isSupabaseAbortError(error)) {
+        if (!silent) setPendingLoading(false);
+        return;
+      }
       if (!silent) {
         setPendingError(error.message);
         setPendingRows([]);
@@ -279,11 +294,15 @@ export function useIpdDoctorAdmissions(hospitalId: string | null) {
   }, [hospitalId]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load({ signal: controller.signal });
+    return () => controller.abort();
   }, [load]);
 
   useEffect(() => {
-    void loadPending();
+    const controller = new AbortController();
+    void loadPending({ signal: controller.signal });
+    return () => controller.abort();
   }, [loadPending]);
 
   useEffect(() => {

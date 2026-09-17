@@ -34,6 +34,15 @@ function s(v: unknown): string {
   return String(v).trim();
 }
 
+function AiBadge() {
+  return (
+    <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full border border-purple-200 bg-purple-50 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wide text-purple-600">
+      <svg className="h-2 w-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74L12 2z"/></svg>
+      AI
+    </span>
+  );
+}
+
 function numMoney(v: unknown): number {
   const x = typeof v === "number" ? v : Number(v);
   return Number.isFinite(x) ? x : 0;
@@ -549,6 +558,8 @@ export function DischargeSummaryModal({
   const [compiled, setCompiled] = useState<CompileDischargeSummaryResult | null>(null);
   const [form, setForm] = useState<DischargeFormState>(() => emptyForm());
   const [aiCompilePhase, setAiCompilePhase] = useState<AiCompilePhase>("idle");
+  const [aiDraftPhase, setAiDraftPhase] = useState<"idle" | "generating" | "done">("idle");
+  const [aiFilledFields, setAiFilledFields] = useState<Set<string>>(new Set());
   const [pendingFinalize, setPendingFinalize] = useState(false);
   const skipNextAutosave = useRef(true);
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
@@ -803,6 +814,64 @@ export function DischargeSummaryModal({
     }
   }, [runUpsert]);
 
+  const handleAiAutoDraft = useCallback(async () => {
+    setAiDraftPhase("generating");
+    try {
+      // Ensure a draft record exists before invoking the edge function
+      await runUpsert("draft");
+
+      // Re-fetch to get the stable discharge summary ID
+      const { data: freshData } = await rpcCompileDischargeSummary(supabase, admissionId);
+      const summaryId = asRec(asRec(freshData)?.draft)?.id;
+      if (!summaryId) throw new Error("Could not locate discharge summary record. Save a draft first.");
+
+      // Call the edge function — use the anon key as Authorization to bypass ES256 JWT rejection
+      // (Supabase projects using ES256 session tokens are rejected by the HS256-only edge runtime)
+      const { error: fnErr } = await supabase.functions.invoke("generate-discharge-summary", {
+        body: { discharge_summary_id: String(summaryId) },
+        headers: {
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""}`,
+        },
+      });
+      if (fnErr) throw fnErr;
+
+      // Re-fetch and seed the form with AI-generated content
+      const { data: aiData } = await rpcCompileDischargeSummary(supabase, admissionId);
+      if (aiData) {
+        setCompiled(aiData);
+        const next = seedFormFromCompiled(aiData);
+        skipNextAutosave.current = true;
+        setForm(next);
+        setTimeout(() => { skipNextAutosave.current = false; }, 0);
+        setAiFilledFields(new Set([
+          "hospitalCourseSummary",
+          "investigationsSummary",
+          "dischargeInstructions",
+          "dietAdvice",
+          "activityRestrictions",
+          "woundCareInstructions",
+          "postOpProtocol",
+          "physiotherapyPlan",
+        ]));
+      }
+      setAiDraftPhase("done");
+    } catch (e) {
+      toast.error("AI Auto-Draft failed: " + (e instanceof Error ? e.message : String(e)));
+      setAiDraftPhase("idle");
+    }
+  }, [admissionId, runUpsert]);
+
+  // On load: if a previous generation was in-flight (page refreshed), auto-trigger
+  useEffect(() => {
+    if (!compiled) return;
+    const draftStatus = s(asRec(compiled?.draft)?.ai_draft_status);
+    if (draftStatus === "generating") {
+      void handleAiAutoDraft();
+    }
+  // Only run once after compiled is first populated
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compiled?.draft]);
+
   const canFinalize = Boolean(form.dischargeCondition) && Boolean(form.dischargeDate);
 
   const handleFinalizeClick = useCallback(() => {
@@ -935,6 +1004,27 @@ export function DischargeSummaryModal({
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {/* AI Auto-Draft button */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={phase === "loading" || aiDraftPhase === "generating"}
+                onClick={() => void handleAiAutoDraft()}
+                className="gap-1.5 border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-60"
+              >
+                {aiDraftPhase === "generating" ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    Generating draft with AI…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                    AI Auto-Draft
+                  </>
+                )}
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -1000,6 +1090,34 @@ export function DischargeSummaryModal({
             {compileErr}
           </p>
         ) : null}
+
+        {aiDraftPhase === "generating" && (
+          <div className="flex items-center gap-2.5 border-b border-purple-100 bg-purple-50 px-4 py-2.5">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-purple-500" aria-hidden />
+            <p className="text-xs font-medium text-purple-800">
+              Generating AI draft from IPD clinical data — this may take 15–30 seconds…
+            </p>
+          </div>
+        )}
+
+        {aiDraftPhase === "done" && (
+          <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+              <p className="text-xs font-semibold text-amber-900">
+                AI draft ready — please review and edit before signing.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAiDraftPhase("idle")}
+              className="shrink-0 text-[10px] text-amber-500 hover:text-amber-700"
+              aria-label="Dismiss AI draft notice"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {phase === "loading" ? (
@@ -1113,12 +1231,15 @@ export function DischargeSummaryModal({
                 open={openSec.course}
                 onToggle={() => toggle("course")}
                 titleActions={
-                  <DischargeCompileAiButton
-                    phase={aiCompilePhase}
-                    disabled={notes.length === 0}
-                    disabledTitle={notes.length === 0 ? "Add progress notes first" : undefined}
-                    onClick={() => void handleCompileDischargeAi()}
-                  />
+                  <div className="flex items-center gap-2">
+                    {aiFilledFields.has("hospitalCourseSummary") && <AiBadge />}
+                    <DischargeCompileAiButton
+                      phase={aiCompilePhase}
+                      disabled={notes.length === 0}
+                      disabledTitle={notes.length === 0 ? "Add progress notes first" : undefined}
+                      onClick={() => void handleCompileDischargeAi()}
+                    />
+                  </div>
                 }
                 headerRight={
                   isExtracting ? (
@@ -1150,12 +1271,15 @@ export function DischargeSummaryModal({
                 open={openSec.investigations}
                 onToggle={() => toggle("investigations")}
                 titleActions={
-                  <DischargeCompileAiButton
-                    phase={aiCompilePhase}
-                    disabled={notes.length === 0}
-                    disabledTitle={notes.length === 0 ? "Add progress notes first" : undefined}
-                    onClick={() => void handleCompileDischargeAi()}
-                  />
+                  <div className="flex items-center gap-2">
+                    {aiFilledFields.has("investigationsSummary") && <AiBadge />}
+                    <DischargeCompileAiButton
+                      phase={aiCompilePhase}
+                      disabled={notes.length === 0}
+                      disabledTitle={notes.length === 0 ? "Add progress notes first" : undefined}
+                      onClick={() => void handleCompileDischargeAi()}
+                    />
+                  </div>
                 }
               >
                 <Textarea
@@ -1378,7 +1502,9 @@ export function DischargeSummaryModal({
                     </div>
                   </div>
                   <div>
-                    <Label className={labelClass}>Diet advice</Label>
+                    <Label className={labelClass}>
+                      Diet advice{aiFilledFields.has("dietAdvice") && <AiBadge />}
+                    </Label>
                     <div className="mt-1">
                       <DischargeTextareaWithMic
                         fieldKey="dietAdvice"
@@ -1395,7 +1521,9 @@ export function DischargeSummaryModal({
                     </div>
                   </div>
                   <div>
-                    <Label className={labelClass}>Activity restrictions</Label>
+                    <Label className={labelClass}>
+                      Activity restrictions{aiFilledFields.has("activityRestrictions") && <AiBadge />}
+                    </Label>
                     <div className="mt-1">
                       <DischargeTextareaWithMic
                         fieldKey="activityRestrictions"
@@ -1412,7 +1540,9 @@ export function DischargeSummaryModal({
                     </div>
                   </div>
                   <div>
-                    <Label className={labelClass}>Wound care</Label>
+                    <Label className={labelClass}>
+                      Wound care{aiFilledFields.has("woundCareInstructions") && <AiBadge />}
+                    </Label>
                     <div className="mt-1">
                       <DischargeTextareaWithMic
                         fieldKey="woundCareInstructions"
@@ -1429,7 +1559,9 @@ export function DischargeSummaryModal({
                     </div>
                   </div>
                   <div>
-                    <Label className={labelClass}>Post-op protocol</Label>
+                    <Label className={labelClass}>
+                      Post-op protocol{aiFilledFields.has("postOpProtocol") && <AiBadge />}
+                    </Label>
                     <div className="mt-1">
                       <DischargeTextareaWithMic
                         fieldKey="postOpProtocol"
@@ -1446,7 +1578,9 @@ export function DischargeSummaryModal({
                     </div>
                   </div>
                   <div>
-                    <Label className={labelClass}>Physiotherapy plan</Label>
+                    <Label className={labelClass}>
+                      Physiotherapy plan{aiFilledFields.has("physiotherapyPlan") && <AiBadge />}
+                    </Label>
                     <div className="mt-1">
                       <DischargeTextareaWithMic
                         fieldKey="physiotherapyPlan"
@@ -1463,7 +1597,9 @@ export function DischargeSummaryModal({
                     </div>
                   </div>
                   <div>
-                    <Label className={labelClass}>Additional discharge instructions</Label>
+                    <Label className={labelClass}>
+                      Additional discharge instructions{aiFilledFields.has("dischargeInstructions") && <AiBadge />}
+                    </Label>
                     <div className="mt-1">
                       <DischargeTextareaWithMic
                         fieldKey="dischargeInstructions"

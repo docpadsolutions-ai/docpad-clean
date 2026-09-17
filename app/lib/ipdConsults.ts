@@ -8,6 +8,11 @@ export function unwrapRpcArray<T = Record<string, unknown>>(data: unknown): T[] 
     const inner = (data as { data: unknown }).data;
     if (Array.isArray(inner)) return inner as T[];
   }
+  // Some clients wrap a single array property, e.g. { get_ward_census: [...] }
+  if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+    const vals = Object.values(data);
+    if (vals.length === 1 && Array.isArray(vals[0])) return vals[0] as T[];
+  }
   return [];
 }
 

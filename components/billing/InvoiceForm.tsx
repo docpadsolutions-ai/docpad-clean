@@ -10,6 +10,13 @@ import {
   type ChargeDefinitionOption,
 } from "@/components/billing/ChargeItemSelector";
 import { computeLineNet, useInvoiceCreate } from "@/hooks/useInvoiceCreate";
+import {
+  patientIdsWithSimilarNamePeer,
+  similarFullNamesToSelected,
+  similarPatientNamesWarningBody,
+} from "@/app/lib/patientNameSimilarity";
+import { useToast } from "@/src/components/ui/toast-provider";
+import { PatientActionConfirmPopover } from "@/src/components/patient/patient-action-confirm-popover";
 
 type PatientOpt = { id: string; full_name: string | null; docpad_id: string | null; phone: string | null };
 type EncounterOpt = { id: string; encounter_date: string | null; status: string | null };
@@ -24,6 +31,7 @@ function formatInr(n: number): string {
 }
 
 export function InvoiceForm() {
+  const { toast } = useToast();
   const {
     patientId,
     setPatientId,
@@ -62,6 +70,13 @@ export function InvoiceForm() {
   const [billingAccts, setBillingAccts] = useState<BillingAcctOpt[]>([]);
   const [acctLoading, setAcctLoading] = useState(false);
   const patientPickerRef = useRef<HTMLDivElement>(null);
+  const [pickFlashId, setPickFlashId] = useState<string | null>(null);
+  const [billPatientRow, setBillPatientRow] = useState<{
+    full_name: string | null;
+    docpad_id: string | null;
+    age_years: number | null;
+    sex: string | null;
+  } | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -73,14 +88,30 @@ export function InvoiceForm() {
   useEffect(() => {
     if (!patientId) {
       setPatientHospitalId(null);
+      setBillPatientRow(null);
       return;
     }
     let cancelled = false;
     void (async () => {
-      const { data } = await supabase.from("patients").select("hospital_id").eq("id", patientId).maybeSingle();
+      const { data } = await supabase
+        .from("patients")
+        .select("hospital_id, full_name, docpad_id, age_years, sex")
+        .eq("id", patientId)
+        .maybeSingle();
       if (cancelled) return;
-      const ph = data?.hospital_id;
+      if (!data) {
+        setPatientHospitalId(null);
+        setBillPatientRow(null);
+        return;
+      }
+      const ph = data.hospital_id;
       setPatientHospitalId(ph != null && ph !== "" ? String(ph).trim() : null);
+      setBillPatientRow({
+        full_name: data.full_name ?? null,
+        docpad_id: data.docpad_id ?? null,
+        age_years: data.age_years ?? null,
+        sex: data.sex ?? null,
+      });
     })();
     return () => {
       cancelled = true;
@@ -171,8 +202,26 @@ export function InvoiceForm() {
     })();
   }, [patientId, hospitalId]);
 
+  const patientSearchSimilarIds = useMemo(
+    () =>
+      patientIdsWithSimilarNamePeer(
+        patientOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" })),
+      ),
+    [patientOptions],
+  );
+
   const onPickPatient = useCallback(
     (p: PatientOpt) => {
+      const entries = patientOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" }));
+      const body = similarPatientNamesWarningBody(
+        p.full_name ?? "Patient",
+        similarFullNamesToSelected(p.id, p.full_name ?? "", entries),
+      );
+      if (body) {
+        toast.warning({ title: "Similar patient names", body });
+      }
+      setPickFlashId(p.id);
+      window.setTimeout(() => setPickFlashId((cur) => (cur === p.id ? null : cur)), 500);
       setPatientId(p.id);
       const label = [p.full_name, p.docpad_id].filter(Boolean).join(" · ") || p.id.slice(0, 8);
       setSelectedPatientLabel(label);
@@ -180,7 +229,7 @@ export function InvoiceForm() {
       setOpdEncounterId(null);
       setBillingAccountId(null);
     },
-    [setPatientId, setOpdEncounterId, setBillingAccountId],
+    [patientOptions, setPatientId, setOpdEncounterId, setBillingAccountId, toast],
   );
 
   const onSelectCharge = useCallback(
@@ -278,10 +327,19 @@ export function InvoiceForm() {
                           <li key={p.id}>
                             <button
                               type="button"
-                              className="w-full rounded-md px-2 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                              className={`w-full rounded-md px-2 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 ${
+                                patientSearchSimilarIds.has(p.id) ? "border-l-4 border-amber-300/90 bg-amber-50/50" : ""
+                              } ${pickFlashId === p.id ? "patient-row-select-flash" : ""}`}
                               onClick={() => onPickPatient(p)}
                             >
-                              <span className="font-medium text-slate-900 dark:text-slate-100">{p.full_name ?? "—"}</span>
+                              <span className="font-medium text-slate-900 dark:text-slate-100">
+                                {p.full_name ?? "—"}
+                                {patientSearchSimilarIds.has(p.id) ? (
+                                  <span className="ml-1 text-amber-600" title="Similar name in this list" aria-label="Similar name warning">
+                                    ⚠️
+                                  </span>
+                                ) : null}
+                              </span>
                               <span className="mt-0.5 block text-xs text-slate-500">
                                 {p.docpad_id ?? "—"}
                                 {p.phone ? ` · ${p.phone}` : ""}
@@ -476,15 +534,28 @@ export function InvoiceForm() {
           {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Save draft
         </button>
-        <button
-          type="button"
-          disabled={isSubmitting}
-          onClick={() => void submitIssue()}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+        <PatientActionConfirmPopover
+          patientId={patientId ?? ""}
+          patientName={billPatientRow?.full_name?.trim() || selectedPatientLabel.trim() || "Patient"}
+          ageYears={billPatientRow?.age_years ?? null}
+          sex={billPatientRow?.sex ?? null}
+          docpadId={billPatientRow?.docpad_id ?? null}
+          actionNoun="invoice issue"
+          disabled={isSubmitting || !patientId?.trim()}
+          onConfirm={() => void submitIssue()}
+          side="top"
+          align="end"
+          confirmLabel="Confirm"
         >
-          {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Issue invoice
-        </button>
+          <button
+            type="button"
+            disabled={isSubmitting || !patientId?.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Generate bill
+          </button>
+        </PatientActionConfirmPopover>
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { forwardRef, useState } from "react";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
 import type { PatientQueueVitals } from "../lib/patientQueueData";
 
 function formatVitalsLine(v: PatientQueueVitals): string {
@@ -20,6 +22,7 @@ function displayToken(token: string | null | undefined): string {
 }
 
 export type ClinicalQueueRowProps = {
+  patientId: string;
   /** First column: time (waiting) or token (returning) */
   primaryColumn: string;
   patientName: string;
@@ -35,44 +38,64 @@ export type ClinicalQueueRowProps = {
   disabled?: boolean;
   /** Stops row click propagation (e.g. insurance card flow). */
   secondaryLink?: { href: string; label: string };
+  /** Another row in the same list has a similar name (near-duplicate). */
+  hasSimilarName?: boolean;
+  /** Keyboard roving selection (parent-driven). */
+  keyboardSelected?: boolean;
 };
 
 /**
  * Single queue table row — encapsulates all `<tr>` / `<td>` markup.
  */
-export default function ClinicalQueueRow({
-  primaryColumn,
-  patientName,
-  patientMeta,
-  vitals,
-  chiefComplaint,
-  statusLabel,
-  statusBadgeClassName,
-  sourceBadge,
-  actionLabel,
-  onClick,
-  disabled,
-  secondaryLink,
-}: ClinicalQueueRowProps) {
+const ClinicalQueueRow = forwardRef<HTMLTableRowElement, ClinicalQueueRowProps>(function ClinicalQueueRow(
+  {
+    patientId,
+    primaryColumn,
+    patientName,
+    patientMeta,
+    vitals,
+    chiefComplaint,
+    statusLabel,
+    statusBadgeClassName,
+    sourceBadge,
+    actionLabel,
+    onClick,
+    disabled,
+    secondaryLink,
+    hasSimilarName = false,
+    keyboardSelected = false,
+  },
+  ref,
+) {
+  const [selectFlash, setSelectFlash] = useState(false);
   const vitalsLine = formatVitalsLine(vitals);
   const cc = chiefComplaint?.trim() || "—";
 
+  function activate() {
+    if (disabled) return;
+    setSelectFlash(true);
+    window.setTimeout(() => setSelectFlash(false), 500);
+    onClick();
+  }
+
   return (
     <tr
-      className={`transition ${disabled ? "opacity-60" : "cursor-pointer hover:bg-slate-50/90"}`}
-      onClick={disabled ? undefined : onClick}
+      ref={ref}
+      className={`transition ${hasSimilarName ? "border-l-4 border-amber-300/90 bg-amber-50/50" : ""} ${selectFlash ? "patient-row-select-flash" : ""} ${disabled ? "opacity-60" : "cursor-pointer hover:bg-slate-50/90"} ${keyboardSelected ? "z-[1] outline outline-2 outline-offset-[-2px] outline-blue-600 ring-1 ring-blue-500/20" : ""}`}
+      onClick={disabled ? undefined : activate}
       onKeyDown={
         disabled
           ? undefined
           : (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                onClick();
+                activate();
               }
             }
       }
-      tabIndex={disabled ? undefined : 0}
-      role="button"
+      tabIndex={disabled ? undefined : keyboardSelected ? 0 : -1}
+      role="row"
+      aria-selected={keyboardSelected}
       aria-disabled={disabled || undefined}
     >
       <td className="whitespace-nowrap px-5 py-4 font-mono text-sm font-semibold text-slate-900 lg:px-6">
@@ -80,7 +103,15 @@ export default function ClinicalQueueRow({
       </td>
       <td className="min-w-[160px] px-3 py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="font-semibold text-slate-900">{patientName}</p>
+          <PatientAvatar patientId={patientId} patientName={patientName} size="sm" />
+          <p className="font-semibold text-slate-900">
+            {patientName}
+            {hasSimilarName ? (
+              <span className="ml-1 inline-block text-amber-600" title="Similar name to another patient in this list" aria-label="Similar name warning">
+                ⚠️
+              </span>
+            ) : null}
+          </p>
           {sourceBadge ? (
             <span
               className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ${sourceBadge.className}`}
@@ -134,6 +165,7 @@ export default function ClinicalQueueRow({
       </td>
     </tr>
   );
-}
+});
 
+export default ClinicalQueueRow;
 export { displayToken };

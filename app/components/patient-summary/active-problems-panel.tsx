@@ -113,10 +113,12 @@ async function fetchEncounterDiagnosisFallback(patientId: string): Promise<{
 export default function ActiveProblemsPanel({
   patientId,
   reloadToken,
+  onAdd,
 }: {
   patientId: string;
   /** Change to refetch after adds/edits elsewhere (e.g. problem list modal). */
   reloadToken?: number | string;
+  onAdd?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const [rows, setRows] = useState<ProblemCardRow[]>([]);
@@ -169,26 +171,35 @@ export default function ActiveProblemsPanel({
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-slate-50/90 to-white px-4 py-3 text-left transition hover:bg-slate-50"
-        aria-expanded={open}
-      >
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gradient-to-r from-slate-50/90 to-white px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left transition hover:opacity-90"
+          aria-expanded={open}
+        >
           {open ? (
             <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" strokeWidth={2.5} aria-hidden />
           ) : (
             <ChevronRight className="h-4 w-4 shrink-0 text-gray-500" strokeWidth={2.5} aria-hidden />
           )}
-          <span className="text-sm font-bold text-gray-900">Active problems</span>
+          <span className="text-sm font-bold text-gray-900">Active Problems</span>
           {!loading && rows.length > 0 && (
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">
               {rows.length}
             </span>
           )}
-        </div>
-      </button>
+        </button>
+        {onAdd ? (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="shrink-0 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-blue-700"
+          >
+            + Add
+          </button>
+        ) : null}
+      </div>
 
       {open && (
         <div className="px-4 py-3">

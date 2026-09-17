@@ -10,6 +10,7 @@ import {
 } from "../lib/practitionerAuthLookup";
 import { parsePractitionerRoleColumn, type UserRole } from "../lib/userRole";
 import { DocPadLogoMark } from "../components/DocPadLogoMark";
+import { sx } from "../lib/supabaseAbort";
 import { supabase } from "../supabase";
 
 function ClipboardListIcon({ className }: { className?: string }) {
@@ -60,25 +61,29 @@ export default function DashboardPage() {
   const practitionerRoleRef = useRef<UserRole | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const signal = controller.signal;
 
     async function loadProfile() {
       setOrganizationLoading(true);
 
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
-      if (!userId || cancelled) {
+      if (!userId || signal.aborted) {
         setOrganizationLoading(false);
         return;
       }
 
-      const { data: profile, error } = await supabase
-        .from("practitioners")
-        .select("first_name, last_name, full_name, role, user_role")
-        .or(practitionersOrFilterForAuthUid(userId))
-        .maybeSingle();
+      const { data: profile, error } = await sx(
+        supabase
+          .from("practitioners")
+          .select("first_name, last_name, full_name, role, user_role")
+          .or(practitionersOrFilterForAuthUid(userId))
+          .maybeSingle(),
+        signal,
+      );
 
-      if (cancelled) return;
+      if (signal.aborted) return;
 
       if (error || !profile) {
         setOrganizationLoading(false);
@@ -97,26 +102,27 @@ export default function DashboardPage() {
         setWelcomeLine(`Welcome, Dr. ${full}`);
       }
 
-      const { orgId: oid } = await fetchAuthOrgId();
+      const { orgId: oid } = await fetchAuthOrgId(signal);
+      if (signal.aborted) {
+        setOrganizationLoading(false);
+        return;
+      }
       if (oid != null && oid !== "") {
-        const { data: org } = await supabase
-          .from("organizations")
-          .select("name")
-          .eq("id", oid)
-          .maybeSingle();
+        const { data: org } = await sx(
+          supabase.from("organizations").select("name").eq("id", oid).maybeSingle(),
+          signal,
+        );
 
-        if (!cancelled && org?.name) {
+        if (!signal.aborted && org?.name) {
           setOrganizationName(String(org.name).trim());
         }
       }
 
-      if (!cancelled) setOrganizationLoading(false);
+      if (!signal.aborted) setOrganizationLoading(false);
     }
 
-    loadProfile();
-    return () => {
-      cancelled = true;
-    };
+    void loadProfile();
+    return () => controller.abort();
   }, []);
 
   return (

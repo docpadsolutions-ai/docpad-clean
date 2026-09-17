@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAuthOrgId } from "../../../../lib/authOrg";
 import { practitionersOrFilterForAuthUid } from "../../../../lib/practitionerAuthLookup";
+import { clinicalIndicationFromEncounterDiagnosis } from "../../../../lib/buildEncounterClinicalSummary";
 import { mapCatalogCategoryToInvestigationTestCategory } from "../../../../lib/investigationTestCategory";
 import { supabase } from "../../../../supabase";
+import { PatientActionConfirmPopover } from "@/src/components/patient/patient-action-confirm-popover";
 
 type TestCatalogueRow = {
   id: string;
@@ -113,6 +115,15 @@ export default function InvestigationPlanPage() {
   const [pendingPricing, setPendingPricing] = useState<PendingPriceItem[]>([]);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [pricingBusyId, setPricingBusyId] = useState<string | null>(null);
+  const [patientCard, setPatientCard] = useState<{
+    full_name: string | null;
+    docpad_id: string | null;
+    age_years: number | null;
+    sex: string | null;
+  } | null>(null);
+
+  const [diagnosisIndicationDefault, setDiagnosisIndicationDefault] = useState("");
+  const diagnosisIndicationRef = useRef("");
 
   const orderedIds = useMemo(() => new Set(orderLines.map((l) => l.catalogueId)), [orderLines]);
 
@@ -131,11 +142,15 @@ export default function InvestigationPlanPage() {
     let cancelled = false;
     setEncounterLoading(true);
     setEncounterError(null);
+    setDiagnosisIndicationDefault("");
+    diagnosisIndicationRef.current = "";
 
     void (async () => {
       const { data: enc, error: encErr } = await supabase
         .from("opd_encounters")
-        .select("patient_id, doctor_id, hospital_id")
+        .select(
+          "patient_id, doctor_id, hospital_id, diagnosis_fhir, working_diagnosis, diagnosis_term, diagnosis_icd10, diagnosis_snomed, diagnosis_sctid, diagnosis_concept_id",
+        )
         .eq("id", encounterId)
         .maybeSingle();
 
@@ -146,9 +161,16 @@ export default function InvestigationPlanPage() {
         setPatientId(null);
         setEncounterDoctorId(null);
         setHospitalId(null);
+        setPatientCard(null);
+        setDiagnosisIndicationDefault("");
+        diagnosisIndicationRef.current = "";
         setEncounterLoading(false);
         return;
       }
+
+      const indicationFromDx = clinicalIndicationFromEncounterDiagnosis(enc as Record<string, unknown>);
+      setDiagnosisIndicationDefault(indicationFromDx);
+      diagnosisIndicationRef.current = indicationFromDx;
 
       const pid = enc.patient_id != null ? String(enc.patient_id).trim() : "";
       const did = enc.doctor_id != null ? String(enc.doctor_id).trim() : "";
@@ -181,6 +203,23 @@ export default function InvestigationPlanPage() {
       if (!pid) setEncounterError("Encounter has no patient.");
       else if (!hid) setEncounterError("Hospital context missing for this encounter.");
       else if (!resolvedDoctor) setEncounterError("No ordering doctor on file — link a doctor to this encounter or your account.");
+      if (pid) {
+        const { data: pat } = await supabase
+          .from("patients")
+          .select("full_name, docpad_id, age_years, sex")
+          .eq("id", pid)
+          .maybeSingle();
+        if (!cancelled && pat) {
+          setPatientCard({
+            full_name: pat.full_name ?? null,
+            docpad_id: pat.docpad_id ?? null,
+            age_years: pat.age_years ?? null,
+            sex: pat.sex ?? null,
+          });
+        }
+      } else {
+        setPatientCard(null);
+      }
       setEncounterLoading(false);
     })();
 
@@ -218,6 +257,15 @@ export default function InvestigationPlanPage() {
     void loadCatalogue(hospitalId);
   }, [hospitalId, loadCatalogue]);
 
+  useEffect(() => {
+    if (!diagnosisIndicationDefault.trim()) return;
+    setOrderLines((prev) =>
+      prev.map((l) =>
+        norm(l.clinical_indication) === "" ? { ...l, clinical_indication: diagnosisIndicationDefault } : l,
+      ),
+    );
+  }, [diagnosisIndicationDefault]);
+
   const filteredCatalogue = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return catalogue;
@@ -245,13 +293,14 @@ export default function InvestigationPlanPage() {
 
   function addTest(row: TestCatalogueRow) {
     if (orderedIds.has(row.id)) return;
+    const fill = diagnosisIndicationRef.current;
     setOrderLines((prev) => [
       ...prev,
       {
         catalogueId: row.id,
         catalog: row,
         priority: "routine",
-        clinical_indication: "",
+        clinical_indication: fill,
       },
     ]);
   }
@@ -399,8 +448,17 @@ export default function InvestigationPlanPage() {
 
     setPlacing(true);
     const now = new Date().toISOString();
+    const orderedMs = Date.parse(now);
     const rows = orderLines.map((line) => {
       const c = line.catalog;
+      const tatNum =
+        c.expected_tat_hours != null && Number.isFinite(Number(c.expected_tat_hours))
+          ? Number(c.expected_tat_hours)
+          : NaN;
+      const expected_at =
+        Number.isFinite(orderedMs) && Number.isFinite(tatNum) && tatNum > 0
+          ? new Date(orderedMs + tatNum * 3600000).toISOString()
+          : null;
       return {
         hospital_id: hospitalId,
         patient_id: patientId,
@@ -417,9 +475,10 @@ export default function InvestigationPlanPage() {
         clinical_indication: line.clinical_indication.trim() || null,
         ordered_at: now,
         expected_tat_hours: c.expected_tat_hours ?? null,
+        expected_at,
         snomed_procedure_code: norm(c.snomed_code) || null,
         snomed_procedure_display: norm(c.snomed_display) || null,
-        billing_status: "unbilled",
+        billing_status: "sent_to_billing",
         fhir_service_request_json: null,
       };
     });
@@ -710,9 +769,22 @@ export default function InvestigationPlanPage() {
                 )}
               </div>
               <div className="border-t border-gray-100 p-4">
-                <button type="button" className={btnPrimary} disabled={placing || orderLines.length === 0} onClick={() => void placeOrder()}>
-                  {placing ? "Placing order…" : "Place order"}
-                </button>
+                <PatientActionConfirmPopover
+                  patientId={patientId ?? ""}
+                  patientName={patientCard?.full_name?.trim() || "Patient"}
+                  ageYears={patientCard?.age_years ?? null}
+                  sex={patientCard?.sex ?? null}
+                  docpadId={patientCard?.docpad_id ?? null}
+                  actionNoun="investigation order"
+                  disabled={placing || orderLines.length === 0 || !patientId}
+                  onConfirm={() => void placeOrder()}
+                  side="top"
+                  align="start"
+                >
+                  <button type="button" className={btnPrimary} disabled={placing || orderLines.length === 0}>
+                    {placing ? "Placing order…" : "Place order"}
+                  </button>
+                </PatientActionConfirmPopover>
               </div>
             </section>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type SnomedConcept = {
   term: string;
@@ -98,6 +98,7 @@ export default function SnomedSearch({
   conceptCacheType,
   specialty,
   doctorId,
+  disabled = false,
 }: {
   placeholder: string;
   hierarchy?: "diagnosis" | "complaint" | "procedure" | "allergy" | "finding";
@@ -116,12 +117,15 @@ export default function SnomedSearch({
   conceptCacheType?: SnomedConceptCacheType;
   specialty?: string;
   doctorId?: string;
+  disabled?: boolean;
 }) {
   const [isMounted, setIsMounted] = useState(false);
   const [internalQuery, setInternalQuery] = useState("");
   const [results, setResults] = useState<SnomedConcept[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  /** Dropdown must not open from pre-filled value on mount/remount — only after focus or typing. */
+  const allowDropdownRef = useRef(false);
 
   const isControlled = value !== undefined;
   const query = isControlled ? value : internalQuery;
@@ -140,6 +144,11 @@ export default function SnomedSearch({
   }, []);
 
   useEffect(() => {
+    if (disabled) {
+      setResults([]);
+      setIsOpen(false);
+      return;
+    }
     if (query.length < 2) {
       setResults([]);
       setIsOpen(false);
@@ -168,7 +177,10 @@ export default function SnomedSearch({
         const data = (await res.json()) as { results?: SnomedConcept[] };
         const list = Array.isArray(data.results) ? data.results : [];
         setResults(list);
-        setIsOpen(list.length > 0 || (allowFreeTextNoCode && q.length >= 2));
+        const mayShow =
+          allowDropdownRef.current &&
+          (list.length > 0 || (allowFreeTextNoCode && q.length >= 2));
+        setIsOpen(mayShow);
       } catch (err) {
         console.error("SNOMED search failed", err);
         setResults([]);
@@ -193,6 +205,7 @@ export default function SnomedSearch({
     conceptCacheType,
     specialty,
     doctorId,
+    disabled,
   ]);
 
   if (!isMounted) {
@@ -236,8 +249,28 @@ export default function SnomedSearch({
           className={INPUT_FIELD}
           placeholder={placeholder}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onBlur={() => setTimeout(() => setIsOpen(false), 150)}
+          disabled={disabled}
+          onChange={(e) => {
+            if (disabled) return;
+            allowDropdownRef.current = true;
+            setQuery(e.target.value);
+          }}
+          onFocus={() => {
+            if (disabled) return;
+            allowDropdownRef.current = true;
+            const q = query.trim();
+            if (q.length >= 2 && !isLoading) {
+              const canShow =
+                results.length > 0 || (allowFreeTextNoCode && q.length >= 2);
+              if (canShow) setIsOpen(true);
+            }
+          }}
+          onBlur={() =>
+            setTimeout(() => {
+              setIsOpen(false);
+              allowDropdownRef.current = false;
+            }, 150)
+          }
         />
       </div>
 
@@ -248,6 +281,7 @@ export default function SnomedSearch({
               key={item.conceptId}
               className="cursor-pointer px-3 py-2.5 hover:bg-blue-50"
               onMouseDown={() => {
+                allowDropdownRef.current = false;
                 setQuery("");
                 setIsOpen(false);
                 if (recordSelectionUsage) void bumpCacheUsage(item, hierarchy);
@@ -276,6 +310,7 @@ export default function SnomedSearch({
                 type="button"
                 className="w-full cursor-pointer px-3 py-2.5 text-left hover:bg-amber-50"
                 onMouseDown={() => {
+                  allowDropdownRef.current = false;
                   const t = trimmedQuery;
                   setQuery("");
                   setIsOpen(false);

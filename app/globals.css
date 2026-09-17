@@ -25,6 +25,69 @@
   animation: blink 1s step-start infinite;
 }
 
+@keyframes docpad-toast-in {
+  from {
+    transform: translate3d(120%, 0, 0);
+    opacity: 0;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.docpad-toast-enter {
+  animation: docpad-toast-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Patient row / search hit — brief scale pulse + green left border (patient safety feedback) */
+@keyframes patient-row-select-flash {
+  0% {
+    transform: scale(1);
+    border-left-color: rgba(34, 197, 94, 0);
+  }
+  30% {
+    transform: scale(1.02);
+    border-left-color: rgb(34 197 94);
+  }
+  31%,
+  100% {
+    transform: scale(1);
+  }
+  45% {
+    border-left-color: rgb(34 197 94);
+  }
+  100% {
+    border-left-color: rgba(34, 197, 94, 0);
+  }
+}
+
+.patient-row-select-flash {
+  border-left-width: 4px;
+  border-left-style: solid;
+  animation: patient-row-select-flash 500ms ease-out forwards;
+  transform-origin: center center;
+}
+
+/* Critical safety alerts — pulsing border emphasis */
+@keyframes alert-critical-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(220, 38, 38, 0.45),
+      0 0 0 1px rgba(185, 28, 28, 0.35) inset;
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(220, 38, 38, 0.2),
+      0 0 0 1px rgba(185, 28, 28, 0.45) inset;
+  }
+}
+
+.alert-banner-critical-pulse {
+  animation: alert-critical-pulse 2s ease-in-out infinite;
+}
+
 /* Pharmacy receipt modal — only when html.receipt-print-active (set while modal open) */
 @media print {
   @page {
@@ -106,5 +169,11 @@
 
   html.receipt-print-active .receipt-no-print {
     display: none !important;
+  }
+
+  /* Prescription modal — lab investigation attachment starts on page 2 */
+  .rx-print-lab-attachment {
+    page-break-before: always;
+    break-before: page;
   }
 }

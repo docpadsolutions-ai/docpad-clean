@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { isSupabaseAbortError, sx } from "./supabaseAbort";
 
 export type PatientQueueVitals = {
   blood_pressure?: string | null;
@@ -37,6 +38,7 @@ export type WaitingPatientRow = {
 
 export type ActiveEncounterRow = {
   encounterId: string;
+  patientId: string;
   encounterToken: string | null;
   patientName: string;
   ageGender: string;
@@ -176,6 +178,7 @@ export type WaitingRoomFetchContext = {
 export async function fetchMergedWaitingRoom(
   orgId: string | null,
   ctx: WaitingRoomFetchContext,
+  signal?: AbortSignal,
 ): Promise<WaitingPatientRow[]> {
   const id = orgId?.trim() || "";
   if (!id || !ctx.authUserId?.trim()) return [];
@@ -195,7 +198,8 @@ export async function fetchMergedWaitingRoom(
     triage_spo2,
     triage_weight,
     registered_at,
-    patients ( full_name, age_years, sex, docpad_id )
+    patients ( full_name, age_years, sex, docpad_id ),
+    practitioners!reception_queue_assigned_doctor_id_fkey ( id, full_name )
   `;
 
   type RqRow = Record<string, unknown>;
@@ -209,24 +213,32 @@ export async function fetchMergedWaitingRoom(
       .in("queue_status", ["registered", "triaged", "waiting", "with_doctor"])
       .eq("queue_date", queueDate)
       .eq("assigned_doctor_id", practitionerId)
+      .or("payment_collected.eq.true,payment_override.eq.true")
       .order("token_number", { ascending: true, nullsFirst: false });
 
-    let { data, error } = await rq;
+    let { data, error } = await sx(rq, signal);
     if (
       error &&
       (error.code === "42703" ||
         error.message.toLowerCase().includes("assigned_doctor") ||
         error.message.toLowerCase().includes("queue_date"))
     ) {
-      ({ data, error } = await supabase
-        .from("reception_queue")
-        .select(receptionSelect)
-        .eq("hospital_id", id)
-        .in("queue_status", ["registered", "triaged", "waiting", "with_doctor"])
-        .eq("doctor_id", practitionerId)
-        .order("created_at", { ascending: true }));
+      ({ data, error } = await sx(
+        supabase
+          .from("reception_queue")
+          .select(receptionSelect)
+          .eq("hospital_id", id)
+          .in("queue_status", ["registered", "triaged", "waiting", "with_doctor"])
+          .eq("doctor_id", practitionerId)
+          .or("payment_collected.eq.true,payment_override.eq.true")
+          .order("created_at", { ascending: true }),
+        signal,
+      ));
     }
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (isSupabaseAbortError(error)) throw new DOMException("Aborted", "AbortError");
+      throw new Error(error.message);
+    }
     receptionData = (data ?? []) as RqRow[];
   }
 
@@ -242,19 +254,26 @@ export async function fetchMergedWaitingRoom(
     temperature,
     spo2,
     created_at,
-    patients ( full_name, age_years, sex, docpad_id )
+    patients ( full_name, age_years, sex, docpad_id ),
+    practitioners!fk_treating_doctor ( id, full_name )
   `;
 
-  const { data: encData, error: encErr } = await supabase
-    .from("opd_encounters")
-    .select(opdSelect)
-    .eq("hospital_id", id)
-    .eq("status", "scheduled")
-    .eq("encounter_date", queueDate)
-    .eq("doctor_id", authUid)
-    .order("created_at", { ascending: true });
+  const { data: encData, error: encErr } = await sx(
+    supabase
+      .from("opd_encounters")
+      .select(opdSelect)
+      .eq("hospital_id", id)
+      .eq("status", "scheduled")
+      .eq("encounter_date", queueDate)
+      .eq("doctor_id", practitionerId ?? authUid)
+      .order("created_at", { ascending: true }),
+    signal,
+  );
 
-  if (encErr) throw new Error(encErr.message);
+  if (encErr) {
+    if (isSupabaseAbortError(encErr)) throw new DOMException("Aborted", "AbortError");
+    throw new Error(encErr.message);
+  }
 
   const receptionRows: WaitingPatientRow[] = [];
   for (const raw of receptionData) {
@@ -401,6 +420,7 @@ export async function fetchWaitingAppointmentsWithoutEncounter(
 /** `opd_encounters` in draft or in progress with patient + optional appointment vitals. */
 export async function fetchActiveDraftEncounters(
   orgId: string | null,
+  signal?: AbortSignal,
 ): Promise<ActiveEncounterRow[]> {
   const id = orgId?.trim() || "";
   if (!id) return [];
@@ -410,6 +430,7 @@ export async function fetchActiveDraftEncounters(
     .select(
       `
       id,
+      patient_id,
       token,
       status,
       weight,
@@ -420,15 +441,19 @@ export async function fetchActiveDraftEncounters(
       chief_complaint,
       chief_complaints_fhir,
       patients ( full_name, age_years, sex ),
-      appointments ( vitals )
+      appointments ( vitals ),
+      practitioners!fk_treating_doctor ( id, full_name )
     `,
     )
     .eq("hospital_id", id)
     .in("status", ["draft", "in_progress"])
     .order("created_at", { ascending: false });
 
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
+  const { data, error } = await sx(q, signal);
+  if (error) {
+    if (isSupabaseAbortError(error)) throw new DOMException("Aborted", "AbortError");
+    throw new Error(error.message);
+  }
 
   const out: ActiveEncounterRow[] = [];
   for (const raw of data ?? []) {
@@ -460,6 +485,7 @@ export async function fetchActiveDraftEncounters(
 
     out.push({
       encounterId: String(enc.id),
+      patientId: enc.patient_id != null ? String(enc.patient_id) : "",
       encounterToken,
       patientName: name,
       ageGender: ageGenderLine(patient),

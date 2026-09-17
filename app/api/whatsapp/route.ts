@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
 
 export async function POST(req: NextRequest) {
-  const { phone, patientName, rxId, doctorName, labSummaryText } = await req.json() as {
+  const { phone, patientName, rxId, doctorName, labSummaryText, medicationsText } = await req.json() as {
     phone: string;
     patientName: string;
     rxId: string;
     doctorName: string;
     /** Optional lab result lines (plain text / WhatsApp markdown) appended after the link. */
     labSummaryText?: string;
+    /** Optional medication list (may include Hindi lines when client sends bilingual dosage). */
+    medicationsText?: string;
   };
 
   if (!phone || !patientName || !rxId || !doctorName) {
@@ -31,6 +33,11 @@ export async function POST(req: NextRequest) {
 
   const client = twilio(accountSid, authToken);
 
+  const medsBlock =
+    medicationsText && String(medicationsText).trim()
+      ? `\n\n*Medications*\n${String(medicationsText).trim()}`
+      : "";
+
   const labBlock =
     labSummaryText && String(labSummaryText).trim()
       ? `\n\n*Lab summaries*\n${String(labSummaryText).trim()}`
@@ -41,6 +48,7 @@ export async function POST(req: NextRequest) {
     `Hello ${patientName},\n` +
     `Your digital prescription from Dr. ${doctorName} is ready.\n` +
     `📄 View & Download here: https://docpad.in/rx/${rxId}` +
+    medsBlock +
     labBlock +
     `\n\nWishing you a speedy recovery!`;
 

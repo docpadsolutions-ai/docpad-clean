@@ -7,7 +7,13 @@ import type { DateRange } from "react-day-picker";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import { fetchHospitalIdFromPractitionerAuthId } from "../../lib/authOrg";
+import {
+  patientIdsWithSimilarNamePeer,
+  similarFullNamesToSelected,
+  similarPatientNamesWarningBody,
+} from "../../lib/patientNameSimilarity";
 import { supabase } from "../../supabase";
+import { useToast } from "@/src/components/ui/toast-provider";
 import { PaymentRecordModal } from "../../../components/billing/PaymentRecordModal";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -155,6 +161,7 @@ function TableLoadingSkeleton() {
 }
 
 export default function InvoicesListPage() {
+  const { toast } = useToast();
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [hospitalReady, setHospitalReady] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -172,6 +179,7 @@ export default function InvoicesListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paymentRow, setPaymentRow] = useState<InvoiceListRow | null>(null);
+  const [pickFlashId, setPickFlashId] = useState<string | null>(null);
   const patientSearchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -326,6 +334,14 @@ export default function InvoicesListPage() {
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
+  const patientSearchSimilarIds = useMemo(
+    () =>
+      patientIdsWithSimilarNamePeer(
+        patientOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" })),
+      ),
+    [patientOptions],
+  );
+
   const dateLabel = useMemo(() => {
     if (!dateRange?.from) return "Any date";
     const a = dateRange.from.toLocaleDateString("en-IN", { dateStyle: "medium" });
@@ -402,14 +418,33 @@ export default function InvoicesListPage() {
                       <button
                         key={p.id}
                         type="button"
-                        className="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                        className={`flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 ${
+                          patientSearchSimilarIds.has(p.id) ? "border-l-4 border-amber-300/90 bg-amber-50/50" : ""
+                        } ${pickFlashId === p.id ? "patient-row-select-flash" : ""}`}
                         onClick={() => {
+                          const entries = patientOptions.map((o) => ({ id: o.id, fullName: o.full_name ?? "" }));
+                          const body = similarPatientNamesWarningBody(
+                            p.full_name ?? "Patient",
+                            similarFullNamesToSelected(p.id, p.full_name ?? "", entries),
+                          );
+                          if (body) {
+                            toast.warning({ title: "Similar patient names", body });
+                          }
+                          setPickFlashId(p.id);
+                          window.setTimeout(() => setPickFlashId((cur) => (cur === p.id ? null : cur)), 500);
                           setPatientIdFilter(p.id);
                           setPatientSearchLabel(p.full_name ?? p.docpad_id ?? p.id);
                           setPatientOpen(false);
                         }}
                       >
-                        <span className="font-medium text-slate-900 dark:text-slate-100">{p.full_name ?? "—"}</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">
+                          {p.full_name ?? "—"}
+                          {patientSearchSimilarIds.has(p.id) ? (
+                            <span className="ml-1 text-amber-600" title="Similar name in this list" aria-label="Similar name warning">
+                              ⚠️
+                            </span>
+                          ) : null}
+                        </span>
                         {p.docpad_id ? <span className="text-xs text-slate-500">{p.docpad_id}</span> : null}
                       </button>
                     ))

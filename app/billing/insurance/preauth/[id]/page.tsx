@@ -21,7 +21,7 @@ export default function ViewPreauthPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[40vh] items-center justify-center bg-slate-50 p-6 dark:bg-gray-950 dark:text-gray-300">
+        <div className="flex min-h-[40vh] items-center justify-center bg-slate-50 p-6 dark:bg-transparent dark:text-gray-300">
           Loading…
         </div>
       }

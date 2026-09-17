@@ -5,7 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileText, Microscope, PlusCircle, Ruler, Save } from "lucide-react";
+import { ChevronDown, FileText, Microscope, Paperclip, PlusCircle, Ruler, Save } from "lucide-react";
 
 import { fetchAuthOrgId } from "../../../../lib/authOrg";
 import {
@@ -14,32 +14,39 @@ import {
   practitionersOrFilterForAuthUid,
 } from "../../../../lib/practitionerAuthLookup";
 import { parsePractitionerRoleColumn, type UserRole } from "../../../../lib/userRole";
-import { supabase } from "../../../../supabase";
+import { supabase } from "../../../../../lib/supabaseClient";
 import { createEncounterFromAppointment } from "../../../../lib/opdEncounterFromAppointment";
 import { DocPadLogoMark } from "../../../../components/DocPadLogoMark";
 import { PermissionSurface } from "../../../../components/PermissionGate";
 import PrescriptionModal, { type VoiceRxPrefillRow } from "../../../../components/PrescriptionModal";
 
-import SnomedSearch, {
-  type SnomedConcept,
-  buildSnomedSearchQueryString,
-} from "../../../../components/SnomedSearch";
+import SnomedSearch, { buildSnomedSearchQueryString } from "../../../../components/SnomedSearch";
 import {
   SNOMED_ECL_CLINICAL_FINDING,
   SNOMED_ECL_MSK_FINDING,
   SNOMED_ECL_PROCEDURE,
   isOrthopedicsSpecialty,
 } from "../../../../lib/ipdSnomedEcl";
+import { practitionerHasSurgicalSpecialty } from "../../../../lib/surgicalSpecialties";
 import { DiagnosisWithIcd } from "../../../../components/clinical/DiagnosisWithIcd";
 import VoiceDictationButton, {
   type ClinicalFinding,
   type PlanExtractionResult,
 } from "../../../../components/VoiceDictationButton";
 import PatientEncountersList from "../../../../components/PatientEncountersList";
+import { personInitialsDisplay } from "@/app/lib/personInitialsDisplay";
+import {
+  useEncounterDraftStore,
+  type EncounterDraft,
+} from "@/src/stores/encounterDraftStore";
 import { AbdmConsentNotificationGate } from "@/components/abdm/AbdmConsentNotificationGate";
 import PatientSummaryDashboard from "../../../../components/PatientSummaryDashboard";
 import InvestigationsTabContent from "../../../../components/patient-investigations/InvestigationsTabContent";
 import InvestigationsLabOrdersModal from "../../../../components/InvestigationsLabOrdersModal";
+import ClinicalAttachmentModal from "../../../../components/clinical-attachments/ClinicalAttachmentModal";
+import ClinicalAttachmentThumbnailStrip from "../../../../components/clinical-attachments/ClinicalAttachmentThumbnailStrip";
+import SimilarPastPrescriptions from "../../../../components/SimilarPastPrescriptions";
+import IcdSuggestionBadge from "../../../../components/IcdSuggestionBadge";
 
 const XrayMeasurementTool = dynamic(
   () => import("../../../../components/measurements/XrayMeasurementTool"),
@@ -52,6 +59,9 @@ const AdmitPatientModal = dynamic(
 import { usePermission } from "../../../../hooks/usePermission";
 import { usePatientOpdEncounters } from "../../../../hooks/usePatientOpdEncounters";
 import { usePatientSummaryHighlights } from "../../../../hooks/usePatientSummaryHighlights";
+import { useToast } from "@/src/components/ui/toast-provider";
+import { PatientEncounterBanner } from "@/src/components/patient/patient-avatar";
+import { PatientActionConfirmPopover } from "@/src/components/patient/patient-action-confirm-popover";
 import { readIndiaRefsetKeyFromEnv } from "../../../../lib/snomedUiConfig";
 import { buildDiagnosesForSync, syncActiveProblemsFromEncounter } from "../../../../lib/syncActiveProblems";
 import {
@@ -93,6 +103,7 @@ type PractitionerProfileRow = {
   full_name?: string | null;
   role?: string | null;
   user_role?: string | null;
+  primary_specialty?: string | null;
   specialty?: string | null;
 };
 
@@ -130,7 +141,7 @@ function treatingDoctorInitial(name: string): string {
   if (!t || t === "Unassigned" || t === "Pending") return "?";
   const stripped = t.replace(/^Dr\.?\s+/i, "").trim();
   const ch = stripped.charAt(0) || t.charAt(0);
-  return ch.toUpperCase();
+  return personInitialsDisplay(ch);
 }
 
 /** Safe string from an embedded relation field (Supabase `*` rows). */
@@ -460,27 +471,11 @@ function CameraIcon({ className }: { className?: string }) {
   );
 }
 
-function PaperclipIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-      <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function SearchIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
       <circle cx="11" cy="11" r="7" />
       <path d="M21 21l-4.35-4.35" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function BellIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-      <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -583,6 +578,7 @@ function VitalInput({
   Icon,
   iconColor,
   suffix,
+  disabled = false,
 }: {
   label: string;
   unit: string;
@@ -591,6 +587,7 @@ function VitalInput({
   Icon: ({ className }: { className?: string }) => React.ReactElement;
   iconColor: string;
   suffix?: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -605,8 +602,9 @@ function VitalInput({
         <input
           type="text"
           value={value}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 bg-transparent text-sm font-medium text-gray-800 outline-none"
+          className="flex-1 bg-transparent text-sm font-medium text-gray-800 outline-none disabled:cursor-not-allowed"
         />
       </div>
     </div>
@@ -616,6 +614,7 @@ function VitalInput({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EncounterPage() {
+  const { toast } = useToast();
   const router = useRouter();
   const routeParams = useParams();
   /** Same value as dynamic segment `params.id` — `useParams` updates on client navigations (e.g. Save & next). */
@@ -630,11 +629,14 @@ export default function EncounterPage() {
 
   // UI state
   const [activeTab, setActiveTab] = useState("encounter");
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  const [isDirty, setIsDirty] = useState(false);
+  const [unsavedModalOpen, setUnsavedModalOpen] = useState(false);
+  /** Bumped after encounter + session draft hydrate so we snapshot a clean baseline (not on every keystroke). */
+  const [encounterBaselineVersion, setEncounterBaselineVersion] = useState(0);
+  const isDirtyRef = useRef(false);
+  const savedFormBaselineRef = useRef<string | null>(null);
+  type PendingNavAction = { kind: "tab"; tabId: string } | { kind: "href"; href: string };
+  const pendingNavRef = useRef<PendingNavAction | null>(null);
 
   // Chief complaint
   const [chiefComplaintText, setChiefComplaintText] = useState("");
@@ -663,6 +665,8 @@ export default function EncounterPage() {
   // Voice plan extraction — investigations (lab/imaging); meds queue for Prescription modal
   const [planInvestigations, setPlanInvestigations] = useState<string[]>([]);
   const [voiceRxPrefill, setVoiceRxPrefill]         = useState<VoiceRxPrefillRow[]>([]);
+  // AI-suggested past prescription reference (tapped from similarity cards)
+  const [suggestedRxNote, setSuggestedRxNote] = useState<string | null>(null);
 
   // Voice-extracted complaints — each auto-resolved to a SNOMED code
   const [voiceComplaints, setVoiceComplaints] = useState<ClinicalChip[]>([]);
@@ -700,6 +704,53 @@ export default function EncounterPage() {
   const [followUpDate, setFollowUpDate] = useState("");
   const [triageNotesText, setTriageNotesText] = useState("");
 
+  const applyEncounterSessionDraft = useCallback((draft: EncounterDraft) => {
+    const cc = draft.chiefComplaint;
+    setChiefComplaintText(cc.chiefComplaintText);
+    setChiefComplaintSnomed(cc.chiefComplaintSnomed);
+    setSelectedComplaintLabel(cc.selectedComplaintLabel);
+    setDurationText(cc.durationText);
+    setVoiceComplaints(cc.voiceComplaints);
+    setComplaintQuery(cc.complaintQuery);
+    setSelectedChiefComplaintConcept(cc.selectedChiefComplaintConcept);
+
+    const h = draft.history;
+    setAllergiesText(h.allergiesText);
+    setAllergiesSnomed(h.allergiesSnomed);
+    setProcedureText(h.procedureText);
+    setProcedureSnomed(h.procedureSnomed);
+    setDepartment(h.department);
+
+    const ex = draft.examination;
+    setExamQuery(ex.examQuery);
+    setSelectedExaminationConcept(ex.selectedExaminationConcept);
+    setExamFindings(ex.examFindings);
+
+    const dx = draft.diagnosis;
+    setDiagnosisEntries(dx.diagnosisEntries);
+    setDiagnosisQuery(dx.diagnosisQuery);
+    setSelectedDiagnosisConcept(dx.selectedDiagnosisConcept);
+
+    const pl = draft.plan;
+    setAdviceText(pl.adviceText);
+    setAdviceOpen(pl.adviceOpen);
+    setSelectedAdviceTemplateId(pl.selectedAdviceTemplateId);
+    setIncludeAdviceOnPrescription(pl.includeAdviceOnPrescription);
+    setPlanInvestigations(pl.planInvestigations);
+    setVoiceRxPrefill(pl.voiceRxPrefill);
+    setFollowUpDate(pl.followUpDate);
+
+    const v = draft.vitals;
+    setWeight(v.weight);
+    setBloodPressure(v.bloodPressure);
+    setPulse(v.pulse);
+    setTemperature(v.temperature);
+    setSpo2(v.spo2);
+    setTempUnit(v.tempUnit);
+
+    setTriageNotesText(draft.notes.triageNotesText);
+  }, []);
+
   // Save state
   const [isSaving, setIsSaving]   = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
@@ -714,14 +765,38 @@ export default function EncounterPage() {
   const [isLabOrdersModalOpen, setIsLabOrdersModalOpen] = useState(false);
   const [admitPatientOpen, setAdmitPatientOpen] = useState(false);
   const [xrayMeasurementOpen, setXrayMeasurementOpen] = useState(false);
+
+  // Insurance quick-submit modal (Task 6)
+  const [insuranceModalOpen, setInsuranceModalOpen] = useState(false);
+  const [insuranceStep, setInsuranceStep] = useState<1 | 2>(1);
+  const [insuranceCoverages, setInsuranceCoverages] = useState<{ id: string; label: string; company_id: string | null }[]>([]);
+  const [insuranceCovLoading, setInsuranceCovLoading] = useState(false);
+  const [insuranceCovId, setInsuranceCovId] = useState("");
+  const [insuranceSaving, setInsuranceSaving] = useState(false);
+  const [clinicalAttachmentModalOpen, setClinicalAttachmentModalOpen] = useState(false);
+  const [clinicalEncounterAttachments, setClinicalEncounterAttachments] = useState<Record<string, unknown>[]>([]);
+  const [clinicalAttachmentsReloadKey, setClinicalAttachmentsReloadKey] = useState(0);
   const [currentPatientId, setCurrentPatientId] = useState<string>("");
   const [doctorName, setDoctorName] = useState<string>("Doctor");
   /** `practitioners.id` for SNOMED tiering + frequency RPC. */
   const [doctorPractitionerId, setDoctorPractitionerId] = useState<string | null>(null);
   /** Prefer DB specialty; drives Gemini + Assembly keyterms. */
   const [doctorSpecialty, setDoctorSpecialty] = useState<string>("General Medicine");
+  /** Logged-in `practitioners` row — used for Plan Surgery visibility (not the defaulted UI fallback). */
+  const [loggedInPrimarySpecialty, setLoggedInPrimarySpecialty] = useState<string | null>(null);
+  const [loggedInSpecialtyFromPractitionerRow, setLoggedInSpecialtyFromPractitionerRow] =
+    useState<string | null>(null);
   /** Normalized signed-in practitioner role (in-memory; no routing). */
   const practitionerRoleRef = useRef<UserRole | null>(null);
+
+  const showPlanSurgeryButton = useMemo(
+    () =>
+      practitionerHasSurgicalSpecialty(
+        loggedInPrimarySpecialty,
+        loggedInSpecialtyFromPractitionerRow,
+      ),
+    [loggedInPrimarySpecialty, loggedInSpecialtyFromPractitionerRow],
+  );
 
   /** Orthopaedics / neurosurgery only — radiological measurement tool. */
   const xrayMeasurementGate = useMemo(() => {
@@ -741,7 +816,253 @@ export default function EncounterPage() {
 
   const isEncounterReadOnly = encounterIsFinalized || readOnlyFromQuery;
 
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+  const isEncounterReadOnlyRef = useRef(false);
+  useEffect(() => {
+    isEncounterReadOnlyRef.current = isEncounterReadOnly;
+  }, [isEncounterReadOnly]);
+
+  const trySetActiveTab = useCallback((tabId: string) => {
+    if (isDirtyRef.current && !isEncounterReadOnlyRef.current) {
+      pendingNavRef.current = { kind: "tab", tabId };
+      setUnsavedModalOpen(true);
+      return;
+    }
+    setActiveTab(tabId);
+  }, []);
+
+  const tryRouterPush = useCallback((href: string) => {
+    if (isDirtyRef.current && !isEncounterReadOnlyRef.current) {
+      pendingNavRef.current = { kind: "href", href };
+      setUnsavedModalOpen(true);
+      return;
+    }
+    router.push(href);
+  }, [router]);
+
+  const [draftPersistHydrated, setDraftPersistHydrated] = useState(false);
+  useEffect(() => {
+    if (useEncounterDraftStore.persist.hasHydrated()) {
+      setDraftPersistHydrated(true);
+      return;
+    }
+    const unsub = useEncounterDraftStore.persist.onFinishHydration(() => {
+      setDraftPersistHydrated(true);
+    });
+    return unsub;
+  }, []);
+
+  const serializeEncounterDraftBaseline = useCallback(() => {
+    return JSON.stringify({
+      chiefComplaintText,
+      chiefComplaintSnomed,
+      selectedComplaintLabel,
+      durationText,
+      voiceComplaints,
+      complaintQuery,
+      selectedChiefComplaintConcept,
+      allergiesText,
+      allergiesSnomed,
+      procedureText,
+      procedureSnomed,
+      department,
+      examQuery,
+      selectedExaminationConcept,
+      examFindings,
+      diagnosisEntries,
+      diagnosisQuery,
+      selectedDiagnosisConcept,
+      adviceText,
+      adviceOpen,
+      selectedAdviceTemplateId,
+      includeAdviceOnPrescription,
+      planInvestigations,
+      voiceRxPrefill,
+      followUpDate,
+      weight,
+      bloodPressure,
+      pulse,
+      temperature,
+      spo2,
+      tempUnit,
+      triageNotesText,
+    });
+  }, [
+    chiefComplaintText,
+    chiefComplaintSnomed,
+    selectedComplaintLabel,
+    durationText,
+    voiceComplaints,
+    complaintQuery,
+    selectedChiefComplaintConcept,
+    allergiesText,
+    allergiesSnomed,
+    procedureText,
+    procedureSnomed,
+    department,
+    examQuery,
+    selectedExaminationConcept,
+    examFindings,
+    diagnosisEntries,
+    diagnosisQuery,
+    selectedDiagnosisConcept,
+    adviceText,
+    adviceOpen,
+    selectedAdviceTemplateId,
+    includeAdviceOnPrescription,
+    planInvestigations,
+    voiceRxPrefill,
+    followUpDate,
+    weight,
+    bloodPressure,
+    pulse,
+    temperature,
+    spo2,
+    tempUnit,
+    triageNotesText,
+  ]);
+
+  useEffect(() => {
+    savedFormBaselineRef.current = null;
+    setEncounterBaselineVersion(0);
+  }, [encounterId]);
+
+  useEffect(() => {
+    if (encounterBaselineVersion === 0) return;
+    savedFormBaselineRef.current = serializeEncounterDraftBaseline();
+    setIsDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot only when encounterBaselineVersion bumps after load
+  }, [encounterBaselineVersion]);
+
+  useEffect(() => {
+    if (savedFormBaselineRef.current === null) return;
+    setIsDirty(serializeEncounterDraftBaseline() !== savedFormBaselineRef.current);
+  }, [serializeEncounterDraftBaseline]);
+
+  useEffect(() => {
+    if (!draftPersistHydrated || !encounterId || isEncounterReadOnly) return;
+    const snap = serializeEncounterDraftBaseline();
+    if (suppressDraftUntilDeltaRef.current && draftBaselineAfterClearRef.current !== null) {
+      if (snap === draftBaselineAfterClearRef.current) {
+        return;
+      }
+      suppressDraftUntilDeltaRef.current = false;
+    }
+    useEncounterDraftStore.getState().setDraft(encounterId, {
+      chiefComplaint: {
+        chiefComplaintText,
+        chiefComplaintSnomed,
+        selectedComplaintLabel,
+        durationText,
+        voiceComplaints,
+        complaintQuery,
+        selectedChiefComplaintConcept,
+      },
+      history: {
+        allergiesText,
+        allergiesSnomed,
+        procedureText,
+        procedureSnomed,
+        department,
+      },
+      examination: {
+        examQuery,
+        selectedExaminationConcept,
+        examFindings,
+      },
+      diagnosis: {
+        diagnosisEntries,
+        diagnosisQuery,
+        selectedDiagnosisConcept,
+      },
+      plan: {
+        adviceText,
+        adviceOpen,
+        selectedAdviceTemplateId,
+        includeAdviceOnPrescription,
+        planInvestigations,
+        voiceRxPrefill,
+        followUpDate,
+      },
+      vitals: {
+        weight,
+        bloodPressure,
+        pulse,
+        temperature,
+        spo2,
+        tempUnit,
+      },
+      notes: {
+        triageNotesText,
+      },
+    });
+  }, [
+    draftPersistHydrated,
+    encounterId,
+    isEncounterReadOnly,
+    chiefComplaintText,
+    chiefComplaintSnomed,
+    selectedComplaintLabel,
+    durationText,
+    voiceComplaints,
+    complaintQuery,
+    selectedChiefComplaintConcept,
+    allergiesText,
+    allergiesSnomed,
+    procedureText,
+    procedureSnomed,
+    department,
+    examQuery,
+    selectedExaminationConcept,
+    examFindings,
+    diagnosisEntries,
+    diagnosisQuery,
+    selectedDiagnosisConcept,
+    adviceText,
+    adviceOpen,
+    selectedAdviceTemplateId,
+    includeAdviceOnPrescription,
+    planInvestigations,
+    voiceRxPrefill,
+    followUpDate,
+    weight,
+    bloodPressure,
+    pulse,
+    temperature,
+    spo2,
+    tempUnit,
+    triageNotesText,
+    serializeEncounterDraftBaseline,
+  ]);
+
   const summaryOrgId = encounterOrgId ?? authOrgId;
+
+  const loadClinicalEncounterAttachments = useCallback(async () => {
+    const eid = encounterId?.trim();
+    if (!eid) {
+      setClinicalEncounterAttachments([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("clinical_attachments")
+      .select("*")
+      .eq("opd_encounter_id", eid)
+      .order("uploaded_at", { ascending: false });
+    if (error) {
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console -- optional table until migration applied
+        console.warn("[clinical_attachments]", error.message);
+      }
+      return;
+    }
+    setClinicalEncounterAttachments((data ?? []) as Record<string, unknown>[]);
+  }, [encounterId, clinicalAttachmentsReloadKey]);
+
+  useEffect(() => {
+    void loadClinicalEncounterAttachments();
+  }, [loadClinicalEncounterAttachments]);
 
   /** Bumps when encounter saves so Summary tab RPC bundle refetches. */
   const [summaryReloadSignal, setSummaryReloadSignal] = useState(0);
@@ -757,8 +1078,8 @@ export default function EncounterPage() {
 
   const handleLiveTimelineOpdClick = useCallback((opdId: string) => {
     pendingEncounterScrollId.current = opdId;
-    setActiveTab("encounters");
-  }, []);
+    trySetActiveTab("encounters");
+  }, [trySetActiveTab]);
 
   const handleSummaryNavigate = useCallback(
     (view: string, params?: Record<string, unknown>) => {
@@ -770,39 +1091,39 @@ export default function EncounterPage() {
         case "current-encounter":
           if (params?.mode === "new") {
             if (pid) {
-              router.push(`/dashboard/opd/encounter/new?patientId=${encodeURIComponent(pid)}`);
+              tryRouterPush(`/dashboard/opd/encounter/new?patientId=${encodeURIComponent(pid)}`);
             }
           } else {
-            setActiveTab("encounter");
+            trySetActiveTab("encounter");
           }
           break;
         case "prescriptions":
-          setActiveTab("prescriptions");
+          trySetActiveTab("prescriptions");
           break;
         case "investigations":
-          setActiveTab("investigations");
+          trySetActiveTab("investigations");
           break;
         case "followup":
-          setActiveTab("followup");
+          trySetActiveTab("followup");
           break;
         case "consults":
-          setActiveTab("consults");
+          trySetActiveTab("consults");
           break;
         case "upload":
-          setActiveTab("upload");
+          trySetActiveTab("upload");
           break;
         case "triage":
           if (pid) {
-            router.push(`/reception?patientId=${encodeURIComponent(pid)}`);
+            tryRouterPush(`/reception?patientId=${encodeURIComponent(pid)}`);
           } else {
-            router.push("/reception");
+            tryRouterPush("/reception");
           }
           break;
         default:
           break;
       }
     },
-    [router, currentPatientId],
+    [currentPatientId, tryRouterPush, trySetActiveTab],
   );
 
   useEffect(() => {
@@ -830,6 +1151,9 @@ export default function EncounterPage() {
   } | null>(null);
 
   const prevRouteEncounterIdRef = useRef<string | null>(null);
+  /** After a successful save we clear the session draft; skip re-persisting until the chart diverges from that snapshot. */
+  const suppressDraftUntilDeltaRef = useRef(false);
+  const draftBaselineAfterClearRef = useRef<string | null>(null);
 
   /** Clears all encounter-scoped UI state so the next patient never inherits the previous chart. */
   const resetForm = useCallback(() => {
@@ -882,6 +1206,8 @@ export default function EncounterPage() {
     setSaveSuccessMessage(null);
     setIsPrescriptionModalOpen(false);
     setIsLabOrdersModalOpen(false);
+    suppressDraftUntilDeltaRef.current = false;
+    draftBaselineAfterClearRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -903,28 +1229,31 @@ export default function EncounterPage() {
     if (typeof window === "undefined" || !encounterId) return;
     const sp = new URLSearchParams(window.location.search);
     if (sp.get("tab") !== "investigations") return;
-    setActiveTab("investigations");
+    trySetActiveTab("investigations");
     sp.delete("tab");
     const next = sp.toString();
     router.replace(`/dashboard/opd/encounter/${encounterId}${next ? `?${next}` : ""}`, { scroll: false });
-  }, [encounterId, router]);
+  }, [encounterId, router, trySetActiveTab]);
 
   const openInvestigationOrderPage = useCallback(() => {
     if (!encounterId) return;
-    router.push(`/opd/${encounterId}/investigations`);
-  }, [encounterId, router]);
+    tryRouterPush(`/opd/${encounterId}/investigations`);
+  }, [encounterId, tryRouterPush]);
 
   const openInvestigationsView = useCallback(() => {
     if (!encounterId) {
-      setActiveTab("investigations");
+      trySetActiveTab("investigations");
       return;
     }
-    router.push(`/opd/${encounterId}/investigations/view`);
-  }, [encounterId, router]);
+    tryRouterPush(`/opd/${encounterId}/investigations/view`);
+  }, [encounterId, tryRouterPush, trySetActiveTab]);
 
   // Fetch encounter (clinical fields + patient_id), patient record, and doctor name
   useEffect(() => {
     if (!encounterId) return;
+
+    setLoggedInPrimarySpecialty(null);
+    setLoggedInSpecialtyFromPractitionerRow(null);
 
     // 1. Load the full encounter row so we can re-hydrate all clinical state.
     // Cast to Record<string, unknown> because the Supabase-generated types don't
@@ -1028,7 +1357,9 @@ export default function EncounterPage() {
         );
 
         const rawEncStatus = enc.status != null ? String(enc.status).trim().toLowerCase() : "";
-        const finalizedFromDb = rawEncStatus.replace(/\s+/g, "") === "completed";
+        const normSt = rawEncStatus.replace(/\s+/g, "");
+        const finalizedFromDb =
+          normSt === "completed" || normSt === "final" || normSt === "finalized";
         setEncounterIsFinalized(finalizedFromDb);
         setMarkComplete(finalizedFromDb);
 
@@ -1167,39 +1498,46 @@ export default function EncounterPage() {
           setAllergiesText(terms.join(", "));
         }
 
-        // ── Examination — `examination_term` / `examination_snomed` + legacy `quick_exam` / `quick_exam_snomed`
+        // ── Examination — chips from `examination_*` + `quick_exam` / `quick_exam_snomed` (same persistence as save)
         const exTermDb = strN(enc.examination_term);
         const exSnomedDb = strN(enc.examination_snomed ?? enc.examination_concept_id);
-        if (exTermDb) {
-          setExamQuery(exTermDb);
+        const rawExam = enc.quick_exam;
+        const examArray: string[] = Array.isArray(rawExam)
+          ? (rawExam as string[])
+          : typeof rawExam === "string" && rawExam.trim()
+            ? rawExam.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
+        const rawSnomed = enc.quick_exam_snomed;
+        const snomedArr: string[] = Array.isArray(rawSnomed)
+          ? (rawSnomed as string[])
+          : typeof rawSnomed === "string" && rawSnomed.trim()
+            ? rawSnomed.split(",").map((s) => s.trim()).filter(Boolean)
+            : [];
+
+        const nextExamFindings: ClinicalChip[] = [];
+        if (exTermDb?.trim()) {
+          nextExamFindings.push(clinicalChipFromLegacyDisplay(exTermDb.trim(), (exSnomedDb ?? "").trim()));
+        }
+        examArray.forEach((lineRaw, i) => {
+          const line = String(lineRaw).trim();
+          if (!line || line.startsWith("Investigation:")) return;
+          const code = snomedArr[i]?.trim() ?? "";
+          if (exTermDb?.trim() && line.toLowerCase() === exTermDb.trim().toLowerCase()) {
+            return;
+          }
+          nextExamFindings.push(clinicalChipFromLegacyDisplay(line, code));
+        });
+        setExamFindings(nextExamFindings);
+        if (nextExamFindings[0]) {
+          const f0 = nextExamFindings[0];
+          setExamQuery(clinicalChipPrimaryLabel(f0));
           setSelectedExaminationConcept({
-            term: exTermDb,
-            conceptId: (exSnomedDb ?? "").trim(),
+            term: clinicalChipPrimaryLabel(f0),
+            conceptId: f0.snomedCode?.trim() ?? "",
           });
         } else {
           setExamQuery("");
           setSelectedExaminationConcept(null);
-          const rawExam = enc.quick_exam;
-          const examArray: string[] = Array.isArray(rawExam)
-            ? (rawExam as string[])
-            : typeof rawExam === "string" && rawExam.trim()
-              ? rawExam.split(",").map((s) => s.trim()).filter(Boolean)
-              : [];
-          const rawSnomed = enc.quick_exam_snomed;
-          const snomedArr: string[] = Array.isArray(rawSnomed)
-            ? (rawSnomed as string[])
-            : typeof rawSnomed === "string" && rawSnomed.trim()
-              ? rawSnomed.split(",").map((s) => s.trim()).filter(Boolean)
-              : [];
-          const firstLine = examArray.find(
-            (line) => line.trim() && !line.trim().startsWith("Investigation:"),
-          );
-          if (firstLine?.trim()) {
-            const t = firstLine.trim();
-            const code = snomedArr[0]?.trim() ?? "";
-            setExamQuery(t);
-            setSelectedExaminationConcept({ term: t, conceptId: code });
-          }
         }
 
         let followUpFromPlan: string = "";
@@ -1238,15 +1576,26 @@ export default function EncounterPage() {
 
         const pid = enc.patient_id ? str(enc.patient_id) : "";
 
-        void fetchAppointmentVitalsForEncounter(enc.appointment_id, pid).then((apptVitals) => {
-          if (!apptVitals) return;
-          const pick = vitalsStringFromJson;
-          setWeight((prev) => (prev.trim() ? prev : pick(apptVitals.weight) || prev));
-          setBloodPressure((prev) => (prev.trim() ? prev : pick(apptVitals.blood_pressure) || prev));
-          setPulse((prev) => (prev.trim() ? prev : pick(apptVitals.pulse) || prev));
-          setTemperature((prev) => (prev.trim() ? prev : pick(apptVitals.temperature) || prev));
-          setSpo2((prev) => (prev.trim() ? prev : pick(apptVitals.spo2) || prev));
-        });
+        void fetchAppointmentVitalsForEncounter(enc.appointment_id, pid)
+          .then(async (apptVitals) => {
+            if (apptVitals) {
+              const pick = vitalsStringFromJson;
+              setWeight((prev) => (prev.trim() ? prev : pick(apptVitals.weight) || prev));
+              setBloodPressure((prev) => (prev.trim() ? prev : pick(apptVitals.blood_pressure) || prev));
+              setPulse((prev) => (prev.trim() ? prev : pick(apptVitals.pulse) || prev));
+              setTemperature((prev) => (prev.trim() ? prev : pick(apptVitals.temperature) || prev));
+              setSpo2((prev) => (prev.trim() ? prev : pick(apptVitals.spo2) || prev));
+            }
+            await useEncounterDraftStore.persist.rehydrate();
+            if (readOnlyFromQuery) return;
+            const sessionDraft = useEncounterDraftStore.getState().getDraft(encounterId);
+            if (sessionDraft) {
+              applyEncounterSessionDraft(sessionDraft);
+            }
+          })
+          .finally(() => {
+            queueMicrotask(() => setEncounterBaselineVersion((v) => v + 1));
+          });
 
         // ── Patient record (embedded on encounter + fallback fetch) ────────
         const embeddedPat = pickEmbeddedRow(enc.patient as PatientRowDb | null);
@@ -1293,6 +1642,7 @@ export default function EncounterPage() {
               await fillFromPreviousEncounter();
             }
             if (terms.length === 0) return;
+            if (encounterId && useEncounterDraftStore.getState().getDraft(encounterId)) return;
 
             const textLine = terms.join(", ");
             setAllergiesText(textLine);
@@ -1342,7 +1692,7 @@ export default function EncounterPage() {
       if (!uid) return;
       supabase
         .from("practitioners")
-        .select("id, first_name, last_name, full_name, role, user_role, specialty")
+        .select("id, first_name, last_name, full_name, role, user_role, primary_specialty, specialty")
         .or(practitionersOrFilterForAuthUid(uid))
         .maybeSingle()
         .then(({ data: profile }: { data: PractitionerProfileRow | null }) => {
@@ -1350,7 +1700,10 @@ export default function EncounterPage() {
             const fullName = practitionerDisplayNameFromRow(profile);
             if (fullName) setDoctorName(fullName);
             if (profile.id) setDoctorPractitionerId(String(profile.id));
+            const primarySpec = (profile.primary_specialty ?? "").trim();
             const spec = (profile.specialty ?? "").trim();
+            setLoggedInPrimarySpecialty(primarySpec || null);
+            setLoggedInSpecialtyFromPractitionerRow(spec || null);
             if (spec) setDoctorSpecialty(spec);
             practitionerRoleRef.current = parsePractitionerRoleColumn(
               practitionerRoleRawFromRow(profile),
@@ -1358,7 +1711,7 @@ export default function EncounterPage() {
           }
         });
     });
-  }, [encounterId]);
+  }, [encounterId, readOnlyFromQuery, applyEncounterSessionDraft]);
 
   function selectComplaintChip(chip: { label: string; snomed: string }) {
     setVoiceComplaints((prev) => {
@@ -1397,13 +1750,30 @@ export default function EncounterPage() {
     });
   }
 
-  function handleExaminationSelect(concept: SnomedConcept) {
-    const t = concept.term.trim();
+  function handleExaminationSelect(concept: { term: string; conceptId: string; icd10: string | null }) {
+    const newTerm = concept.term.trim();
+    if (examFindings.some((c) => clinicalChipPrimaryLabel(c).toLowerCase() === newTerm.toLowerCase())) return;
     setSelectedExaminationConcept({
-      term: t,
+      term: newTerm,
       conceptId: concept.conceptId.trim(),
     });
-    setExamQuery(t);
+    const row: ClinicalChip = {
+      id: newClinicalChipId(),
+      finding: newTerm,
+      bodySite: null,
+      laterality: null,
+      duration: null,
+      severity: null,
+      negation: false,
+      snomedCode: concept.conceptId.trim(),
+      snomedTerm: newTerm,
+      snomedAlternatives: [],
+      isEdited: false,
+      isConfirmed: true,
+      rawText: "",
+      snomedLowConfidence: false,
+    };
+    setExamFindings((prev) => [...prev, row]);
   }
 
   function handleAllergyChange(text: string) {
@@ -1460,8 +1830,33 @@ export default function EncounterPage() {
   }
 
   function removeExamFindingById(id: string) {
-    setExamFindings((prev) => prev.filter((c) => c.id !== id));
-    if (editingExamChipId === id) setEditingExamChipId(null);
+    setExamFindings((prev) => {
+      const removed = prev.find((c) => c.id === id);
+      const next = prev.filter((c) => c.id !== id);
+      if (editingExamChipId === id) setEditingExamChipId(null);
+      setSelectedExaminationConcept((cur) => {
+        if (next.length === 0) return null;
+        if (
+          !removed ||
+          !cur ||
+          cur.term.toLowerCase() === clinicalChipPrimaryLabel(removed).toLowerCase()
+        ) {
+          return {
+            term: clinicalChipPrimaryLabel(next[0]),
+            conceptId: next[0].snomedCode?.trim() ?? "",
+          };
+        }
+        return cur;
+      });
+      setExamQuery((q) => {
+        if (next.length === 0) return "";
+        if (removed && q.trim().toLowerCase() === clinicalChipPrimaryLabel(removed).toLowerCase()) {
+          return clinicalChipPrimaryLabel(next[0]);
+        }
+        return q;
+      });
+      return next;
+    });
   }
 
   function removeVoiceComplaintById(id: string) {
@@ -1565,13 +1960,19 @@ export default function EncounterPage() {
     if (!name?.trim()) return;
     const content = adviceText.trim();
     if (!content) {
-      window.alert("Add some advice text before saving a template.");
+      toast.warning({
+        title: "Advice text required",
+        body: "Add some advice text before saving a template.",
+      });
       return;
     }
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth.user?.id;
     if (!uid) {
-      window.alert("You must be signed in to save templates.");
+      toast.error({
+        title: "Sign in required",
+        body: "You must be signed in to save templates.",
+      });
       return;
     }
     const { error } = await supabase.from("advice_templates").insert({
@@ -1580,12 +1981,12 @@ export default function EncounterPage() {
       content,
     });
     if (error) {
-      window.alert(error.message);
+      toast.error({ title: "Template not saved", body: error.message });
       return;
     }
     await refreshAdviceTemplates();
-    window.alert("Template saved.");
-  }, [adviceText, refreshAdviceTemplates]);
+    toast.success({ title: "Template saved" });
+  }, [adviceText, refreshAdviceTemplates, toast]);
 
   function appendQuickAdvicePill(line: string) {
     setAdviceText((prev) => {
@@ -1598,14 +1999,18 @@ export default function EncounterPage() {
   async function saveEncounter(
     status: "draft" | "completed",
     redirectAction: "none" | "close" | "next",
-  ) {
-    setSaveError(null);
-    setSaveSuccessMessage(null);
-    if (isEncounterReadOnly) {
-      setSaveError("This encounter is read-only.");
-      return;
+    opts?: { silent?: boolean },
+  ): Promise<boolean> {
+    const silent = opts?.silent === true;
+    if (!silent) {
+      setSaveError(null);
+      setSaveSuccessMessage(null);
     }
-    setIsSaving(true);
+    if (isEncounterReadOnly) {
+      if (!silent) setSaveError("This encounter is read-only.");
+      return false;
+    }
+    if (!silent) setIsSaving(true);
 
     function toNum(s: string): number | null {
       const n = parseFloat(s.trim());
@@ -1775,17 +2180,30 @@ export default function EncounterPage() {
         icd10:   null,
       }));
 
-      const persistExTerm = selectedExaminationConcept?.term?.trim() || (eq || null);
-      const persistExSnomedRaw = selectedExaminationConcept?.conceptId?.trim() || "";
-      const persistExSnomed = persistExSnomedRaw || null;
-
+      let examPersistLines = examFindings.map((f) => clinicalExamChipPersistLine(f));
+      if (examPersistLines.length === 0 && eq) {
+        examPersistLines = [eq];
+      }
       const finalExam = [
-        ...(persistExTerm ? [persistExTerm] : []),
-        ...examFindings.map((f) => clinicalExamChipPersistLine(f)),
+        ...examPersistLines,
         ...planInvestigations.map((inv) => `Investigation: ${inv}`),
       ];
       const snomedFromFindings = examFindings.map((f) => f.snomedCode?.trim()).filter(Boolean) as string[];
-      const finalExamSnomed = [...new Set([...(persistExSnomed ? [persistExSnomed] : []), ...snomedFromFindings])];
+      const snomedStaging =
+        examFindings.length === 0 && eq && selectedExaminationConcept?.conceptId?.trim()
+          ? [selectedExaminationConcept.conceptId.trim()]
+          : [];
+      const finalExamSnomed = [...new Set([...snomedFromFindings, ...snomedStaging])];
+
+      const persistExTerm =
+        examFindings.length > 0
+          ? clinicalChipPrimaryLabel(examFindings[0]).trim() || null
+          : selectedExaminationConcept?.term?.trim() || (eq || null);
+      const persistExSnomedRaw =
+        examFindings.length > 0
+          ? examFindings[0].snomedCode?.trim() ?? ""
+          : selectedExaminationConcept?.conceptId?.trim() || "";
+      const persistExSnomed = persistExSnomedRaw || null;
 
       const normalized = String(status).trim().toLowerCase().replace(/\s+/g, "");
       /** DB `opd_encounters_status_check` on many projects allows `in_progress` + `completed` but not `draft`. */
@@ -1860,6 +2278,95 @@ export default function EncounterPage() {
 
       if (encError) throw new Error(encError.message);
 
+      const contentText = [
+        typeof chiefComplaintLine === "string" ? chiefComplaintLine : "",
+        typeof workingDiagnosisCol === "string"
+          ? workingDiagnosisCol
+          : typeof persistDxTerm === "string"
+            ? persistDxTerm
+            : "",
+        Array.isArray(rxRows) && rxRows.length > 0
+          ? rxRows
+              .map((r) => {
+                const row = r as Record<string, unknown>;
+                return `${String(row.drug_name ?? row.name ?? "")} ${String(row.dose ?? "")} ${String(row.frequency ?? "")}`.trim();
+              })
+              .filter(Boolean)
+              .join(", ")
+          : "",
+      ]
+        .filter((s) => s.length > 0)
+        .join(" | ");
+      const finalContent = contentText || `Encounter ${encounterId}`;
+
+      // eslint-disable-next-line no-console
+      console.log("[EMBED DEBUG]", {
+        allStateVars: {
+          chiefComplaintLine,
+          chiefComplaint: "NOT_DEFINED",
+          complaint: "NOT_DEFINED",
+          workingDiagnosisCol,
+          workingDiagnosis: "NOT_DEFINED",
+          diagnosis: "NOT_DEFINED",
+          selectedDiagnosis: "NOT_DEFINED",
+          persistDxTerm,
+          rxRows: rxRows?.length ?? "NOT_DEFINED",
+          prescriptions: "NOT_DEFINED",
+          contentText,
+          doctorPractitionerId,
+          orgIdForSave,
+        },
+      });
+
+      // Fire and forget — no session needed, JWT verification is disabled on this function
+      void (async () => {
+        try {
+          let embedPractitionerId = doctorPractitionerId;
+          if (!embedPractitionerId && user?.id) {
+            const { data: pRow } = await supabase
+              .from("practitioners")
+              .select("id")
+              .or(practitionersOrFilterForAuthUid(user.id))
+              .maybeSingle();
+            if (pRow?.id) embedPractitionerId = String(pRow.id);
+          }
+          if (embedPractitionerId && orgIdForSave) {
+            supabase.functions
+              .invoke("embed-interaction", {
+                body: {
+                  practitioner_id: embedPractitionerId,
+                  hospital_id: orgIdForSave,
+                  interaction_type: "prescription",
+                  source_table: "opd_encounters",
+                  source_id: encounterId,
+                  content_text: finalContent,
+                  metadata: {
+                    diagnosis: workingDiagnosisCol ?? persistDxTerm ?? null,
+                    icd10_code: diagnosisIcd10Col,
+                    patient_age: patient?.age_years ?? null,
+                    patient_gender: patient?.sex ?? null,
+                    comorbidities: [],
+                  },
+                },
+              })
+              .then(({ data: d, error: e }) => {
+                if (e) console.error("[EMBED] error:", e);
+                else console.log("[EMBED] result:", d);
+              })
+              .catch((e) => console.error("[EMBED] error:", e));
+          } else {
+            console.log("[EMBED] skipped — missing fields:", { embedPractitionerId, orgIdForSave });
+          }
+        } catch (_) {}
+      })();
+
+      useEncounterDraftStore.getState().clearDraft(encounterId);
+      suppressDraftUntilDeltaRef.current = true;
+      const postSaveBaseline = serializeEncounterDraftBaseline();
+      draftBaselineAfterClearRef.current = postSaveBaseline;
+      savedFormBaselineRef.current = postSaveBaseline;
+      setIsDirty(false);
+
       const savedPatientId = String((encData as { patient_id?: string } | null)?.patient_id ?? "").trim();
       const pidForProblems = savedPatientId || currentPatientId.trim();
       const diagnosesForProblems = buildDiagnosesForSync({
@@ -1931,7 +2438,7 @@ export default function EncounterPage() {
         if (patientError) throw new Error(patientError.message);
       }
 
-      setIsSaving(false);
+      if (!silent) setIsSaving(false);
       if (completedFlow) {
         setEncounterIsFinalized(true);
         setMarkComplete(true);
@@ -1942,8 +2449,10 @@ export default function EncounterPage() {
         setEncounterIsFinalized(false);
       }
       if (redirectAction === "none") {
-        setSaveSuccessMessage("Draft saved.");
-        setTimeout(() => setSaveSuccessMessage(null), 2800);
+        if (!silent) {
+          setSaveSuccessMessage("Draft saved.");
+          setTimeout(() => setSaveSuccessMessage(null), 2800);
+        }
       } else if (redirectAction === "close") {
         setSaveSuccessMessage(
           completedFlow
@@ -1969,13 +2478,106 @@ export default function EncounterPage() {
           }, 1500);
         }
       }
+      return true;
     } catch (e) {
-      setIsSaving(false);
-      const msg = e instanceof Error ? e.message : "Could not save encounter.";
-      setSaveError(msg);
-      setSaveSuccessMessage(null);
+      if (!silent) {
+        setIsSaving(false);
+        const msg = e instanceof Error ? e.message : "Could not save encounter.";
+        setSaveError(msg);
+        setSaveSuccessMessage(null);
+      } else {
+        console.warn("saveEncounter (silent):", e);
+      }
+      return false;
     }
   }
+
+  const saveEncounterRef = useRef(saveEncounter);
+  saveEncounterRef.current = saveEncounter;
+
+  const silentSaveDraftIfNeeded = useCallback(async () => {
+    if (!isDirty || isEncounterReadOnly) return;
+    await saveEncounterRef.current("draft", "none", { silent: true });
+  }, [isDirty, isEncounterReadOnly]);
+
+  const shouldBlockUnsavedNavigation = isDirty && !isEncounterReadOnly;
+
+  const closeUnsavedModal = useCallback(() => {
+    pendingNavRef.current = null;
+    setUnsavedModalOpen(false);
+  }, []);
+
+  const handleUnsavedStay = useCallback(() => {
+    closeUnsavedModal();
+  }, [closeUnsavedModal]);
+
+  const handleUnsavedSaveDraftAndLeave = useCallback(async () => {
+    const ok = await saveEncounter("draft", "none");
+    if (!ok) return;
+    const pending = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setUnsavedModalOpen(false);
+    if (!pending) return;
+    if (pending.kind === "tab") {
+      setActiveTab(pending.tabId);
+    } else {
+      router.push(pending.href);
+    }
+  }, [router, closeUnsavedModal]);
+
+  const handleUnsavedDiscardAndLeave = useCallback(() => {
+    const pending = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setUnsavedModalOpen(false);
+    if (!pending) return;
+    if (pending.kind === "tab") {
+      setActiveTab(pending.tabId);
+    } else {
+      router.push(pending.href);
+    }
+  }, [router]);
+
+  /**
+   * Next.js App Router does not expose `router.beforePopState` (that is the Pages `next/router` API).
+   * We intercept leaving via `beforeunload` (tab close / refresh) and capture-phase clicks on `<a href>`.
+   */
+  useEffect(() => {
+    if (!shouldBlockUnsavedNavigation) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [shouldBlockUnsavedNavigation]);
+
+  useEffect(() => {
+    if (!shouldBlockUnsavedNavigation) return;
+    const onDocClickCapture = (e: MouseEvent) => {
+      if (unsavedModalOpen) return;
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      const el = t.closest("a[href]");
+      if (!el || !(el instanceof HTMLAnchorElement)) return;
+      if (el.target === "_blank" || el.download) return;
+      const href = el.getAttribute("href");
+      if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
+      let url: URL;
+      try {
+        url = new URL(href, window.location.href);
+      } catch {
+        return;
+      }
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pendingNavRef.current = { kind: "href", href: `${url.pathname}${url.search}${url.hash}` };
+      setUnsavedModalOpen(true);
+    };
+    document.addEventListener("click", onDocClickCapture, true);
+    return () => document.removeEventListener("click", onDocClickCapture, true);
+  }, [shouldBlockUnsavedNavigation, unsavedModalOpen]);
 
   const headerPatientDisplayName = useMemo(() => {
     const ep = encounterHeaderEmbed?.patient;
@@ -2009,8 +2611,6 @@ export default function EncounterPage() {
     { id: "encounters", label: "Encounters" },
     { id: "encounter", label: "Current Encounter" },
     { id: "investigations", label: "Investigations" },
-    { id: "new", label: "+ New" },
-    { id: "consults", label: "Consults Demo" },
   ];
   if (!encounterId) {
     return <div className="flex min-h-screen items-center justify-center p-8 text-gray-500">Loading encounter...</div>;
@@ -2048,9 +2648,6 @@ export default function EncounterPage() {
           </div>
           <div className="flex items-center gap-3">
             {currentPatientId.trim() ? <AbdmConsentNotificationGate patientId={currentPatientId.trim()} /> : null}
-            <button type="button" className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100">
-              <BellIcon className="h-5 w-5" />
-            </button>
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 ring-2 ring-white" />
           </div>
         </div>
@@ -2058,73 +2655,43 @@ export default function EncounterPage() {
 
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
 
-        {/* ── Patient banner ── */}
-        <div className="overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-sm">
-          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
-
-            {/* Left: Patient info */}
-            <div className="flex gap-4">
-              <div suppressHydrationWarning className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-2xl font-bold text-white shadow-lg">
-                {isMounted
-                  ? (headerPatientDisplayName === "Unknown Patient"
-                      ? "?"
-                      : headerPatientDisplayName.charAt(0)?.toUpperCase() ?? "?")
-                  : "?"}
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-bold text-gray-900">
-                    {headerPatientDisplayName}
-                  </h1>
-                  {patient?.blood_group && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-xs font-bold text-orange-700">
-                      <DropletIcon className="h-3 w-3" /> {patient.blood_group}
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 text-sm text-gray-500">
-                  {patient?.age_years != null ? `${patient.age_years} years` : "—"}
-                  {patient?.sex ? ` • ${patient.sex.charAt(0).toUpperCase() + patient.sex.slice(1)}` : ""}
-                  {patient?.docpad_id ? (
-                    <> • DOCPAD ID:{" "}
-                      <span className="font-medium text-gray-700">{patient.docpad_id}</span>
-                    </>
+        {/* ── Patient banner + chart tabs (sticky below encounter nav) ── */}
+        <div className="sticky top-14 z-50">
+          <div className="overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-sm">
+            <PatientEncounterBanner
+              patientId={currentPatientId.trim() || "unknown"}
+              patientName={headerPatientDisplayName}
+              ageYears={patient?.age_years ?? null}
+              sex={patient?.sex ?? null}
+              docpadId={patient?.docpad_id ?? null}
+              wardBed={null}
+              bloodGroup={patient?.blood_group ?? null}
+              phone={patient?.phone ?? null}
+              rightSlot={
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Treating doctors & facilities</p>
+                  {encounterHeaderEmbed?.organization?.name ? (
+                    <p className="mb-2 text-xs font-medium text-gray-600">{encounterHeaderEmbed.organization.name}</p>
                   ) : null}
-                </p>
-                {patient?.phone && (
-                  <p className="mt-0.5 text-sm text-gray-500">
-                    <a href={`tel:${patient.phone}`} className="font-medium text-blue-600 hover:underline">
-                      {patient.phone}
-                    </a>
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Right: Treating doctors */}
-            <div className="min-w-[220px]">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Treating doctors & facilities</p>
-              {encounterHeaderEmbed?.organization?.name ? (
-                <p className="mb-2 text-xs font-medium text-gray-600">{encounterHeaderEmbed.organization.name}</p>
-              ) : null}
-              <ul className="space-y-2">
-                <li className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 ring-1 ring-white">
-                    {treatingDoctorInitial(headerDoctorDisplayName)}
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-gray-800">{headerDoctorDisplayName}</p>
-                    {headerDoctorSubtitle ? (
-                      <p className="text-[11px] text-gray-400">{headerDoctorSubtitle}</p>
-                    ) : null}
-                  </div>
-                </li>
-              </ul>
-              <button type="button" className="mt-2 text-xs font-semibold text-blue-600 hover:underline">
-                View all facilities
-              </button>
-            </div>
-          </div>
+                  <ul className="space-y-2">
+                    <li className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 ring-1 ring-white">
+                        {treatingDoctorInitial(headerDoctorDisplayName)}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-800">{headerDoctorDisplayName}</p>
+                        {headerDoctorSubtitle ? (
+                          <p className="text-[11px] text-gray-400">{headerDoctorSubtitle}</p>
+                        ) : null}
+                      </div>
+                    </li>
+                  </ul>
+                  <button type="button" className="mt-2 text-xs font-semibold text-blue-600 hover:underline">
+                    View all facilities
+                  </button>
+                </div>
+              }
+            />
 
           {/* Tab bar — role="tab" excludes these from global dark boxed-button styles in themes.css */}
           <div
@@ -2139,7 +2706,7 @@ export default function EncounterPage() {
                 role="tab"
                 aria-selected={activeTab === tab.id}
                 id={`patient-chart-tab-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => trySetActiveTab(tab.id)}
                 className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition ${
                   activeTab === tab.id
                     ? "border-blue-600 text-blue-600 dark:border-blue-500 dark:text-[#e8edf5]"
@@ -2158,6 +2725,7 @@ export default function EncounterPage() {
             ))}
           </div>
         </div>
+        </div>
 
         {/* ── Encounter card ── */}
         <div className="mt-3 overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-sm">
@@ -2169,7 +2737,7 @@ export default function EncounterPage() {
               encountersError={patientEncountersError}
               onLiveOpdClick={handleLiveTimelineOpdClick}
               onNavigate={handleSummaryNavigate}
-              onViewAllergyDetails={() => setActiveTab("encounter")}
+              onViewAllergyDetails={() => trySetActiveTab("encounter")}
               summaryRow={patientSummaryRow}
               summaryLoading={patientSummaryLoading}
               summaryError={patientSummaryError}
@@ -2192,7 +2760,7 @@ export default function EncounterPage() {
               encounterId={encounterId}
               hospitalId={summaryOrgId}
               doctorDisplayName={headerDoctorDisplayName}
-              onRequestOrderMore={() => setActiveTab("encounter")}
+              onRequestOrderMore={() => trySetActiveTab("encounter")}
             />
           ) : ["trends", "new", "consults", "prescriptions", "followup", "upload"].includes(activeTab) ? (
             <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 px-6 py-14 text-center">
@@ -2207,7 +2775,10 @@ export default function EncounterPage() {
               </p>
             </div>
           ) : (
-            <fieldset disabled={isEncounterReadOnly} className="m-0 min-w-0 border-0 p-0">
+            <div
+              className={`m-0 min-w-0 border-0 p-0${isEncounterReadOnly ? " opacity-50" : ""}`}
+              inert={isEncounterReadOnly || undefined}
+            >
           {/* Encounter header bar — compact single row */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-gray-100 px-3 py-1.5 sm:px-4">
             <span className="shrink-0 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
@@ -2249,6 +2820,7 @@ export default function EncounterPage() {
           {/* ── Body ── */}
           <div className="p-3 sm:p-4">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start lg:gap-5">
+              {!isEncounterReadOnly ? (
               <div className="col-span-full mb-1 flex flex-wrap items-center gap-2 border-b border-gray-100 pb-2">
                 <button
                   type="button"
@@ -2293,7 +2865,7 @@ export default function EncounterPage() {
                   <button
                     type="button"
                     className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 shadow-sm transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={permLoading || isEncounterReadOnly}
+                    disabled={permLoading}
                     title="Radiological measurements on uploaded X-ray"
                     onClick={() => setXrayMeasurementOpen(true)}
                   >
@@ -2304,6 +2876,7 @@ export default function EncounterPage() {
                   </button>
                 ) : null}
               </div>
+              ) : null}
               {/* Left column: clinical narrative */}
               <div className="min-w-0 space-y-4 lg:col-span-8">
               <PermissionSurface
@@ -2491,6 +3064,7 @@ export default function EncounterPage() {
                       indiaRefset={SNOMED_INDIA_REFSET_UI}
                       specialty={doctorSpecialty || department}
                       doctorId={doctorPractitionerId ?? undefined}
+                      disabled={isEncounterReadOnly}
                     />
                   </div>
                   <div className="flex-[3] min-w-0">
@@ -2500,7 +3074,8 @@ export default function EncounterPage() {
                         value={durationText}
                         onChange={(e) => setDurationText(e.target.value)}
                         placeholder="Duration"
-                        className="w-full bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400"
+                        disabled={isEncounterReadOnly}
+                        className="w-full bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
@@ -2524,7 +3099,22 @@ export default function EncounterPage() {
             <div className="encounter-zone-exam rounded-lg border border-gray-100 bg-white p-3 shadow-sm sm:p-3.5">
               <div className="mb-1 flex items-center gap-2">
                 <h3 className="text-sm font-bold text-gray-900">Quick exam</h3>
-                <PaperclipIcon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 items-center justify-center rounded-md p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  title="Add clinical image"
+                  aria-label="Add clinical image"
+                  disabled={
+                    isEncounterReadOnly ||
+                    !encounterId ||
+                    !currentPatientId.trim() ||
+                    !(summaryOrgId ?? encounterOrgId)?.trim() ||
+                    !doctorPractitionerId
+                  }
+                  onClick={() => setClinicalAttachmentModalOpen(true)}
+                >
+                  <Paperclip className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
                 <span className="min-w-0 flex-1" />
                 <VoiceDictationButton
                   contextType="examination"
@@ -2550,20 +3140,20 @@ export default function EncounterPage() {
                 />
               </div>
 
-              {/* Voice-extracted exam finding chips */}
+              {/* Examination finding chips — same pill pattern as chief complaint */}
               {(examFindings.length > 0 || snomedLinkingExam) && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {examFindings.map((f) => {
                     const label = clinicalChipPrimaryLabel(f);
                     const lowOrMissing = !f.snomedCode?.trim() || f.snomedLowConfidence;
-                    const examBorder = f.negation
+                    const chiefBorder = f.negation
                       ? "border-red-200 bg-red-50/90 line-through decoration-red-400"
                       : f.isEdited
                         ? "border-sky-400 bg-sky-50/50 ring-1 ring-sky-200/80"
                         : lowOrMissing
                           ? "border-amber-300 bg-amber-50/70"
                           : "border-emerald-200/90 bg-emerald-50/50";
-                    const examDot = f.negation
+                    const dotClass = f.negation
                       ? "bg-red-400"
                       : f.isConfirmed
                         ? "bg-emerald-400"
@@ -2575,17 +3165,15 @@ export default function EncounterPage() {
                       className="relative inline-flex max-w-full flex-col"
                     >
                       <span
-                        className={`inline-flex max-w-full items-stretch overflow-hidden rounded-full border shadow-sm ${examBorder}`}
+                        className={`inline-flex max-w-full items-stretch overflow-hidden rounded-full border shadow-sm ${chiefBorder}`}
                       >
                         <button
                           type="button"
-                          className="inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                          className="inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-2.5 py-1.5 text-left outline-none ring-0 focus-visible:ring-2 focus-visible:ring-sky-300"
                           title={
-                            f.snomedCode && !f.snomedLowConfidence
-                              ? `SNOMED: ${f.snomedCode}`
-                              : f.snomedCode
-                                ? `SNOMED: ${f.snomedCode} — verify body site`
-                                : "No SNOMED code — click to edit"
+                            f.snomedCode
+                              ? `SNOMED ${f.snomedCode} — click to edit`
+                              : "No SNOMED match — click to edit"
                           }
                           disabled={isEncounterReadOnly}
                           onClick={() => {
@@ -2596,8 +3184,13 @@ export default function EncounterPage() {
                           {f.isEdited ? (
                             <ClinicalChipEditedMarker className="h-3 w-3 shrink-0" aria-hidden />
                           ) : null}
-                          <span className={`h-2 w-2 shrink-0 rounded-full ${examDot}`} />
-                          <span className="text-[12px] font-medium text-gray-900">{label}</span>
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+                          <span className="min-w-0 text-[12px] font-medium text-gray-900">{label}</span>
+                          {(f.duration || f.severity) && (
+                            <span className="shrink-0 text-[11px] text-gray-500">
+                              {[f.duration, f.severity].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
                           {f.snomedCode?.trim() && f.snomedLowConfidence && (
                             <span
                               className="rounded bg-amber-100 px-1.5 py-px text-[9px] font-semibold text-amber-900"
@@ -2630,6 +3223,10 @@ export default function EncounterPage() {
                         onClose={() => setEditingExamChipId(null)}
                         onSaved={(next) => {
                           setExamFindings((prev) => prev.map((row) => (row.id === next.id ? next : row)));
+                          setSelectedExaminationConcept({
+                            term: clinicalChipPrimaryLabel(next),
+                            conceptId: next.snomedCode?.trim() ?? "",
+                          });
                         }}
                         hierarchy="finding"
                         contextType="examination"
@@ -2651,40 +3248,32 @@ export default function EncounterPage() {
               )}
 
               <p className="mb-1 text-xs font-medium text-gray-500">Examination finding (SNOMED CT)</p>
-              <div className="mt-1 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start">
-                <div className="min-w-0 flex-1">
-                  <SnomedSearch
-                    placeholder="Search examination finding (e.g. Chest clear, No murmur)…"
-                    hierarchy="finding"
-                    allowFreeTextNoCode
-                    ecl={
-                      isOrthopedicsSpecialty(doctorSpecialty || department)
-                        ? SNOMED_ECL_MSK_FINDING
-                        : SNOMED_ECL_CLINICAL_FINDING
-                    }
-                    cacheFilter="finding_diagnosis"
-                    conceptCacheType="finding"
-                    value={examQuery}
-                    onChange={setExamQuery}
-                    onSelect={handleExaminationSelect}
-                    indiaRefset={SNOMED_INDIA_REFSET_UI}
-                    specialty={doctorSpecialty || department}
-                    doctorId={doctorPractitionerId ?? undefined}
-                  />
-                </div>
-                {selectedExaminationConcept?.conceptId?.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedExaminationConcept(null);
-                      setExamQuery("");
-                    }}
-                    className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-                  >
-                    Clear
-                  </button>
-                )}
+              <div className="mt-1 min-w-0">
+                <SnomedSearch
+                  placeholder="Search examination finding (e.g. Chest clear, No murmur)…"
+                  hierarchy="finding"
+                  allowFreeTextNoCode
+                  ecl={
+                    isOrthopedicsSpecialty(doctorSpecialty || department)
+                      ? SNOMED_ECL_MSK_FINDING
+                      : SNOMED_ECL_CLINICAL_FINDING
+                  }
+                  cacheFilter="finding_diagnosis"
+                  conceptCacheType="finding"
+                  value={examQuery}
+                  onChange={setExamQuery}
+                  onSelect={handleExaminationSelect}
+                  indiaRefset={SNOMED_INDIA_REFSET_UI}
+                  specialty={doctorSpecialty || department}
+                  doctorId={doctorPractitionerId ?? undefined}
+                  disabled={isEncounterReadOnly}
+                />
               </div>
+
+              <ClinicalAttachmentThumbnailStrip
+                rows={clinicalEncounterAttachments}
+                className="mt-3 border-t border-gray-100 pt-3"
+              />
             </div>
 
               </PermissionSurface>
@@ -2825,6 +3414,43 @@ export default function EncounterPage() {
                 indiaRefset={SNOMED_INDIA_REFSET_UI}
                 specialty={doctorSpecialty || department}
                 doctorId={doctorPractitionerId ?? undefined}
+                disabled={isEncounterReadOnly}
+              />
+
+              {doctorPractitionerId && (
+                <SimilarPastPrescriptions
+                  query={
+                    diagnosisEntries.map((e) => e.term).filter(Boolean).join(", ") ||
+                    diagnosisQuery ||
+                    voiceComplaints.map((c) => clinicalChipPrimaryLabel(c)).filter(Boolean).join(", ") ||
+                    selectedComplaintLabel ||
+                    chiefComplaintText
+                  }
+                  practitionerId={doctorPractitionerId}
+                  onSelect={(text) => {
+                    setSuggestedRxNote(text);
+                  }}
+                />
+              )}
+
+              <IcdSuggestionBadge
+                clinicalNote={[
+                  diagnosisEntries.map((e) => e.term).filter(Boolean).join(", "),
+                  diagnosisQuery,
+                  voiceComplaints.map((c) => clinicalChipPrimaryLabel(c)).filter(Boolean).join(", "),
+                  chiefComplaintText,
+                ].filter(Boolean).join(" | ")}
+                readOnly={isEncounterReadOnly}
+                onAccept={(s) => {
+                  setDiagnosisEntries((prev) => {
+                    if (prev.length === 0) {
+                      // No diagnosis chips yet — create one from the ICD description
+                      return [{ term: s.description, snomed: "", icd10: s.code }];
+                    }
+                    // Patch icd10 onto the first entry; keep others unchanged
+                    return prev.map((d, i) => (i === 0 ? { ...d, icd10: s.code } : d));
+                  });
+                }}
               />
             </div>
 
@@ -2836,39 +3462,44 @@ export default function EncounterPage() {
                 presentationWhenViewOnly="fieldset"
                 deniedTitle="View-only access for your role."
               >
-            {/* Advice & Instructions — Figma-aligned card */}
-            <div className="advice-instructions-card overflow-hidden rounded-lg border border-purple-100 bg-white shadow-sm dark:border-[#2a3a52] dark:bg-[#111827] dark:shadow-[0_1px_3px_rgba(0,0,0,0.35)]">
-              <div className="border-b border-purple-100 bg-[#F5F3FF] px-3 py-2.5 sm:px-3.5 dark:border-[#2a3a52] dark:bg-[#1a2236]">
-                <button
-                  type="button"
-                  onClick={() => setAdviceOpen(!adviceOpen)}
-                  className="flex w-full items-center gap-2 text-left"
-                >
-                  <FileText
-                    className="h-4 w-4 shrink-0 text-purple-600 dark:text-purple-400"
-                    strokeWidth={2}
-                    aria-hidden
-                  />
-                  <span className="text-sm font-bold text-gray-900 dark:text-[#e8edf5]">
-                    Advice &amp; Instructions for Patient
-                  </span>
-                  <ChevronDown
-                    className={`ml-auto h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-[#8fa3bc] ${adviceOpen ? "rotate-180" : ""}`}
-                    strokeWidth={2}
-                    aria-hidden
-                  />
-                </button>
-              </div>
+            {/* Patient advice — clean white card */}
+            <div className="advice-instructions-card rounded-[12px] border border-[#E5E7EB] bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-950">
+              <button
+                type="button"
+                onClick={() => setAdviceOpen(!adviceOpen)}
+                className="flex w-full items-start justify-between gap-3 text-left"
+              >
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-[#9CA3AF] dark:text-gray-500">
+                    Patient advice
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <FileText
+                      className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400"
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      Advice &amp; Instructions for Patient
+                    </span>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`mt-1 h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-400 ${adviceOpen ? "rotate-180" : ""}`}
+                  strokeWidth={2}
+                  aria-hidden
+                />
+              </button>
 
               {adviceOpen && (
-                <div className="space-y-3 p-3 sm:p-3.5">
-                  <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="mt-5 space-y-4 border-t border-[#E5E7EB] pt-5 dark:border-gray-700">
+                  <div className="flex flex-wrap items-end gap-3">
                     <div className="min-w-[200px] flex-1">
-                      <label className="text-[11px] font-semibold tracking-wide text-gray-600 dark:text-[#8fa3bc]">
-                        Saved Templates:
+                      <label className="text-[11px] font-medium tracking-wide text-[#9CA3AF] dark:text-gray-500">
+                        Saved templates
                       </label>
                       <select
-                        className="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm text-gray-800 outline-none focus:border-purple-300 focus:ring-2 focus:ring-purple-100 dark:border-[#2a3a52] dark:bg-[#1a2236] dark:text-[#e8edf5] dark:focus:border-purple-500 dark:focus:ring-purple-900/40"
+                        className="mt-1.5 h-9 w-full rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-gray-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 dark:border-gray-600 dark:bg-gray-900/60 dark:text-gray-100 dark:focus:border-violet-500 dark:focus:ring-violet-950/50"
                         value={selectedAdviceTemplateId}
                         onChange={(e) => {
                           const id = e.target.value;
@@ -2888,14 +3519,14 @@ export default function EncounterPage() {
                     <button
                       type="button"
                       onClick={() => void handleCreateAdviceTemplate()}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700"
+                      className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-[#F9FAFB] dark:border-gray-600 dark:bg-gray-950 dark:text-gray-100 dark:hover:bg-gray-900"
                     >
                       <PlusCircle className="h-4 w-4" strokeWidth={2} aria-hidden />
                       Create Template
                     </button>
                   </div>
 
-                  <div className="relative min-h-[128px] rounded-lg border border-gray-100 bg-white dark:border-[#2a3a52] dark:bg-[#1a2236]">
+                  <div className="relative min-h-[128px] rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] dark:border-gray-600 dark:bg-gray-900/50">
                     <textarea
                       ref={adviceTextareaRef}
                       rows={5}
@@ -2910,10 +3541,10 @@ export default function EncounterPage() {
                         setSelectedAdviceTemplateId("");
                       }}
                       placeholder="Add advice, precautions, diet instructions, or lifestyle modifications for the patient..."
-                      className="min-h-[120px] w-full resize-none border-0 bg-transparent px-3 py-2.5 pr-14 pb-12 text-sm text-gray-800 outline-none ring-0 placeholder:text-gray-400 focus:ring-0 dark:text-[#e8edf5] dark:placeholder:text-[#546b82]"
+                      className="min-h-[120px] w-full resize-none rounded-lg border-0 bg-transparent px-3 py-2.5 pr-14 pb-12 text-sm text-gray-800 outline-none ring-0 placeholder:text-gray-400 focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
                     />
                     <div className="pointer-events-none absolute bottom-2 right-2 flex items-center justify-center">
-                      <div className="pointer-events-auto rounded-full bg-gray-100 p-1.5 shadow-sm ring-1 ring-gray-200/80 transition hover:bg-violet-50 hover:ring-violet-200 dark:bg-[#2a3a52] dark:ring-[#3d5166] dark:hover:bg-[#1e2d45] dark:hover:ring-purple-500/40">
+                      <div className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white shadow-sm transition hover:bg-[#F9FAFB] dark:border-gray-600 dark:bg-gray-950 dark:hover:bg-gray-900">
                         <VoiceDictationButton
                           contextType="advice"
                           specialty={doctorSpecialty || department}
@@ -2938,43 +3569,54 @@ export default function EncounterPage() {
                   </div>
 
                   <div>
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-[#8fa3bc]">
-                      Quick add common advice:
+                    <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.05em] text-[#9CA3AF] dark:text-gray-500">
+                      Quick add common advice
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {COMMON_ADVICE_PILLS.map((item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => appendQuickAdvicePill(item)}
-                          className="rounded-full border border-blue-200 bg-blue-50/80 px-3 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-100 dark:border-[#3d5166] dark:bg-[#1e2d45] dark:text-[#93c5fd] dark:hover:bg-[#243552]"
-                        >
-                          {item}
-                        </button>
-                      ))}
+                      {COMMON_ADVICE_PILLS.map((item) => {
+                        const adviceLines = adviceText
+                          .split("\n")
+                          .map((l) => l.trim())
+                          .filter(Boolean);
+                        const isPillActive = adviceLines.includes(item);
+                        return (
+                          <button
+                            key={item}
+                            type="button"
+                            onClick={() => appendQuickAdvicePill(item)}
+                            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                              isPillActive
+                                ? "border-[#7C3AED] bg-[#EDE9FE] text-[#5B21B6] dark:border-violet-500 dark:bg-violet-950/50 dark:text-violet-200"
+                                : "border-[#E5E7EB] bg-white text-[#374151] hover:border-[#D1D5DB] hover:bg-[#F9FAFB] dark:border-gray-600 dark:bg-gray-950 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-900"
+                            }`}
+                          >
+                            {item}
+                          </button>
+                        );
+                      })}
                       <button
                         type="button"
                         onClick={() => adviceTextareaRef.current?.focus()}
-                        className="rounded-full px-2 text-xs font-bold italic text-purple-600 underline-offset-2 hover:underline dark:text-purple-400"
+                        className="rounded-full border border-dashed border-[#7C3AED] bg-white px-3 py-1 text-xs font-medium text-[#7C3AED] transition hover:bg-[#F9FAFB] dark:border-violet-400 dark:bg-gray-950 dark:text-violet-300 dark:hover:bg-gray-900"
                       >
                         Custom…
                       </button>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-[#EFF6FF] p-3 dark:border-[#2a3a52] dark:bg-[#1a2236]">
+                  <div className="flex items-start gap-3 rounded-lg bg-[#F9FAFB] p-3 dark:bg-gray-900/40">
                     <input
                       id="advice-print-include"
                       type="checkbox"
                       checked={includeAdviceOnPrescription}
                       onChange={(e) => setIncludeAdviceOnPrescription(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-[#3d5166]"
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-[#7C3AED] focus:ring-violet-500 dark:border-gray-600 dark:accent-violet-500"
                     />
                     <label htmlFor="advice-print-include" className="cursor-pointer text-left">
-                      <p className="text-sm font-semibold text-gray-800 dark:text-[#e8edf5]">
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                         Include this advice on printed prescription
                       </p>
-                      <p className="mt-0.5 text-xs text-gray-500 dark:text-[#8fa3bc]">
+                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                         Patient will receive these instructions on the prescription printout
                       </p>
                     </label>
@@ -2983,7 +3625,7 @@ export default function EncounterPage() {
                   <button
                     type="button"
                     onClick={() => void handleCreateAdviceTemplate()}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-600 hover:text-purple-800 hover:underline dark:text-purple-400 dark:hover:text-purple-300"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:text-violet-900 hover:underline dark:text-violet-400 dark:hover:text-violet-300"
                   >
                     <Save className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
                     Save as template
@@ -3007,12 +3649,37 @@ export default function EncounterPage() {
                 <div id="encounter-quick-vitals" className="rounded-lg border border-gray-200/90 bg-white p-3 shadow-sm sm:p-3.5">
                   <h3 className="mb-2 text-sm font-bold text-gray-900">Quick vitals</h3>
                   <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                    <VitalInput label="Weight" unit="kg" value={weight} onChange={setWeight} Icon={ScaleIcon} iconColor="text-gray-400" />
-                    <VitalInput label="BP" unit="mmHg" value={bloodPressure} onChange={setBloodPressure} Icon={DropletIcon} iconColor="text-blue-400" />
-                    <VitalInput label="Pulse" unit="bpm" value={pulse} onChange={setPulse} Icon={HeartIcon} iconColor="text-rose-400" />
+                    <VitalInput
+                      label="Weight"
+                      unit="kg"
+                      value={weight}
+                      onChange={setWeight}
+                      Icon={ScaleIcon}
+                      iconColor="text-gray-400"
+                      disabled={isEncounterReadOnly}
+                    />
+                    <VitalInput
+                      label="BP"
+                      unit="mmHg"
+                      value={bloodPressure}
+                      onChange={setBloodPressure}
+                      Icon={DropletIcon}
+                      iconColor="text-blue-400"
+                      disabled={isEncounterReadOnly}
+                    />
+                    <VitalInput
+                      label="Pulse"
+                      unit="bpm"
+                      value={pulse}
+                      onChange={setPulse}
+                      Icon={HeartIcon}
+                      iconColor="text-rose-400"
+                      disabled={isEncounterReadOnly}
+                    />
                     <VitalInput
                       label="Temp" unit="°C" value={temperature} onChange={setTemperature}
                       Icon={ThermometerIcon} iconColor="text-orange-400"
+                      disabled={isEncounterReadOnly}
                       suffix={
                         <div className="flex overflow-hidden rounded-lg border border-gray-200 text-[10px] font-bold">
                           <button type="button" onClick={() => setTempUnit("C")} className={`px-2 py-0.5 transition ${tempUnit === "C" ? "bg-blue-600 text-white" : "bg-white text-gray-500"}`}>°C</button>
@@ -3021,7 +3688,15 @@ export default function EncounterPage() {
                       }
                     />
                     <div className="col-span-2">
-                      <VitalInput label="SpO₂" unit="%" value={spo2} onChange={setSpo2} Icon={WaveIcon} iconColor="text-teal-400" />
+                      <VitalInput
+                        label="SpO₂"
+                        unit="%"
+                        value={spo2}
+                        onChange={setSpo2}
+                        Icon={WaveIcon}
+                        iconColor="text-teal-400"
+                        disabled={isEncounterReadOnly}
+                      />
                     </div>
                   </div>
                   <button type="button" className="mt-2 text-xs font-semibold text-blue-600 hover:underline">
@@ -3061,6 +3736,7 @@ export default function EncounterPage() {
                     hierarchy="allergy"
                     onSelect={(concept) => handleAllergySelect(concept)}
                     indiaRefset={SNOMED_INDIA_REFSET_UI}
+                    disabled={isEncounterReadOnly}
                   />
                   {allergiesText.trim() && (
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -3224,23 +3900,57 @@ export default function EncounterPage() {
                           ))}
                         </div>
                       </PermissionSurface>
-                      <button
-                        type="button"
-                        disabled={permLoading || !hasPermission("prescriptions", "view")}
-                        title={
-                          permLoading || !hasPermission("prescriptions", "view")
-                            ? "You don’t have access to the prescription list."
-                            : undefined
-                        }
-                        onClick={() => setIsPrescriptionModalOpen(true)}
-                        className="mt-2 text-xs font-semibold text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                      <PatientActionConfirmPopover
+                        patientId={currentPatientId.trim()}
+                        patientName={headerPatientDisplayName}
+                        ageYears={patient?.age_years ?? null}
+                        sex={patient?.sex ?? null}
+                        docpadId={patient?.docpad_id ?? null}
+                        actionNoun="prescription"
+                        disabled={permLoading || !hasPermission("prescriptions", "view") || !currentPatientId.trim()}
+                        beforeConfirm={silentSaveDraftIfNeeded}
+                        onConfirm={() => setIsPrescriptionModalOpen(true)}
+                        side="top"
+                        align="start"
                       >
-                        Open prescription editor →
-                      </button>
+                        <button
+                          type="button"
+                          disabled={permLoading || !hasPermission("prescriptions", "view")}
+                          title={
+                            permLoading || !hasPermission("prescriptions", "view")
+                              ? "You don’t have access to the prescription list."
+                              : undefined
+                          }
+                          className="mt-2 text-xs font-semibold text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Open prescription editor →
+                        </button>
+                      </PatientActionConfirmPopover>
                     </div>
                   )}
                 </div>
               )}
+
+            {suggestedRxNote && (
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                    Prescription reference (from similar past encounter)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSuggestedRxNote(null)}
+                    className="text-[10px] text-amber-400 hover:text-amber-600"
+                    aria-label="Dismiss reference"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-amber-900">
+                  {suggestedRxNote}
+                </p>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
                 <PermissionSurface
@@ -3250,20 +3960,33 @@ export default function EncounterPage() {
                   presentationWhenViewOnly="fieldset"
                   deniedTitle="View-only access for your role."
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
+                  <PatientActionConfirmPopover
+                    patientId={currentPatientId.trim() || "unknown"}
+                    patientName={headerPatientDisplayName}
+                    ageYears={patient?.age_years ?? null}
+                    sex={patient?.sex ?? null}
+                    docpadId={patient?.docpad_id ?? null}
+                    actionNoun="investigation order"
+                    disabled={permLoading || !hasPermission("examination", "edit")}
+                    beforeConfirm={silentSaveDraftIfNeeded}
+                    onConfirm={() => {
                       if (encounterId) {
-                        router.push(`/opd/${encounterId}/investigations`);
+                        tryRouterPush(`/opd/${encounterId}/investigations`);
                       } else {
                         setIsLabOrdersModalOpen(true);
                       }
                     }}
-                    className="flex w-full min-w-0 items-center gap-2.5 rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 py-2.5 text-left transition hover:bg-blue-50"
+                    side="top"
+                    align="start"
                   >
-                    <ActivityIcon className="h-5 w-5 shrink-0 text-blue-500" />
-                    <span className="text-sm font-semibold text-gray-800">Order Investigations</span>
-                  </button>
+                    <button
+                      type="button"
+                      className="flex w-full min-w-0 items-center gap-2.5 rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 py-2.5 text-left transition hover:bg-blue-50"
+                    >
+                      <ActivityIcon className="h-5 w-5 shrink-0 text-blue-500" />
+                      <span className="text-sm font-semibold text-gray-800">Order Investigations</span>
+                    </button>
+                  </PatientActionConfirmPopover>
                 </PermissionSurface>
                 <PermissionSurface
                   viewAllowed={hasPermission("examination", "view")}
@@ -3287,20 +4010,33 @@ export default function EncounterPage() {
                     <span className="text-sm font-semibold text-gray-800">View Investigations</span>
                   </button>
                 </PermissionSurface>
-                <button
-                  type="button"
-                  disabled={permLoading || !hasPermission("prescriptions", "view")}
-                  title={
-                    permLoading || !hasPermission("prescriptions", "view")
-                      ? "You don’t have access to the prescription list."
-                      : undefined
-                  }
-                  onClick={() => setIsPrescriptionModalOpen(true)}
-                  className="col-span-2 flex items-center gap-2.5 rounded-lg border-2 border-emerald-200 bg-emerald-50/50 px-3 py-2.5 text-left transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
+                <PatientActionConfirmPopover
+                  patientId={currentPatientId.trim()}
+                  patientName={headerPatientDisplayName}
+                  ageYears={patient?.age_years ?? null}
+                  sex={patient?.sex ?? null}
+                  docpadId={patient?.docpad_id ?? null}
+                  actionNoun="prescription"
+                  disabled={permLoading || !hasPermission("prescriptions", "view") || !currentPatientId.trim()}
+                  beforeConfirm={silentSaveDraftIfNeeded}
+                  onConfirm={() => setIsPrescriptionModalOpen(true)}
+                  side="top"
+                  align="start"
                 >
-                  <PillIcon className="h-5 w-5 shrink-0 text-emerald-500" />
-                  <span className="text-sm font-semibold text-gray-800">Prescription</span>
-                </button>
+                  <button
+                    type="button"
+                    disabled={permLoading || !hasPermission("prescriptions", "view")}
+                    title={
+                      permLoading || !hasPermission("prescriptions", "view")
+                        ? "You don’t have access to the prescription list."
+                        : undefined
+                    }
+                    className="col-span-2 flex w-full items-center gap-2.5 rounded-lg border-2 border-emerald-200 bg-emerald-50/50 px-3 py-2.5 text-left transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1"
+                  >
+                    <PillIcon className="h-5 w-5 shrink-0 text-emerald-500" />
+                    <span className="text-sm font-semibold text-gray-800">Prescription</span>
+                  </button>
+                </PatientActionConfirmPopover>
               </div>
 
             <PermissionSurface
@@ -3373,6 +4109,7 @@ export default function EncounterPage() {
                   indiaRefset={SNOMED_INDIA_REFSET_UI}
                   specialty={doctorSpecialty || department}
                   doctorId={doctorPractitionerId ?? undefined}
+                  disabled={isEncounterReadOnly}
                 />
                 {/* Tag list of ordered procedures */}
                 {procedureText.trim() && (
@@ -3403,10 +4140,12 @@ export default function EncounterPage() {
                   <ConsultIcon className="h-5 w-5 shrink-0 text-purple-500" />
                   <span className="text-sm font-semibold text-gray-800">Request Consult</span>
                 </button>
-                <button type="button" className="flex items-center gap-2.5 rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 py-2.5 text-left transition hover:bg-blue-50">
-                  <SurgeryIcon className="h-5 w-5 shrink-0 text-blue-500" />
-                  <span className="text-sm font-semibold text-gray-800">Plan Surgery</span>
-                </button>
+                {showPlanSurgeryButton ? (
+                  <button type="button" className="flex items-center gap-2.5 rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 py-2.5 text-left transition hover:bg-blue-50">
+                    <SurgeryIcon className="h-5 w-5 shrink-0 text-blue-500" />
+                    <span className="text-sm font-semibold text-gray-800">Plan Surgery</span>
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   disabled={!encounterId?.trim() || !currentPatientId.trim() || isEncounterReadOnly}
@@ -3424,7 +4163,7 @@ export default function EncounterPage() {
             </div>
 
           </div>
-            </fieldset>
+            </div>
           )}
         </div>
       </div>
@@ -3525,6 +4264,22 @@ export default function EncounterPage() {
         followUpDate={followUpDate.trim() || undefined}
       />
 
+      {(summaryOrgId ?? encounterOrgId)?.trim() && encounterId && currentPatientId.trim() ? (
+        <ClinicalAttachmentModal
+          open={clinicalAttachmentModalOpen}
+          onClose={() => setClinicalAttachmentModalOpen(false)}
+          hospitalId={(summaryOrgId ?? encounterOrgId)!.trim()}
+          patientId={currentPatientId.trim()}
+          uploadedByPractitionerId={doctorPractitionerId}
+          opdEncounterId={encounterId}
+          ipdAdmissionId={null}
+          onSuccess={() => {
+            setClinicalAttachmentsReloadKey((k) => k + 1);
+            setSummaryReloadSignal((k) => k + 1);
+          }}
+        />
+      ) : null}
+
       {/* ── Sticky footer ── */}
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white px-4 py-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-2">
@@ -3567,7 +4322,38 @@ export default function EncounterPage() {
               />
               <span className="text-sm font-medium text-gray-700">Mark as completed</span>
             </label>
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setInsuranceStep(1);
+                  setInsuranceCovId("");
+                  setInsuranceModalOpen(true);
+                  if (!currentPatientId.trim()) return;
+                  setInsuranceCovLoading(true);
+                  void supabase
+                    .from("patient_insurance_coverage")
+                    .select("id, policy_number, insurance_companies!insurance_company_id(name), tpas!tpa_id(name), insurance_company_id")
+                    .eq("patient_id", currentPatientId.trim())
+                    .eq("status", "active")
+                    .then(({ data }) => {
+                      const rows = ((data ?? []) as Record<string, unknown>[]).map((r) => {
+                        const ic = r.insurance_companies;
+                        const ins = (Array.isArray(ic) ? ic[0] : ic) as { name?: string } | undefined;
+                        const tp = r.tpas;
+                        const tpa = (Array.isArray(tp) ? tp[0] : tp) as { name?: string } | undefined;
+                        return { id: String(r.id), label: `${ins?.name ?? "Insurer"} \u2014 Policy #${r.policy_number ?? "N/A"}${tpa?.name ? ` (TPA: ${tpa.name})` : ""}`, company_id: r.insurance_company_id != null ? String(r.insurance_company_id) : null };
+                      });
+                      setInsuranceCoverages(rows);
+                      if (rows.length === 1) setInsuranceCovId(rows[0].id);
+                      setInsuranceCovLoading(false);
+                    });
+                }}
+                disabled={isSaving || !currentPatientId.trim()}
+                className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
+              >
+                Submit Insurance
+              </button>
               <button
                 type="button"
                 onClick={() => saveEncounter("draft", "none")}
@@ -3602,6 +4388,158 @@ export default function EncounterPage() {
         </div>
       </div>
 
+      {/* ── Insurance Quick Submit modal (Task 6) ── */}
+      {insuranceModalOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          role="presentation"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setInsuranceModalOpen(false); }}
+        >
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-xl" role="dialog" aria-modal="true">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {insuranceStep === 1 ? "Step 1 — Select coverage" : "Step 2 — Review & submit preauth"}
+            </h2>
+
+            {insuranceStep === 1 ? (
+              <div className="mt-4 space-y-4">
+                {insuranceCovLoading ? (
+                  <p className="text-sm text-gray-500">Loading coverage...</p>
+                ) : insuranceCoverages.length === 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-amber-700">No active insurance coverage for this patient.</p>
+                    <a href={`/dashboard/patients/${currentPatientId.trim()}/insurance`} className="text-sm font-semibold text-blue-600 hover:underline">
+                      Add coverage &rarr;
+                    </a>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {insuranceCoverages.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setInsuranceCovId(c.id)}
+                        className={`w-full rounded-lg border p-3 text-left text-sm transition ${
+                          insuranceCovId === c.id
+                            ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
+                            : "border-gray-200 bg-white hover:border-gray-300"
+                        }`}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4 flex justify-end gap-2">
+                  <button type="button" onClick={() => setInsuranceModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                  <button
+                    type="button"
+                    disabled={!insuranceCovId}
+                    onClick={() => setInsuranceStep(2)}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-gray-500">A preauth will be created from this encounter with the selected coverage.</p>
+                <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
+                  <p><span className="font-medium text-gray-700">Coverage:</span> {insuranceCoverages.find((c) => c.id === insuranceCovId)?.label ?? "—"}</p>
+                  <p className="mt-1"><span className="font-medium text-gray-700">Encounter:</span> {encounterId?.slice(0, 8)}...</p>
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button type="button" onClick={() => setInsuranceStep(1)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Back</button>
+                  <button
+                    type="button"
+                    disabled={insuranceSaving}
+                    onClick={() => {
+                      setInsuranceSaving(true);
+                      const cov = insuranceCoverages.find((c) => c.id === insuranceCovId);
+                      void (async () => {
+                        try {
+                          const { data: enc } = await supabase.from("opd_encounters").select("*").eq("id", encounterId).maybeSingle();
+                          const row = (enc ?? {}) as Record<string, unknown>;
+                          const { composePreauthClinicalSummary: compose } = await import("../../../../lib/buildEncounterClinicalSummary");
+                          const summary = compose(row);
+                          const payload = {
+                            p_preauth_id: null,
+                            p_patient_id: currentPatientId.trim(),
+                            p_encounter_id: encounterId,
+                            p_insurance_company_id: cov?.company_id ?? null,
+                            p_coverage_id: insuranceCovId || null,
+                            p_estimated_amount: 0,
+                            p_procedures: [] as Record<string, unknown>[],
+                            p_diagnosis: [] as Record<string, unknown>[],
+                            p_clinical_summary: summary || null,
+                          };
+                          const { data: preauthId, error: rpcErr } = await supabase.rpc("upsert_preauth_request", payload);
+                          if (rpcErr) throw new Error(rpcErr.message);
+                          if (preauthId) {
+                            const { error: subErr } = await supabase.rpc("submit_preauth_request", { p_id: String(preauthId) });
+                            if (subErr) throw new Error(subErr.message);
+                          }
+                          toast.success({ title: "Preauth submitted" });
+                          setInsuranceModalOpen(false);
+                        } catch (e) {
+                          toast.error({ title: "Submit failed", body: e instanceof Error ? e.message : "Unknown error" });
+                        } finally {
+                          setInsuranceSaving(false);
+                        }
+                      })();
+                    }}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {insuranceSaving ? "Submitting..." : "Submit preauth"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {unsavedModalOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="unsaved-changes-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h2 id="unsaved-changes-title" className="text-lg font-semibold text-gray-900">
+              You have unsaved changes
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Save your draft before leaving, or discard changes and continue.
+            </p>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50"
+                onClick={() => void handleUnsavedStay()}
+              >
+                Stay
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-900 shadow-sm transition hover:bg-rose-100"
+                onClick={() => void handleUnsavedDiscardAndLeave()}
+              >
+                Discard &amp; leave
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSaving || !canSaveEncounter}
+                onClick={() => void handleUnsavedSaveDraftAndLeave()}
+              >
+                {isSaving ? "Saving…" : "Save as draft"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

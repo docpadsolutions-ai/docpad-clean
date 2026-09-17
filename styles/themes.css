@@ -306,6 +306,101 @@ html.dark button:not([class*="bg-blue"]):not([class*="bg-green"]):not([role="tab
   color: #e8edf5 !important;
 }
 
+/* === LIGHT CLINICAL FORM SURFACE (IPD nursing procedure log, etc.) — paper UI under html.dark === */
+html.dark .light-form-surface {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+
+html.dark .light-form-surface h3,
+html.dark .light-form-surface label {
+  color: #0f172a !important;
+}
+
+html.dark .light-form-surface .text-muted-foreground {
+  color: #64748b !important;
+}
+
+html.dark .light-form-surface input,
+html.dark .light-form-surface textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+
+html.dark .light-form-surface input:focus,
+html.dark .light-form-surface textarea:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+}
+
+html.dark .light-form-surface input::placeholder,
+html.dark .light-form-surface textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.dark .light-form-surface input:read-only {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+html.dark .light-form-surface button[role="combobox"] {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.dark .light-form-surface button[role="combobox"]:hover {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html.dark .light-form-surface select {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+
+html.dark .light-form-surface select:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+}
+
+/* Outline / muted buttons — override global html.dark button flattening */
+html.dark .light-form-surface button.bg-background {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+
+html.dark .light-form-surface button.bg-background:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html.dark .light-form-surface button.bg-muted {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.dark .light-form-surface button.bg-muted:hover {
+  background-color: #e2e8f0 !important;
+}
+
+/* Nested rounded panels inside paper — avoid global dark .rounded-xl fill */
+html.dark .light-form-surface .rounded-xl:not(.light-form-surface),
+html.dark .light-form-surface .rounded-lg:not(.light-form-surface) {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
+}
+
 /* === SECTION LABELS (CARE TEAM, ALLERGIES etc) === */
 html.dark [class*="uppercase"],
 html.dark [class*="tracking-wide"] {

@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import { practitionersOrFilterForAuthUid } from "./practitionerAuthLookup";
+import { isSupabaseAbortError, sx } from "./supabaseAbort";
 
 /**
  * Current user's organization UUID from `practitioners.hospital_id`, via DB helper `auth_org()`.
@@ -23,9 +24,12 @@ import { practitionersOrFilterForAuthUid } from "./practitionerAuthLookup";
  * grant execute on function public.auth_org() to authenticated;
  * ```
  */
-export async function fetchAuthOrgId(): Promise<{ orgId: string | null; error: Error | null }> {
-  const { data, error } = await supabase.rpc("auth_org");
-  if (error) return { orgId: null, error: new Error(error.message) };
+export async function fetchAuthOrgId(signal?: AbortSignal): Promise<{ orgId: string | null; error: Error | null }> {
+  const { data, error } = await sx(supabase.rpc("auth_org"), signal);
+  if (error) {
+    if (isSupabaseAbortError(error)) return { orgId: null, error: null };
+    return { orgId: null, error: new Error(error.message) };
+  }
   if (data == null || data === "") return { orgId: null, error: null };
   const id = String(data).trim();
   return { orgId: id || null, error: null };

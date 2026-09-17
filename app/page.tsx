@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import ErrorBanner from "./components/ErrorBanner";
 import { DocPadLogoMark } from "./components/DocPadLogoMark";
 import { supabase } from "./supabase";
 
@@ -223,14 +224,7 @@ export default function LoginPage() {
           </div>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-            {authError ? (
-              <div
-                role="alert"
-                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-              >
-                {authError}
-              </div>
-            ) : null}
+            {authError ? <ErrorBanner message={authError} className="rounded-2xl" /> : null}
 
             {loginMode === "email" ? (
               <div>

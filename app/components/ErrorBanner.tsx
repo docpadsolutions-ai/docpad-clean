@@ -1,22 +1,17 @@
 import { cn } from "@/lib/utils";
+import { AlertBanner, type AlertSeverity } from "@/src/components/ui/alert-banner";
 
-/** Destructive inline alert — matches DocPad load/error styling (e.g. inpatient encounter `loadErr`). */
+/** Destructive banner — delegates to the shared severity system (default: high). */
 export default function ErrorBanner({
   message,
   className,
+  severity = "high",
+  title = "Error",
 }: {
   message: string;
   className?: string;
+  severity?: AlertSeverity;
+  title?: string;
 }) {
-  return (
-    <p
-      className={cn(
-        "rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-200",
-        className,
-      )}
-      role="alert"
-    >
-      {message}
-    </p>
-  );
+  return <AlertBanner severity={severity} title={title} body={message} className={cn("text-sm", className)} />;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { personInitialsDisplay } from "@/app/lib/personInitialsDisplay";
 import { cn } from "@/lib/utils";
 
 function str(v: unknown): string {
@@ -118,11 +119,13 @@ export function IpdTreatmentsTable({
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-2">
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-800 ring-1 ring-violet-200/80 dark:bg-purple-500/25 dark:text-purple-200 dark:ring-purple-500/40">
-                        {str(r.ordering_clinician_name ?? r.clinician_name)
-                          .split(/\s+/)
-                          .map((x) => x[0])
-                          .slice(0, 2)
-                          .join("") || "Dr"}
+                        {personInitialsDisplay(
+                          str(r.ordering_clinician_name ?? r.clinician_name)
+                            .split(/\s+/)
+                            .map((x) => x[0])
+                            .slice(0, 2)
+                            .join("") || "Dr",
+                        )}
                       </span>
                       <span className="text-xs text-gray-800 dark:text-gray-100">
                         {str(r.ordering_clinician_name ?? r.clinician_name) || "—"}

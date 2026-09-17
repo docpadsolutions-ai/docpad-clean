@@ -9,10 +9,11 @@ export type NavItem = {
 
 const doctorNav: NavItem[] = [
   { href: "/dashboard/opd", label: "Home" },
+  { href: "/reception", label: "Reception" },
   { href: "/dashboard/opd", label: "OPD" },
   { href: "/dashboard/ipd", label: "IPD" },
   { href: "/ipd/consults", label: "Consult Inbox", consultPendingBadge: true },
-  { href: "/dashboard/opd/patients", label: "Patients" },
+  { href: "/patients", label: "Patients" },
   { href: "/dashboard/opd/new", label: "New visit" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
@@ -26,14 +27,14 @@ const pharmacistNav: NavItem[] = [
 const nurseNav: NavItem[] = [
   { href: "/dashboard", label: "Home" },
   { href: "/nursing", label: "Nursing" },
-  { href: "/dashboard/opd/patients", label: "Patients" },
+  { href: "/patients", label: "Patients" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 
 const receptionNav: NavItem[] = [
   { href: "/dashboard", label: "Home" },
   { href: "/reception", label: "Reception" },
-  { href: "/dashboard/opd/patients", label: "Patients" },
+  { href: "/patients", label: "Patients" },
   { href: "/billing", label: "Billing" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
@@ -41,15 +42,17 @@ const receptionNav: NavItem[] = [
 const labTechNav: NavItem[] = [
   { href: "/dashboard", label: "Home" },
   { href: "/lab", label: "Lab" },
-  { href: "/dashboard/opd/patients", label: "Patients" },
+  { href: "/patients", label: "Patients" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 
 const adminNav: NavItem[] = [
   { href: "/dashboard", label: "Home" },
   { href: "/dashboard/admin", label: "Admin" },
+  { href: "/lab", label: "Lab" },
   { href: "/nursing", label: "Nursing" },
   { href: "/billing", label: "Billing" },
+  /** Next: Reception → OPD → … from `doctorNav` (excludes duplicate Home). */
   ...doctorNav.filter((i) => i.label !== "Home"),
 ];
 
@@ -87,5 +90,6 @@ export function isActiveHref(pathname: string, href: string): boolean {
   if (h === "/lab") return p === "/lab" || p.startsWith("/lab/");
   if (h === "/nursing") return p === "/nursing" || p.startsWith("/nursing/");
   if (h === "/billing") return p === "/billing" || p.startsWith("/billing/");
+  if (h === "/patients") return p === "/patients" || p.startsWith("/patients/");
   return p === h || p.startsWith(h + "/");
 }

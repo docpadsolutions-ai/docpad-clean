@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -13,9 +13,19 @@ import {
 import { fetchAuthOrgId } from "../../lib/authOrg";
 import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
 import OCRUploadModal from "../investigations/OCRUploadModal";
+import { ECGViewer } from "../../../components/investigations/ECGViewer";
 import { supabase } from "../../supabase";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+import { AlertBanner } from "@/src/components/ui/alert-banner";
+import InvestigationResultSeverityBadge from "../investigations/InvestigationResultSeverityBadge";
+import PendingResultsPanel from "@/src/components/investigations/pending-results-panel";
+import { useKeyboardNav } from "@/src/hooks/use-keyboard-nav";
+import { KeyboardShortcutsHelp } from "@/src/components/ui/keyboard-shortcuts-help";
 import {
+  deriveInvestigationResultPill,
   formatOrderedDate,
+  investigationStatusPending,
+  labRowSeverity,
   localYmd,
   normalizeResultStatus,
   orderedOnLocalDay,
@@ -44,6 +54,12 @@ export type InvestigationRecord = {
   reviewed_at: string | null;
   reviewed_by: string | null;
   report_storage_path: string | null;
+  expected_at: string | null;
+  sla_acknowledged_at: string | null;
+  /** Investigation-level severity (e.g. critical); not the same as line-level is_abnormal. */
+  result_severity: string | null;
+  /** Clinician acknowledged review of resulted investigation (doctor sign-off). */
+  acknowledged_at: string | null;
 };
 
 type LabResultEntryRow = {
@@ -73,7 +89,20 @@ type WorkflowRow = {
 };
 
 const INV_SELECT =
-  "id, patient_id, encounter_id, doctor_id, hospital_id, test_name, test_code, test_category, test_subcategory, status, result_status, clinical_indication, priority, ordered_at, expected_tat_hours, collected_at, resulted_at, reviewed_at, reviewed_by, report_storage_path";
+  "id, patient_id, encounter_id, doctor_id, hospital_id, test_name, test_code, test_category, test_subcategory, status, result_status, clinical_indication, priority, ordered_at, expected_tat_hours, expected_at, collected_at, resulted_at, reviewed_at, reviewed_by, report_storage_path, sla_acknowledged_at, result_severity, acknowledged_at";
+
+/** Result pipeline: awaiting lab / processing (matches stat card "Pending Results"). */
+const PENDING_RESULT_STATUSES = new Set(["pending", "sample_collected", "processing"]);
+
+function isPendingResultStatus(inv: InvestigationRecord): boolean {
+  const rs = normalizeResultStatus(inv.result_status);
+  return PENDING_RESULT_STATUSES.has(rs);
+}
+
+function isResultReviewUnacknowledged(inv: InvestigationRecord): boolean {
+  const a = inv.acknowledged_at;
+  return a == null || String(a).trim() === "";
+}
 
 const LAB_ENTRY_SELECT =
   "id, investigation_id, parameter_name, loinc_code, value_numeric, value_text, unit, ref_range_low, ref_range_high, ref_range_text, interpretation, is_abnormal, created_at";
@@ -81,17 +110,11 @@ const LAB_ENTRY_SELECT =
 const VIEWS = ["current", "timeline", "category", "all"] as const;
 type ViewId = (typeof VIEWS)[number];
 
-function investigationStatusPending(s: string | null | undefined): boolean {
-  const x = (s ?? "").trim().toLowerCase();
-  return x === "ordered" || x === "collected";
-}
-
-/** Ready to review: new results, not yet signed off (supports DB values `resulted` or `ready`). */
+/** Ready to review: resulted, not yet acknowledged (doctor sign-off). */
 function isReadyForReview(inv: InvestigationRecord): boolean {
   const rs = normalizeResultStatus(inv.result_status);
-  const hasReviewed = inv.reviewed_at != null && String(inv.reviewed_at).trim() !== "";
-  if (hasReviewed) return false;
-  return rs === "resulted" || rs === "ready";
+  if (rs !== "resulted") return false;
+  return isResultReviewUnacknowledged(inv);
 }
 
 function orderedLocalYmd(iso: string | null | undefined): string {
@@ -177,6 +200,16 @@ export default function InvestigationsTabContent({
   const [signingId, setSigningId] = useState<string | null>(null);
   const [ocrTargetInv, setOcrTargetInv] = useState<InvestigationRecord | null>(null);
   const [expandedCurrentId, setExpandedCurrentId] = useState<string | null>(null);
+  const expandedPanelRef = useRef<string | null>(null);
+  expandedPanelRef.current = expandedCurrentId;
+  const [invNameFilter, setInvNameFilter] = useState("");
+  const investigationsSearchRef = useRef<HTMLInputElement>(null);
+  const [patientProfile, setPatientProfile] = useState<{
+    full_name: string | null;
+    age_years: number | null;
+    sex: string | null;
+    docpad_id: string | null;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,6 +245,7 @@ export default function InvestigationsTabContent({
       setInvestigations([]);
       setLabEntries([]);
       setWorkflow([]);
+      setPatientProfile(null);
       setLoading(false);
       return;
     }
@@ -237,7 +271,7 @@ export default function InvestigationsTabContent({
       return;
     }
 
-    const [{ data: encRow, error: encErr }, invRes] = await Promise.all([
+    const [{ data: encRow, error: encErr }, invRes, patRes] = await Promise.all([
       encounterId
         ? supabase.from("opd_encounters").select("encounter_date, created_at").eq("id", encounterId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -247,7 +281,28 @@ export default function InvestigationsTabContent({
         .eq("patient_id", pid)
         .eq("hospital_id", hid)
         .order("ordered_at", { ascending: false }),
+      supabase.from("patients").select("full_name, age_years, sex, docpad_id").eq("id", pid).maybeSingle(),
     ]);
+
+    if (patRes.error) {
+      console.warn("[investigations] patient lookup", patRes.error.message);
+      setPatientProfile(null);
+    } else if (patRes.data && typeof patRes.data === "object") {
+      const p = patRes.data as {
+        full_name: string | null;
+        age_years: number | null;
+        sex: string | null;
+        docpad_id: string | null;
+      };
+      setPatientProfile({
+        full_name: p.full_name ?? null,
+        age_years: p.age_years ?? null,
+        sex: p.sex ?? null,
+        docpad_id: p.docpad_id ?? null,
+      });
+    } else {
+      setPatientProfile(null);
+    }
 
     if (encErr) {
       console.warn("[investigations] encounter lookup", encErr.message);
@@ -318,26 +373,22 @@ export default function InvestigationsTabContent({
       const pid = patientId?.trim() ?? "";
       const docId = reviewingDoctorId?.trim() ?? "";
       if (!pid || !docId || !invId.trim()) return;
-      const invRow = investigations.find((i) => i.id === invId);
-      const hidRow = invRow?.hospital_id != null && String(invRow.hospital_id).trim() !== "" ? String(invRow.hospital_id).trim() : null;
       setSigningId(invId);
-      const now = new Date().toISOString();
-      let q = supabase
-        .from("investigations")
-        .update({ reviewed_at: now, reviewed_by: docId })
-        .eq("id", invId)
-        .eq("patient_id", pid);
-      if (hidRow) q = q.eq("hospital_id", hidRow);
-      const { error: upErr } = await q;
+      const { error: rpcErr } = await supabase.rpc("acknowledge_investigation", {
+        p_investigation_id: invId.trim(),
+        p_notes: null,
+        p_reason: "result_review",
+        p_action_taken: null,
+      });
       setSigningId(null);
-      if (upErr) {
-        console.error("[investigations] sign off", upErr.message);
-        setError(upErr.message);
+      if (rpcErr) {
+        console.error("[investigations] sign off", rpcErr.message);
+        setError(rpcErr.message);
         return;
       }
       await load();
     },
-    [patientId, reviewingDoctorId, load, investigations],
+    [patientId, reviewingDoctorId, load],
   );
 
   const invById = useMemo(() => {
@@ -374,11 +425,11 @@ export default function InvestigationsTabContent({
     let pending = 0;
     let ready = 0;
     for (const i of investigations) {
-      if (investigationHasAbnormalEntry.has(i.id)) critical += 1;
-      if (investigationStatusPending(i.status)) pending += 1;
+      const sev = normalizeResultStatus(i.result_severity);
+      if (sev === "critical" && isResultReviewUnacknowledged(i)) critical += 1;
+      if (isPendingResultStatus(i)) pending += 1;
       const rs = normalizeResultStatus(i.result_status);
-      const hasReviewed = i.reviewed_at != null && String(i.reviewed_at).trim() !== "";
-      if (rs === "resulted" && !hasReviewed) ready += 1;
+      if (rs === "resulted" && isResultReviewUnacknowledged(i)) ready += 1;
     }
     return {
       critical,
@@ -386,7 +437,7 @@ export default function InvestigationsTabContent({
       ready,
       total: investigations.length,
     };
-  }, [investigations, investigationHasAbnormalEntry]);
+  }, [investigations]);
 
   const currentEncounterInvs = useMemo(
     () => investigations.filter((i) => i.encounter_id === encounterId),
@@ -398,10 +449,9 @@ export default function InvestigationsTabContent({
     let pending = 0;
     let ready = 0;
     for (const i of currentEncounterInvs) {
-      if (investigationStatusPending(i.status)) pending += 1;
+      if (isPendingResultStatus(i)) pending += 1;
       const rs = normalizeResultStatus(i.result_status);
-      const hasReviewed = i.reviewed_at != null && String(i.reviewed_at).trim() !== "";
-      if (rs === "resulted" && !hasReviewed) ready += 1;
+      if (rs === "resulted" && isResultReviewUnacknowledged(i)) ready += 1;
     }
     return { ordered, pending, ready };
   }, [currentEncounterInvs]);
@@ -411,7 +461,7 @@ export default function InvestigationsTabContent({
       const rs = normalizeResultStatus(i.result_status);
       const abnormalFromLab = investigationHasAbnormalEntry.has(i.id);
       if (abnormalOnly && !abnormalFromLab && !["abnormal", "critical"].includes(rs)) return false;
-      if (pendingOnly && !investigationStatusPending(i.status)) return false;
+      if (pendingOnly && !isPendingResultStatus(i)) return false;
       if (overdueOnly && rs !== "late") return false;
       return true;
     },
@@ -428,6 +478,32 @@ export default function InvestigationsTabContent({
         filterInv(i),
     );
   }, [investigations, encounterId, todayYmd, filterInv]);
+
+  const filteredOrderedToday = useMemo(() => {
+    const q = invNameFilter.trim().toLowerCase();
+    if (!q) return orderedToday;
+    return orderedToday.filter((inv) => {
+      const blob = `${inv.test_name ?? ""} ${inv.test_subcategory ?? ""} ${inv.test_category ?? ""}`.toLowerCase();
+      return blob.includes(q);
+    });
+  }, [orderedToday, invNameFilter]);
+
+  const investigationsKb = useKeyboardNav(filteredOrderedToday, (inv) => {
+    setExpandedCurrentId((cur) => (cur === inv.id ? null : inv.id));
+  }, {
+    searchInputRef: investigationsSearchRef,
+    onClearSelection: () => {
+      if (expandedPanelRef.current) {
+        setExpandedCurrentId(null);
+        return;
+      }
+      setInvNameFilter("");
+    },
+    onActionKey: (inv) => {
+      if (isReadyForReview(inv) && reviewingDoctorId) void acknowledgeSignOff(inv.id);
+    },
+    enabled: view === "current" && !loading && filteredOrderedToday.length > 0,
+  });
 
   const comparePairs = useMemo(() => {
     const byTest = new Map<string, InvestigationRecord>();
@@ -578,6 +654,11 @@ export default function InvestigationsTabContent({
 
   const encounterTitle = formatOrderedDate(encounterWhen);
 
+  const patientDisplayName = useMemo(
+    () => (patientProfile?.full_name ?? "").trim() || "Patient",
+    [patientProfile?.full_name],
+  );
+
   if (!patientId.trim()) {
     return (
       <div className="px-6 py-12 text-center text-sm text-gray-500">Select a patient to view investigations.</div>
@@ -587,10 +668,16 @@ export default function InvestigationsTabContent({
   return (
     <div className="border-t border-gray-100 bg-slate-50/50 p-4 sm:p-6">
       {error ? (
-        <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
+        <AlertBanner severity="high" title="Could not load investigations" body={error} className="mb-4" />
       ) : null}
+
+      <PendingResultsPanel
+        patientId={patientId.trim()}
+        encounterId={encounterId}
+        hospitalId={hospitalIdProp}
+        practitionerId={reviewingDoctorId}
+        onRefresh={() => void load()}
+      />
 
       {loading ? (
         <div className="space-y-4" aria-busy>
@@ -599,6 +686,20 @@ export default function InvestigationsTabContent({
         </div>
       ) : (
         <>
+          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <PatientAvatar patientId={patientId} patientName={patientDisplayName} size="md" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Investigations</p>
+              <p className="truncate text-lg font-bold text-gray-900">{patientDisplayName}</p>
+              <p className="text-xs text-gray-500">
+                {encounterWhen ? <>Encounter {encounterTitle}</> : "All encounters"}
+                {patientProfile?.docpad_id?.trim() ? (
+                  <> · DocPad ID: {patientProfile.docpad_id.trim()}</>
+                ) : null}
+              </p>
+            </div>
+          </div>
+
           {/* Stat cards */}
           <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
@@ -711,6 +812,7 @@ export default function InvestigationsTabContent({
                             <OrderedCard
                               key={inv.id}
                               inv={inv}
+                              patientDisplayName={patientDisplayName}
                               onAcknowledge={acknowledgeSignOff}
                               signingId={signingId}
                               canAcknowledge={Boolean(reviewingDoctorId)}
@@ -741,6 +843,7 @@ export default function InvestigationsTabContent({
                             <OrderedCard
                               key={inv.id}
                               inv={inv}
+                              patientDisplayName={patientDisplayName}
                               onAcknowledge={acknowledgeSignOff}
                               signingId={signingId}
                               canAcknowledge={Boolean(reviewingDoctorId)}
@@ -782,6 +885,7 @@ export default function InvestigationsTabContent({
                         <OrderedCard
                           key={inv.id}
                           inv={inv}
+                          patientDisplayName={patientDisplayName}
                           onAcknowledge={acknowledgeSignOff}
                           signingId={signingId}
                           canAcknowledge={Boolean(reviewingDoctorId)}
@@ -801,23 +905,51 @@ export default function InvestigationsTabContent({
                           {orderedToday.length} test{orderedToday.length === 1 ? "" : "s"} · {todayYmd}
                         </p>
                       </div>
-                      {onRequestOrderMore ? (
-                        <button
-                          type="button"
-                          onClick={onRequestOrderMore}
-                          className="text-xs font-semibold text-blue-600 hover:underline"
-                        >
-                          + Order more tests
-                        </button>
-                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label htmlFor="inv-name-filter" className="sr-only">
+                          Filter investigations by name
+                        </label>
+                        <input
+                          id="inv-name-filter"
+                          ref={investigationsSearchRef}
+                          type="search"
+                          value={invNameFilter}
+                          onChange={(e) => setInvNameFilter(e.target.value)}
+                          placeholder="Filter tests…"
+                          className="min-w-[10rem] max-w-xs rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          autoComplete="off"
+                        />
+                        <KeyboardShortcutsHelp
+                          entries={[
+                            { keys: "↑ / ↓", label: "Move highlight" },
+                            { keys: "Enter", label: "Open / close detail" },
+                            { keys: "A", label: "Acknowledge (when ready)" },
+                            { keys: "Esc", label: "Close detail / clear" },
+                            { keys: "/", label: "Focus filter" },
+                          ]}
+                        />
+                        {onRequestOrderMore ? (
+                          <button
+                            type="button"
+                            onClick={onRequestOrderMore}
+                            className="text-xs font-semibold text-blue-600 hover:underline"
+                          >
+                            + Order more tests
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     {orderedToday.length === 0 ? (
                       <p className="rounded-xl border border-gray-200 bg-white py-10 text-center text-sm text-gray-500">
                         No investigations ordered today for this encounter.
                       </p>
+                    ) : filteredOrderedToday.length === 0 ? (
+                      <p className="rounded-xl border border-gray-200 bg-white py-10 text-center text-sm text-gray-500">
+                        No investigations match your filter.
+                      </p>
                     ) : (
-                      <ul className="space-y-3">
-                        {orderedToday.map((inv) => {
+                      <ul role="grid" aria-label="Investigations ordered today" className="space-y-3">
+                        {filteredOrderedToday.map((inv, invIndex) => {
                           const priorInv = comparePairByCurrentId.get(inv.id)?.prior ?? null;
                           const priorEntries = priorInv ? (labEntriesByInvestigationId.get(priorInv.id) ?? []) : [];
                           return (
@@ -835,6 +967,9 @@ export default function InvestigationsTabContent({
                               signingId={signingId}
                               canAcknowledge={Boolean(reviewingDoctorId)}
                               onUploadReport={() => setOcrTargetInv(inv)}
+                              asGridRow
+                              keyboardSelected={investigationsKb.isRowSelected(invIndex)}
+                              listRef={investigationsKb.assignRowRef(invIndex)}
                             />
                           );
                         })}
@@ -935,7 +1070,29 @@ export default function InvestigationsTabContent({
                               <CartesianGrid strokeDasharray="3 3" className="stroke-gray-100" />
                               <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                               <YAxis tick={{ fontSize: 10 }} width={36} />
-                              <Tooltip />
+                              <Tooltip
+                                content={({ active, payload, label }) => {
+                                  if (!active || !payload?.length) return null;
+                                  const v = payload[0]?.value;
+                                  return (
+                                    <div className="max-w-xs rounded-lg border border-gray-200 bg-white px-3 py-2.5 shadow-lg">
+                                      <div className="flex items-center gap-2">
+                                        <PatientAvatar
+                                          patientId={patientId}
+                                          patientName={patientDisplayName}
+                                          size="md"
+                                        />
+                                        <div>
+                                          <p className="text-[11px] font-semibold text-gray-800">{String(label ?? "")}</p>
+                                          <p className="text-sm font-bold tabular-nums text-blue-700">
+                                            {v != null && typeof v === "number" ? v : v != null ? String(v) : "—"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }}
+                              />
                               <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                           </ResponsiveContainer>
@@ -1044,53 +1201,181 @@ function InvestigationWorkflowRail({ inv }: { inv: InvestigationRecord }) {
   );
 }
 
+function isEcgInvestigation(inv: InvestigationRecord): boolean {
+  const s =
+    `${inv.test_name ?? ""} ${inv.test_code ?? ""} ${inv.test_category ?? ""} ${inv.test_subcategory ?? ""}`.toLowerCase();
+  return /\becg\b|ekg|electrocardiogram|12[\s-]*lead/.test(s);
+}
+
+function useEcgReportSignedImageUrl(
+  investigationId: string,
+  expanded: boolean,
+  enabled: boolean,
+  reportStoragePath: string | null,
+): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const clear = () => {
+      setTimeout(() => {
+        if (!cancelled) setUrl(null);
+      }, 0);
+    };
+
+    if (!enabled || !expanded || !investigationId.trim()) {
+      clear();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      const { data: uploadRow, error: upErr } = await supabase
+        .from("investigation_ocr_uploads")
+        .select("storage_path, file_type")
+        .eq("investigation_id", investigationId.trim())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let storagePath: string | null = null;
+      if (!upErr && uploadRow?.storage_path) {
+        storagePath = uploadRow.storage_path;
+        const ft = (uploadRow.file_type ?? "").toLowerCase();
+        if (ft.includes("pdf")) {
+          clear();
+          return;
+        }
+      } else if (reportStoragePath?.trim()) {
+        storagePath = reportStoragePath.trim();
+      }
+
+      if (!storagePath) {
+        clear();
+        return;
+      }
+
+      const { data: signed, error: sErr } = await supabase.storage
+        .from("investigation-reports")
+        .createSignedUrl(storagePath, 7200);
+
+      if (cancelled) return;
+      if (!sErr && signed?.signedUrl) setUrl(signed.signedUrl);
+      else setUrl(null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [investigationId, expanded, enabled, reportStoragePath]);
+
+  return url;
+}
+
 function LabResultsSection({
   title,
   accentClass,
   rows,
+  investigation,
+  showKeyboardHint = false,
 }: {
   title: string;
   accentClass: string;
   rows: LabResultEntryRow[];
+  investigation: InvestigationRecord;
+  showKeyboardHint?: boolean;
 }) {
   if (rows.length === 0) return null;
+  const invRs = investigation.result_status;
   return (
     <div>
-      <p className={`mb-2 text-[10px] font-bold uppercase tracking-wider ${accentClass}`}>{title}</p>
+      <div className={`mb-2 flex flex-wrap items-center justify-between gap-2 ${accentClass}`}>
+        <p className="text-[10px] font-bold uppercase tracking-wider">{title}</p>
+        {showKeyboardHint ? (
+          <KeyboardShortcutsHelp
+            align="end"
+            entries={[
+              { keys: "↑↓ Enter", label: "Navigate ordered list above" },
+              { keys: "A", label: "Acknowledge when highlighted" },
+              { keys: "Esc", label: "Close expanded panel" },
+            ]}
+          />
+        ) : null}
+      </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full min-w-[480px] border-collapse text-left text-xs">
-          <thead>
-            <tr className="border-b border-gray-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-gray-500">
-              <th className="px-2 py-2">Parameter</th>
-              <th className="px-2 py-2">Value</th>
-              <th className="px-2 py-2">Unit</th>
-              <th className="px-2 py-2">Ref range</th>
-              <th className="px-2 py-2 text-center">Abnormal</th>
+        <table
+          role="grid"
+          aria-label={`${(investigation.test_name ?? "").trim() || "Investigation"} — ${title}`}
+          className="w-full min-w-[480px] border-collapse text-left text-xs"
+        >
+          <thead role="rowgroup">
+            <tr
+              role="row"
+              className="border-b border-gray-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-gray-500"
+            >
+              <th role="columnheader" className="px-2 py-2">
+                Parameter
+              </th>
+              <th role="columnheader" className="px-2 py-2">
+                Value
+              </th>
+              <th role="columnheader" className="px-2 py-2">
+                Unit
+              </th>
+              <th role="columnheader" className="px-2 py-2">
+                Ref range
+              </th>
+              <th role="columnheader" className="px-2 py-2 text-center">
+                Flag
+              </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {rows.map((e) => {
-              const abnormal = e.is_abnormal === true;
+              const rowSev = labRowSeverity(e, invRs);
+              const rowClass =
+                rowSev === "critical"
+                  ? "border-b border-gray-100 bg-red-50/95 text-red-950"
+                  : rowSev === "abnormal"
+                    ? "border-b border-gray-100 bg-amber-50/90 text-amber-950"
+                    : "border-b border-gray-100 text-gray-800";
+              const valClass =
+                rowSev === "critical"
+                  ? "font-semibold text-red-900"
+                  : rowSev === "abnormal"
+                    ? "font-semibold text-amber-900"
+                    : "";
+              const flagClass =
+                rowSev === "critical"
+                  ? "bg-red-600 text-white"
+                  : rowSev === "abnormal"
+                    ? "bg-amber-200 text-amber-950"
+                    : "bg-emerald-100 text-emerald-800";
+              const flagLabel = rowSev === "critical" ? "Critical" : rowSev === "abnormal" ? "Abnormal" : "No";
               return (
-                <tr
-                  key={e.id}
-                  className={`border-b border-gray-100 ${abnormal ? "bg-red-50/90 text-red-900" : "text-gray-800"}`}
-                >
-                  <td className={`px-2 py-1.5 font-medium ${abnormal ? "text-red-900" : ""}`}>
+                <tr key={e.id} role="row" aria-selected={false} className={rowClass}>
+                  <td
+                    role="gridcell"
+                    className={`px-2 py-1.5 font-medium ${rowSev === "critical" ? "text-red-950" : rowSev === "abnormal" ? "text-amber-950" : ""}`}
+                  >
                     {(e.parameter_name ?? "").trim() || "—"}
                   </td>
-                  <td className={`px-2 py-1.5 tabular-nums ${abnormal ? "font-semibold text-red-800" : ""}`}>
+                  <td role="gridcell" className={`px-2 py-1.5 tabular-nums ${valClass}`}>
                     {formatLabEntryValue(e)}
                   </td>
-                  <td className="px-2 py-1.5 text-gray-600">{(e.unit ?? "").trim() || "—"}</td>
-                  <td className="px-2 py-1.5 text-gray-600">{formatRefRangeDisplay(e)}</td>
-                  <td className="px-2 py-1.5 text-center">
+                  <td role="gridcell" className="px-2 py-1.5 text-gray-600">
+                    {(e.unit ?? "").trim() || "—"}
+                  </td>
+                  <td role="gridcell" className="px-2 py-1.5 text-gray-600">
+                    {formatRefRangeDisplay(e)}
+                  </td>
+                  <td role="gridcell" className="px-2 py-1.5 text-center">
                     <span
-                      className={`inline-flex min-w-[2rem] justify-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        abnormal ? "bg-red-200 text-red-900" : "bg-emerald-100 text-emerald-800"
-                      }`}
+                      className={`inline-flex min-w-[2.5rem] justify-center rounded-full px-2 py-0.5 text-[10px] font-bold ${flagClass}`}
                     >
-                      {abnormal ? "Yes" : "No"}
+                      {flagLabel}
                     </span>
                   </td>
                 </tr>
@@ -1186,6 +1471,9 @@ function CurrentExpandableInvestigationCard({
   signingId,
   canAcknowledge,
   onUploadReport,
+  asGridRow,
+  keyboardSelected,
+  listRef,
 }: {
   inv: InvestigationRecord;
   expanded: boolean;
@@ -1197,6 +1485,9 @@ function CurrentExpandableInvestigationCard({
   signingId?: string | null;
   canAcknowledge?: boolean;
   onUploadReport?: () => void;
+  asGridRow?: boolean;
+  keyboardSelected?: boolean;
+  listRef?: (el: HTMLLIElement | null) => void;
 }) {
   const rs = normalizeResultStatus(inv.result_status);
   const st = (inv.status ?? "").trim().toLowerCase();
@@ -1207,15 +1498,25 @@ function CurrentExpandableInvestigationCard({
   const sub = (inv.test_subcategory ?? "").trim();
   const showSign = Boolean(onAcknowledge && canAcknowledge && isReadyForReview(inv));
 
-  const abnormalRows = entries.filter((e) => e.is_abnormal === true);
-  const normalRows = entries.filter((e) => e.is_abnormal !== true);
+  const abnormalRows = entries.filter((e) => labRowSeverity(e, inv.result_status) !== "normal");
+  const normalRows = entries.filter((e) => labRowSeverity(e, inv.result_status) === "normal");
   const indication = (inv.clinical_indication ?? "").trim();
 
+  const ecgLike = isEcgInvestigation(inv);
+  const ecgImageUrl = useEcgReportSignedImageUrl(inv.id, expanded, ecgLike, inv.report_storage_path);
+
   return (
-    <li className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    <li
+      ref={listRef}
+      role={asGridRow ? "row" : undefined}
+      aria-selected={asGridRow ? Boolean(keyboardSelected) : undefined}
+      className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm ${
+        asGridRow && keyboardSelected ? "z-[1] outline outline-2 outline-offset-2 outline-blue-600 ring-1 ring-blue-500/15" : ""
+      }`}
+    >
       <div
         role="button"
-        tabIndex={0}
+        tabIndex={asGridRow ? -1 : 0}
         aria-expanded={expanded}
         onClick={onToggleExpand}
         onKeyDown={(e) => {
@@ -1238,12 +1539,15 @@ function CurrentExpandableInvestigationCard({
               <p className="text-sm font-bold text-gray-900">{(inv.test_name ?? "").trim() || "Investigation"}</p>
               {sub ? <p className="mt-0.5 text-xs text-gray-500">{sub}</p> : null}
             </div>
-            <span
-              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${resultStatusBadgeClass(inv.result_status)}`}
-            >
-              <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${resultStatusDotClass(inv.result_status)}`} />
-              {rs || "—"}
-            </span>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <InvestigationResultSeverityBadge pill={deriveInvestigationResultPill(inv, entries)} />
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${resultStatusBadgeClass(inv.result_status)}`}
+              >
+                <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${resultStatusDotClass(inv.result_status)}`} />
+                {rs || "—"}
+              </span>
+            </div>
           </div>
           {tatLine ? <p className="mt-2 text-xs text-amber-800">{tatLine}</p> : null}
         </div>
@@ -1266,8 +1570,19 @@ function CurrentExpandableInvestigationCard({
                 </p>
               ) : (
                 <div className="space-y-4">
-                  <LabResultsSection title="Abnormal / critical" accentClass="text-red-700" rows={abnormalRows} />
-                  <LabResultsSection title="Within reference" accentClass="text-emerald-800" rows={normalRows} />
+                  <LabResultsSection
+                    title="Abnormal / critical"
+                    accentClass="text-red-700"
+                    rows={abnormalRows}
+                    investigation={inv}
+                    showKeyboardHint
+                  />
+                  <LabResultsSection
+                    title="Within reference"
+                    accentClass="text-emerald-800"
+                    rows={normalRows}
+                    investigation={inv}
+                  />
                 </div>
               )}
 
@@ -1276,6 +1591,18 @@ function CurrentExpandableInvestigationCard({
                 priorEntries={priorEntries}
                 priorInv={priorInv}
               />
+
+              {ecgLike && ecgImageUrl ? (
+                <div
+                  className="border-t border-gray-100 pt-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    ECG — digitized Lead II &amp; vision read
+                  </p>
+                  <ECGViewer investigationId={inv.id} imageUrl={ecgImageUrl} />
+                </div>
+              ) : null}
 
               <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:flex-wrap">
                 {showUploadReport ? (
@@ -1355,12 +1682,14 @@ function StatCard({
 
 function OrderedCard({
   inv,
+  patientDisplayName,
   onAcknowledge,
   signingId,
   canAcknowledge,
   onUploadReport,
 }: {
   inv: InvestigationRecord;
+  patientDisplayName: string;
   onAcknowledge?: (id: string) => void;
   signingId?: string | null;
   canAcknowledge?: boolean;
@@ -1377,19 +1706,27 @@ function OrderedCard({
   const showSign =
     Boolean(onAcknowledge && canAcknowledge && isReadyForReview(inv));
 
+  const pidForAvatar = (inv.patient_id ?? "").trim() || "unknown";
+
   return (
     <li className="flex flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-gray-900">{(inv.test_name ?? "").trim() || "Investigation"}</p>
-          {sub ? <p className="mt-0.5 text-xs text-gray-500">{sub}</p> : null}
+        <div className="flex min-w-0 items-start gap-2">
+          <PatientAvatar patientId={pidForAvatar} patientName={patientDisplayName} size="md" />
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-gray-900">{(inv.test_name ?? "").trim() || "Investigation"}</p>
+            {sub ? <p className="mt-0.5 text-xs text-gray-500">{sub}</p> : null}
+          </div>
         </div>
-        <span
-          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${resultStatusBadgeClass(inv.result_status)}`}
-        >
-          <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${resultStatusDotClass(inv.result_status)}`} />
-          {rs || "—"}
-        </span>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <InvestigationResultSeverityBadge pill={deriveInvestigationResultPill(inv, [])} />
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${resultStatusBadgeClass(inv.result_status)}`}
+          >
+            <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${resultStatusDotClass(inv.result_status)}`} />
+            {rs || "—"}
+          </span>
+        </div>
       </div>
       {tatLine ? <p className="mt-3 text-xs text-amber-800">{tatLine}</p> : null}
       {showUploadReport ? (

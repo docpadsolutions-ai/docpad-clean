@@ -82,6 +82,49 @@ function pct(conf: number): string {
   return `${Math.round(conf * 1000) / 10}%`;
 }
 
+/** Extracted text lines from OCR are `parameter_name: result_value` (see /api/ocr/process). */
+function parseExtractedLineText(text: string): { parameter_name: string; result_value: string } | null {
+  const t = text.trim();
+  const i = t.indexOf(":");
+  if (i <= 0) return null;
+  const parameter_name = t.slice(0, i).trim();
+  const result_value = t.slice(i + 1).trim();
+  if (!parameter_name) return null;
+  return { parameter_name, result_value };
+}
+
+/** Case-insensitive partial match: either string contains the other. */
+function structuredRowMatchesExtracted(structuredName: string, extractedName: string): boolean {
+  const a = extractedName.toLowerCase().trim();
+  const b = structuredName.toLowerCase().trim();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.includes(b) || b.includes(a);
+}
+
+function findStructuredRowIdForExtracted(
+  extractedParameterName: string,
+  rows: TableRow[],
+): string | null {
+  const ex = extractedParameterName.toLowerCase().trim();
+  if (!ex) return null;
+  let partial: string | null = null;
+  for (const r of rows) {
+    const name = r.parameter_name.trim();
+    if (!name) continue;
+    if (name.toLowerCase() === ex) return r.id;
+  }
+  for (const r of rows) {
+    const name = r.parameter_name.trim();
+    if (!name) continue;
+    if (structuredRowMatchesExtracted(name, extractedParameterName)) {
+      partial = r.id;
+      break;
+    }
+  }
+  return partial;
+}
+
 const inputCls =
   "w-full min-w-0 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100";
 
@@ -145,6 +188,9 @@ export default function OCRUploadModal({
   const [lines, setLines] = useState<OcrLine[]>([]);
   const [tableRows, setTableRows] = useState<TableRow[]>([]);
   const originalRef = useRef<TableRow[] | null>(null);
+  const [flashStructuredRowId, setFlashStructuredRowId] = useState<string | null>(null);
+  const flashStructuredTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const structuredRowElRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   const revokeAllStaged = useCallback((prev: StagedFile[]) => {
     for (const s of prev) {
@@ -168,6 +214,11 @@ export default function OCRUploadModal({
     setLines([]);
     setTableRows([]);
     originalRef.current = null;
+    if (flashStructuredTimeoutRef.current) {
+      clearTimeout(flashStructuredTimeoutRef.current);
+      flashStructuredTimeoutRef.current = null;
+    }
+    setFlashStructuredRowId(null);
   }, [revokeAllStaged]);
 
   useEffect(() => {
@@ -380,6 +431,30 @@ export default function OCRUploadModal({
     setTableRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   };
 
+  const applyExtractedLineToStructured = useCallback((ln: OcrLine) => {
+    const parsed = parseExtractedLineText(ln.text);
+    if (!parsed) return;
+    let matchedRowId: string | null = null;
+    setTableRows((prev) => {
+      const rowId = findStructuredRowIdForExtracted(parsed.parameter_name, prev);
+      if (!rowId) return prev;
+      matchedRowId = rowId;
+      return prev.map((r) => (r.id === rowId ? { ...r, result_value: parsed.result_value } : r));
+    });
+    if (!matchedRowId) return;
+    if (flashStructuredTimeoutRef.current) {
+      clearTimeout(flashStructuredTimeoutRef.current);
+    }
+    setFlashStructuredRowId(matchedRowId);
+    flashStructuredTimeoutRef.current = setTimeout(() => {
+      setFlashStructuredRowId(null);
+      flashStructuredTimeoutRef.current = null;
+    }, 300);
+    requestAnimationFrame(() => {
+      structuredRowElRefs.current.get(matchedRowId!)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, []);
+
   const addTableRow = () => {
     setTableRows((prev) => [...prev, emptyTableRow()]);
   };
@@ -454,6 +529,7 @@ export default function OCRUploadModal({
 
       const payloads = valid.map((r) => {
         const { value_numeric, value_text } = parseValueForDb(r.result_value);
+        // `lab_result_entries` has no `status` column — only set columns that exist on that table.
         return {
           investigation_id: investigationId.trim(),
           parameter_name: r.parameter_name.trim(),
@@ -733,7 +809,16 @@ export default function OCRUploadModal({
                   {lines.map((ln, i) => (
                     <li
                       key={`${i}-${ln.text.slice(0, 12)}`}
-                      className={`flex items-start justify-between gap-2 rounded-md border border-transparent px-2 py-1 ${lineHighlightClass(ln.confidence, manualReview, autoAccept)}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => applyExtractedLineToStructured(ln)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          applyExtractedLineToStructured(ln);
+                        }
+                      }}
+                      className={`flex cursor-pointer items-start justify-between gap-2 rounded-md border border-transparent px-2 py-1 outline-none hover:opacity-95 focus-visible:ring-2 focus-visible:ring-blue-400 ${lineHighlightClass(ln.confidence, manualReview, autoAccept)}`}
                     >
                       <span className="text-gray-800">{ln.text}</span>
                       <span
@@ -777,7 +862,16 @@ export default function OCRUploadModal({
                     </tr>
                   ) : (
                     tableRows.map((r) => (
-                      <tr key={r.id} className="border-b border-gray-100">
+                      <tr
+                        key={r.id}
+                        ref={(el) => {
+                          if (el) structuredRowElRefs.current.set(r.id, el);
+                          else structuredRowElRefs.current.delete(r.id);
+                        }}
+                        className={`border-b border-gray-100 transition-colors duration-150 ${
+                          flashStructuredRowId === r.id ? "bg-yellow-200" : ""
+                        }`}
+                      >
                         <td className="p-1">
                           <input
                             className={inputCls}

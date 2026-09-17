@@ -8,6 +8,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { cn } from "../../../../lib/utils";
 import { formatClinicalDate, patientFromAdmission, preAdmissionFrom } from "../../../lib/ipdAdmissionDisplay";
+import { rpcGetOrCreateProgressNote } from "../../../lib/ipdData";
 import { IPD_DEFAULT_HOSPITAL_ID } from "../../../lib/ipdConstants";
 import { formatRequestedAgo, rpcGetAdmissionConsults } from "../../../lib/ipdConsults";
 import { readIndiaRefsetKeyFromEnv } from "@/app/lib/snomedUiConfig";
@@ -50,6 +51,7 @@ import { Textarea } from "../../../../components/ui/textarea";
 import OrderInvestigationModal, {
   type OrderInvestigationCatalogRow,
 } from "../../../components/ipd/order-investigation-modal";
+import { ConfirmationTooltip } from "@/src/components/patient/patient-action-confirm-popover";
 
 function s(v: unknown): string {
   if (v == null) return "";
@@ -560,6 +562,50 @@ function todayLocalYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
+function startOfLocalDayFromMs(ms: number): Date {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function ymdFromLocalDateObj(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export type HospitalDayPill = {
+  dayNumber: number;
+  date: Date;
+  dateStr: string;
+  isToday: boolean;
+  isAdmission: boolean;
+};
+
+/** Day 1 = admission calendar date; Day N = today (all days in range, independent of DB rows). */
+function buildHospitalDayPills(admittedAtRaw: string | undefined): HospitalDayPill[] {
+  const raw = s(admittedAtRaw);
+  if (!raw) return [];
+  const ms = Date.parse(raw);
+  if (Number.isNaN(ms)) return [];
+  const admittedDate = startOfLocalDayFromMs(ms);
+  const today = startOfLocalDayFromMs(Date.now());
+  const diffMs = today.getTime() - admittedDate.getTime();
+  const totalDays = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1);
+  return Array.from({ length: totalDays }, (_, i) => {
+    const date = new Date(admittedDate);
+    date.setDate(admittedDate.getDate() + i);
+    const dateStr = ymdFromLocalDateObj(date);
+    return {
+      dayNumber: i + 1,
+      date,
+      dateStr,
+      isToday: date.getTime() === today.getTime(),
+      isAdmission: i === 0,
+    };
+  });
+}
+
 export default function IpdDailyNotesWorkspace({
   admissionId,
   hospitalId: hospitalIdFromPage,
@@ -573,7 +619,6 @@ export default function IpdDailyNotesWorkspace({
   const noteDraftRef = useRef<NoteDraft>(emptyDraft());
   const [vitalsFieldSource, setVitalsFieldSource] = useState<Partial<Record<VitalsFieldKey, "nursing" | "doctor">>>({});
   const vitalsFieldSourceRef = useRef<Partial<Record<VitalsFieldKey, "nursing" | "doctor">>>({});
-  const [latestNursingVitalsAt, setLatestNursingVitalsAt] = useState<string | null>(null);
   const [loadingNote, setLoadingNote] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
@@ -604,14 +649,6 @@ export default function IpdDailyNotesWorkspace({
     vitalsFieldSourceRef.current = vitalsFieldSource;
   }, [vitalsFieldSource]);
 
-  const markVitalsDoctorField = useCallback((field: VitalsFieldKey) => {
-    setVitalsFieldSource((prev) => {
-      const next = { ...prev, [field]: "doctor" as const };
-      vitalsFieldSourceRef.current = next;
-      return next;
-    });
-  }, []);
-
   const skipNextDebouncedSave = useRef(true);
   const progressNoteSavePayload = useMemo(() => {
     return {
@@ -639,7 +676,8 @@ export default function IpdDailyNotesWorkspace({
   );
 
   const admission = asRec(admissionData?.admission) ?? null;
-  const patient = patientFromAdmission(admissionData as Record<string, unknown> | null);
+  const patient =
+    asRec(admissionData?.patient) ?? patientFromAdmission(asRec(admissionData?.admission));
   const preAdmission = preAdmissionFrom(admissionData as Record<string, unknown> | null);
   const doctor = asRec(admissionData?.doctor);
 
@@ -655,6 +693,29 @@ export default function IpdDailyNotesWorkspace({
   })();
 
   const progressNotes = useMemo(() => getProgressNotes(admissionData), [admissionData]);
+
+  const admittedAtForDays = s(admission?.admitted_at) || s(admission?.admission_date) || s(admission?.created_at);
+  const hospitalDayPills = useMemo(() => buildHospitalDayPills(admittedAtForDays || undefined), [admittedAtForDays]);
+
+  const noteRowByDateStr = useMemo(() => {
+    const m = new Map<string, Record<string, unknown>>();
+    for (const n of progressNotes) {
+      const r = n as Record<string, unknown>;
+      const ymd = noteDateLocalCalendarYmd(r);
+      if (ymd) m.set(ymd, r);
+    }
+    return m;
+  }, [progressNotes]);
+
+  const selectedNoteYmd = useMemo(() => {
+    if (!selectedNoteId || !noteRow) return "";
+    if (s(noteRow.id) !== selectedNoteId) return "";
+    return noteDateLocalCalendarYmd(noteRow as Record<string, unknown>);
+  }, [selectedNoteId, noteRow]);
+
+  const [nursingVitalsYmdSet, setNursingVitalsYmdSet] = useState<Set<string>>(() => new Set());
+  /** While set, timeline pill stays highlighted until `loadNote` finishes (noteRow lags `selectedNoteId`). */
+  const [timelinePendingYmd, setTimelinePendingYmd] = useState<string | null>(null);
 
   /** `get_ipd_admission` / bundle: hospital may appear on root JSON or nested `admission`. */
   const hospitalIdFromAdmissionData = useMemo(() => {
@@ -747,6 +808,12 @@ export default function IpdDailyNotesWorkspace({
   }, []);
 
   useEffect(() => {
+    // User chose a day on the timeline — do not auto-sync to "today" or first note.
+    // Otherwise we race with `handleSelectHospitalDay`: after `onRefetchAdmission` the list updates
+    // while `selectedNoteId` is still the *previous* note; `prevValid` stays true and we keep the
+    // old id, so `setSelectedNoteId(newId)` never wins and the editor stays on the wrong day.
+    if (userPickedTimelineRef.current) return;
+
     if (progressNotes.length === 0) {
       setSelectedNoteId(null);
       return;
@@ -757,16 +824,45 @@ export default function IpdDailyNotesWorkspace({
         (n) => noteDateLocalCalendarYmd(n as Record<string, unknown>) === todayYmd,
       );
       if (todayNote) {
-        const id = s((todayNote as Record<string, unknown>).id) || null;
-        userPickedTimelineRef.current = false;
-        return id;
+        return s((todayNote as Record<string, unknown>).id) || null;
       }
       const prevValid = prev && progressNotes.some((n) => s((n as Record<string, unknown>).id) === prev);
-      if (userPickedTimelineRef.current && prevValid) return prev;
+      if (prevValid) return prev;
       const defaultNote = progressNotes[0];
       return s((defaultNote as Record<string, unknown>).id) || null;
     });
   }, [progressNotes]);
+
+  useEffect(() => {
+    if (!admissionId || hospitalDayPills.length === 0) {
+      setNursingVitalsYmdSet(new Set());
+      return;
+    }
+    const start = hospitalDayPills[0].dateStr;
+    const end = hospitalDayPills[hospitalDayPills.length - 1].dateStr;
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("ipd_nursing_vitals")
+        .select("recorded_at")
+        .eq("admission_id", admissionId)
+        .gte("recorded_at", `${start}T00:00:00+05:30`)
+        .lte("recorded_at", `${end}T23:59:59+05:30`);
+      if (cancelled || error) return;
+      const next = new Set<string>();
+      for (const r of data ?? []) {
+        const ra = s((r as Record<string, unknown>).recorded_at);
+        if (!ra) continue;
+        const t = Date.parse(ra);
+        if (Number.isNaN(t)) continue;
+        next.add(ymdFromLocalDateObj(new Date(t)));
+      }
+      setNursingVitalsYmdSet(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [admissionId, hospitalDayPills]);
 
   /**
    * After admission data (including progress notes) is loaded: if no row has note_date = today,
@@ -865,56 +961,37 @@ export default function IpdDailyNotesWorkspace({
   const loadNote = useCallback(
     async (noteId: string) => {
       setLoadingNote(true);
-      skipNextDebouncedSave.current = true;
-      setVitalsFieldSource({});
-      vitalsFieldSourceRef.current = {};
-      setLatestNursingVitalsAt(null);
-      const { data, error } = await supabase.from("ipd_progress_notes").select("*").eq("id", noteId).maybeSingle();
-      if (error) {
-        setLoadingNote(false);
-        toast.error(error.message);
-        return;
-      }
-      if (data && typeof data === "object") {
-        const row = data as Record<string, unknown>;
-        setNoteRow(row);
-        const baseDraft = rowToDraft(row);
-        const { data: vData } = await supabase
-          .from("ipd_vitals")
-          .select("*")
-          .eq("admission_id", admissionId)
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (vData && typeof vData === "object") {
-          const m = mergeVitalsFromIpd(baseDraft, vData as Record<string, unknown>, {});
-          setNoteDraft(m.draft);
-          noteDraftRef.current = m.draft;
-          setVitalsFieldSource(m.provenance);
-          vitalsFieldSourceRef.current = m.provenance;
-          setLatestNursingVitalsAt(m.at);
-        } else {
-          setNoteDraft(baseDraft);
-          noteDraftRef.current = baseDraft;
+      try {
+        skipNextDebouncedSave.current = true;
+        setVitalsFieldSource({});
+        vitalsFieldSourceRef.current = {};
+        const { data, error } = await supabase.from("ipd_progress_notes").select("*").eq("id", noteId).maybeSingle();
+        if (error) {
+          toast.error(error.message);
+          return;
         }
-        hydrateClinicalSnomedFromRow(row, {
-          setSubjectiveChips,
-          setSubjectiveFreeText,
-          setExamChips,
-          setObjectiveFreeText,
-          setDiagnosisEntries,
-          setAssessmentFreeText,
-          setComplaintQuery,
-          setExamQuery,
-          setDiagnosisQuery,
-        });
-      } else {
-        setNoteRow(null);
-        setNoteDraft(emptyDraft());
-        noteDraftRef.current = emptyDraft();
-        hydrateClinicalSnomedFromRow(
-          {},
-          {
+        if (data && typeof data === "object") {
+          const row = data as Record<string, unknown>;
+          setNoteRow(row);
+          const baseDraft = rowToDraft(row);
+          const { data: vData } = await supabase
+            .from("ipd_vitals")
+            .select("*")
+            .eq("admission_id", admissionId)
+            .order("recorded_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (vData && typeof vData === "object") {
+            const m = mergeVitalsFromIpd(baseDraft, vData as Record<string, unknown>, {});
+            setNoteDraft(m.draft);
+            noteDraftRef.current = m.draft;
+            setVitalsFieldSource(m.provenance);
+            vitalsFieldSourceRef.current = m.provenance;
+          } else {
+            setNoteDraft(baseDraft);
+            noteDraftRef.current = baseDraft;
+          }
+          hydrateClinicalSnomedFromRow(row, {
             setSubjectiveChips,
             setSubjectiveFreeText,
             setExamChips,
@@ -924,12 +1001,92 @@ export default function IpdDailyNotesWorkspace({
             setComplaintQuery,
             setExamQuery,
             setDiagnosisQuery,
-          },
-        );
+          });
+        } else {
+          setNoteRow(null);
+          setNoteDraft(emptyDraft());
+          noteDraftRef.current = emptyDraft();
+          hydrateClinicalSnomedFromRow(
+            {},
+            {
+              setSubjectiveChips,
+              setSubjectiveFreeText,
+              setExamChips,
+              setObjectiveFreeText,
+              setDiagnosisEntries,
+              setAssessmentFreeText,
+              setComplaintQuery,
+              setExamQuery,
+              setDiagnosisQuery,
+            },
+          );
+        }
+      } finally {
+        setLoadingNote(false);
+        setTimelinePendingYmd(null);
       }
-      setLoadingNote(false);
     },
     [admissionId],
+  );
+
+  const handleSelectHospitalDay = useCallback(
+    async (pill: HospitalDayPill) => {
+      if (!admissionId) return;
+      userPickedTimelineRef.current = true;
+      setTimelinePendingYmd(pill.dateStr);
+
+      // If we already have a note for this calendar day in the admission bundle, open it — do not
+      // call get_or_create (DB rejects a second insert for the same note_date).
+      const existing = noteRowByDateStr.get(pill.dateStr);
+      const existingId = existing ? s(existing.id) : "";
+      if (existingId) {
+        if (selectedNoteId === existingId) {
+          setTimelinePendingYmd(null);
+        } else {
+          setSelectedNoteId(existingId);
+        }
+        return;
+      }
+
+      const { data, error } = await rpcGetOrCreateProgressNote(supabase, {
+        admissionId,
+        hospitalDayNumber: pill.dayNumber,
+        noteDate: pill.dateStr,
+      });
+      if (error || !data) {
+        const msg = error?.message ?? "";
+        const looksLikeDuplicate =
+          isPostgresDuplicateKey(error) ||
+          /already exists|one note per day|unique constraint/i.test(msg);
+        if (looksLikeDuplicate) {
+          const { data: row, error: fetchErr } = await supabase
+            .from("ipd_progress_notes")
+            .select("id")
+            .eq("admission_id", admissionId)
+            .eq("note_date", pill.dateStr)
+            .maybeSingle();
+          const rid =
+            row && typeof row === "object" ? s((row as Record<string, unknown>).id) : "";
+          if (!fetchErr && rid) {
+            await onRefetchAdmission();
+            setSelectedNoteId(rid);
+            return;
+          }
+        }
+        toast.error(msg || "Could not open progress note for this day");
+        setTimelinePendingYmd(null);
+        return;
+      }
+      const newId = s(data.id);
+      if (!newId) {
+        toast.error("Progress note missing id");
+        setTimelinePendingYmd(null);
+        return;
+      }
+      await onRefetchAdmission();
+      setSelectedNoteId(newId);
+    },
+    [admissionId, noteRowByDateStr, onRefetchAdmission, selectedNoteId],
   );
 
   useEffect(() => {
@@ -939,7 +1096,6 @@ export default function IpdDailyNotesWorkspace({
       noteDraftRef.current = emptyDraft();
       setVitalsFieldSource({});
       vitalsFieldSourceRef.current = {};
-      setLatestNursingVitalsAt(null);
       hydrateClinicalSnomedFromRow(
         {},
         {
@@ -983,7 +1139,6 @@ export default function IpdDailyNotesWorkspace({
             vitalsFieldSourceRef.current = m.provenance;
             setNoteDraft(m.draft);
             setVitalsFieldSource(m.provenance);
-            setLatestNursingVitalsAt(m.at);
           })();
         },
       )
@@ -1326,12 +1481,37 @@ export default function IpdDailyNotesWorkspace({
     s(admission?.primary_diagnosis_display) || s(preAdmission?.primary_diagnosis_display) || "—";
   const diagnosisIcd10 =
     s(admission?.primary_diagnosis_icd10) || s(preAdmission?.primary_diagnosis_icd10) || null;
+  const patientPanelName =
+    s(patient?.full_name) ||
+    s(patient?.name) ||
+    [s(patient?.first_name), s(patient?.last_name)].filter(Boolean).join(" ").trim() ||
+    "—";
+  const patientPanelDobRaw = patient?.date_of_birth ?? patient?.dob;
+  const patientPanelDob = patientPanelDobRaw ? formatClinicalDate(patientPanelDobRaw) : "—";
+  const patientPanelSex = s(patient?.sex ?? patient?.gender) || "—";
   const admittedFmt = formatClinicalDate(admission?.admitted_at);
   const surgeryRaw = s(admission?.surgery_date);
   const surgeryDisplay = surgeryRaw ? formatClinicalDate(surgeryRaw) : "—";
   const surgeonName = s(doctor?.full_name);
   const estDischarge = formatClinicalDate(admission?.expected_discharge_date);
   const coverageLabel = admission?.coverage_id ? "TPA" : "Self pay";
+
+  const patientConfirmAgeYears = useMemo(() => {
+    const ay = patient?.age_years;
+    if (typeof ay === "number" && Number.isFinite(ay)) return Math.round(ay);
+    const dob = s(patient?.date_of_birth ?? patient?.dob);
+    if (dob) {
+      const d = new Date(dob.length <= 10 ? `${dob}T12:00:00` : dob);
+      if (!Number.isNaN(d.getTime())) {
+        return Math.max(0, Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000)));
+      }
+    }
+    return null;
+  }, [patient]);
+
+  const patientConfirmName = patientPanelName !== "—" ? patientPanelName : "Patient";
+  const patientConfirmDocpad = s(patient?.docpad_id) || null;
+  const patientConfirmSex = s(patient?.sex ?? patient?.gender) || null;
 
   const allergyText = (() => {
     const raw = patient?.known_allergies;
@@ -1560,33 +1740,33 @@ export default function IpdDailyNotesWorkspace({
           Admission timeline
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-          {progressNotes.length === 0 ? (
+          {hospitalDayPills.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-300 p-3 text-center text-xs text-slate-500">
-              No progress notes yet.
+              Admission date missing — timeline unavailable.
             </p>
           ) : (
-            progressNotes.map((row) => {
-              const r = row as Record<string, unknown>;
-              const id = s(r.id);
-              const active = id === selectedNoteId;
-              const dayN = num(r.hospital_day_number) ?? 0;
-              const title = `Day ${Math.max(1, dayN)}`;
-              const nd = s(r.note_date);
-              const docRec = asRec(r.doctor);
-              const docName = docRec ? s(docRec.full_name) : s(r.doctor_name ?? r.authored_by_name);
-              const tags = Array.isArray(r.day_tags) ? (r.day_tags as unknown[]) : [];
-              const surgeryDay = Boolean(r.is_surgery_day);
-              const cond = s(r.condition_status);
-              const txC = num(r.treatment_count ?? r.tx_count) ?? 0;
-              const invC = num(r.investigation_count ?? r.inv_count ?? r.order_count) ?? 0;
+            [...hospitalDayPills].reverse().map((pill) => {
+              const row = noteRowByDateStr.get(pill.dateStr);
+              const active =
+                timelinePendingYmd === pill.dateStr ||
+                (timelinePendingYmd == null && selectedNoteYmd === pill.dateStr);
+              const docRec = row ? asRec(row.doctor) : null;
+              const docName = row
+                ? docRec
+                  ? s(docRec.full_name)
+                  : s(row.doctor_name ?? row.authored_by_name)
+                : "";
+              const tags = row && Array.isArray(row.day_tags) ? (row.day_tags as unknown[]) : [];
+              const surgeryDay = row ? Boolean(row.is_surgery_day) : false;
+              const cond = row ? s(row.condition_status) : "";
+              const txC = row ? (num(row.treatment_count ?? row.tx_count) ?? 0) : 0;
+              const invC = row ? (num(row.investigation_count ?? row.inv_count ?? row.order_count) ?? 0) : 0;
+              const hasVitalsDot = nursingVitalsYmdSet.has(pill.dateStr);
               return (
                 <button
-                  key={id || nd}
+                  key={pill.dateStr}
                   type="button"
-                  onClick={() => {
-                    userPickedTimelineRef.current = true;
-                    setSelectedNoteId(id);
-                  }}
+                  onClick={() => void handleSelectHospitalDay(pill)}
                   className={cn(
                     "relative w-full overflow-hidden rounded-xl p-2.5 text-left text-xs shadow-sm transition",
                     active
@@ -1594,46 +1774,79 @@ export default function IpdDailyNotesWorkspace({
                       : "border-l-[3px] border-l-transparent bg-slate-100 hover:bg-slate-200",
                   )}
                 >
-                  <div className="flex items-start justify-between gap-1">
-                    <p className="font-semibold text-slate-900">{title}</p>
-                    {surgeryDay ? (
-                      <span title="Surgery day" className="text-orange-400" aria-hidden>
-                        <Sparkles className="h-3.5 w-3.5" />
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="text-[11px] text-slate-600">{fmtDayShort(nd)}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-slate-600">{docName || "—"}</p>
-                  {tags.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {tags.map((t, i) => (
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="font-semibold text-slate-900">Day {pill.dayNumber}</p>
+                        {pill.isToday ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-900">
+                            Today
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-600">
+                        {pill.date.toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                      </p>
+                      {pill.isAdmission ? (
+                        <p className="mt-1">
+                          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-900">
+                            Admission
+                          </span>
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {surgeryDay ? (
+                        <span title="Surgery day" className="text-orange-400" aria-hidden>
+                          <Sparkles className="h-3.5 w-3.5" />
+                        </span>
+                      ) : null}
+                      {hasVitalsDot ? (
                         <span
-                          key={i}
-                          className="rounded-full border border-orange-500/40 bg-orange-500/15 px-2 py-0.5 text-[10px] text-orange-800"
-                        >
-                          {s(t)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {(txC > 0 || invC > 0) && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {txC > 0 ? (
-                        <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-700">
-                          {txC} Rx
-                        </span>
-                      ) : null}
-                      {invC > 0 ? (
-                        <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-700">
-                          {invC} order{invC !== 1 ? "s" : ""}
-                        </span>
+                          className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm"
+                          title="Nursing vitals recorded"
+                          aria-hidden
+                        />
                       ) : null}
                     </div>
-                  )}
-                  {cond ? (
-                    <div className={cn("mt-2 h-1 w-full rounded-full", timelineConditionBarClass(cond))} title={cond} />
+                  </div>
+                  {row ? (
+                    <>
+                      <p className="mt-1.5 truncate text-[11px] text-slate-600">{docName || "—"}</p>
+                      {tags.length > 0 ? (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {tags.map((t, i) => (
+                            <span
+                              key={i}
+                              className="rounded-full border border-orange-500/40 bg-orange-500/15 px-2 py-0.5 text-[10px] text-orange-800"
+                            >
+                              {s(t)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {(txC > 0 || invC > 0) && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {txC > 0 ? (
+                            <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-700">
+                              {txC} Rx
+                            </span>
+                          ) : null}
+                          {invC > 0 ? (
+                            <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] text-slate-700">
+                              {invC} order{invC !== 1 ? "s" : ""}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                      {cond ? (
+                        <div className={cn("mt-2 h-1 w-full rounded-full", timelineConditionBarClass(cond))} title={cond} />
+                      ) : (
+                        <div className="mt-2 h-1 w-full rounded-full bg-slate-300" />
+                      )}
+                    </>
                   ) : (
-                    <div className="mt-2 h-1 w-full rounded-full bg-slate-300" />
+                    <div className="mt-2 h-1 w-full rounded-full bg-slate-200/80" title="No progress note yet" />
                   )}
                 </button>
               );
@@ -1849,184 +2062,13 @@ export default function IpdDailyNotesWorkspace({
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                   onClick={() => setObjOpen((o) => !o)}
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                      Objective · Vitals + Examination
-                    </span>
-                    {latestNursingVitalsAt &&
-                    VITAL_FIELD_LIST.some((f) => vitalsFieldSource[f] === "nursing") ? (
-                      <span className="rounded-md bg-sky-100 px-2 py-0.5 text-[9px] font-semibold text-sky-800">
-                        Auto-synced from nursing ·{" "}
-                        {formatDistanceToNow(new Date(latestNursingVitalsAt), { addSuffix: true })}
-                      </span>
-                    ) : null}
-                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                    Objective · Examination
+                  </span>
                   <ChevronDown className={cn("h-4 w-4 text-slate-400 transition", objOpen ? "rotate-180" : "")} />
                 </button>
                 {objOpen ? (
                   <div className="space-y-5 border-t border-slate-200 px-4 pb-4 pt-3">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="border-b border-slate-200 pb-2">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">BP</p>
-                        <div className="mt-1 flex items-baseline gap-0.5">
-                          <NumericLineInput
-                            value={noteDraft.bp_systolic}
-                            onChange={(v) => {
-                              markVitalsDoctorField("bp_systolic");
-                              setNoteDraft((d) => ({ ...d, bp_systolic: v.replace(/\D/g, "").slice(0, 3) }));
-                            }}
-                            className="w-12 text-xl font-bold"
-                          />
-                          <span className="text-lg font-bold text-slate-900">/</span>
-                          <NumericLineInput
-                            value={noteDraft.bp_diastolic}
-                            onChange={(v) => {
-                              markVitalsDoctorField("bp_diastolic");
-                              setNoteDraft((d) => ({ ...d, bp_diastolic: v.replace(/\D/g, "").slice(0, 3) }));
-                            }}
-                            className="w-12 text-xl font-bold"
-                          />
-                        </div>
-                        <p className="mt-0.5 text-[10px] text-slate-500">mmHg</p>
-                        {vitalsFieldSource.bp_systolic === "nursing" || vitalsFieldSource.bp_diastolic === "nursing" ? (
-                          <p className="mt-0.5 text-[9px] text-sky-800">
-                            Auto-synced
-                            {latestNursingVitalsAt
-                              ? ` · ${formatDistanceToNow(new Date(latestNursingVitalsAt), { addSuffix: true })}`
-                              : ""}
-                          </p>
-                        ) : vitalsFieldSource.bp_systolic === "doctor" && vitalsFieldSource.bp_diastolic === "doctor" ? (
-                          <p className="mt-0.5 text-[9px] text-slate-500">Doctor-entered</p>
-                        ) : vitalsFieldSource.bp_systolic === "doctor" || vitalsFieldSource.bp_diastolic === "doctor" ? (
-                          <p className="mt-0.5 text-[9px] text-slate-500">Doctor-entered (partial)</p>
-                        ) : null}
-                      </div>
-                      <div className="border-b border-slate-200 pb-2">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">HR</p>
-                        <NumericLineInput
-                          value={noteDraft.heart_rate}
-                          onChange={(v) => {
-                            markVitalsDoctorField("heart_rate");
-                            setNoteDraft((d) => ({ ...d, heart_rate: v.replace(/\D/g, "").slice(0, 3) }));
-                          }}
-                          className="mt-1 block w-full text-2xl font-bold"
-                        />
-                        <p className="mt-0.5 text-[10px] text-slate-500">bpm</p>
-                        {vitalsFieldSource.heart_rate === "nursing" ? (
-                          <p className="mt-0.5 text-[9px] text-sky-800">
-                            Auto-synced
-                            {latestNursingVitalsAt
-                              ? ` · ${formatDistanceToNow(new Date(latestNursingVitalsAt), { addSuffix: true })}`
-                              : ""}
-                          </p>
-                        ) : vitalsFieldSource.heart_rate === "doctor" ? (
-                          <p className="mt-0.5 text-[9px] text-slate-500">Doctor-entered</p>
-                        ) : null}
-                      </div>
-                      <div className="border-b border-slate-200 pb-2">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">SpO₂</p>
-                        <NumericLineInput
-                          value={noteDraft.spo2}
-                          onChange={(v) => {
-                            markVitalsDoctorField("spo2");
-                            setNoteDraft((d) => ({ ...d, spo2: v.replace(/\D/g, "").slice(0, 3) }));
-                          }}
-                          className="mt-1 block w-full text-2xl font-bold"
-                        />
-                        <p className="mt-0.5 text-[10px] text-slate-500">%</p>
-                        {vitalsFieldSource.spo2 === "nursing" ? (
-                          <p className="mt-0.5 text-[9px] text-sky-800">
-                            Auto-synced
-                            {latestNursingVitalsAt
-                              ? ` · ${formatDistanceToNow(new Date(latestNursingVitalsAt), { addSuffix: true })}`
-                              : ""}
-                          </p>
-                        ) : vitalsFieldSource.spo2 === "doctor" ? (
-                          <p className="mt-0.5 text-[9px] text-slate-500">Doctor-entered</p>
-                        ) : null}
-                      </div>
-                      <div className="border-b border-slate-200 pb-2">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">Temp</p>
-                        <NumericLineInput
-                          value={noteDraft.temperature_c}
-                          onChange={(v) => {
-                            markVitalsDoctorField("temperature_c");
-                            setNoteDraft((d) => ({
-                              ...d,
-                              temperature_c: v.replace(/[^\d.]/g, "").slice(0, 5),
-                            }));
-                          }}
-                          inputMode="decimal"
-                          pattern="[0-9.]*"
-                          className={cn(
-                            "mt-1 block w-full text-2xl font-bold",
-                            num(noteDraft.temperature_c) != null && num(noteDraft.temperature_c)! >= 38
-                              ? "text-rose-600"
-                              : "text-slate-900",
-                          )}
-                        />
-                        <p className="mt-0.5 text-[10px] text-slate-500">°C</p>
-                        {vitalsFieldSource.temperature_c === "nursing" ? (
-                          <p className="mt-0.5 text-[9px] text-sky-800">
-                            Auto-synced
-                            {latestNursingVitalsAt
-                              ? ` · ${formatDistanceToNow(new Date(latestNursingVitalsAt), { addSuffix: true })}`
-                              : ""}
-                          </p>
-                        ) : vitalsFieldSource.temperature_c === "doctor" ? (
-                          <p className="mt-0.5 text-[9px] text-slate-500">Doctor-entered</p>
-                        ) : null}
-                      </div>
-                      <div className="border-b border-slate-200 pb-2">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">RR</p>
-                        <NumericLineInput
-                          value={noteDraft.respiratory_rate}
-                          onChange={(v) => {
-                            markVitalsDoctorField("respiratory_rate");
-                            setNoteDraft((d) => ({ ...d, respiratory_rate: v.replace(/\D/g, "").slice(0, 3) }));
-                          }}
-                          className="mt-1 block w-full text-2xl font-bold"
-                        />
-                        <p className="mt-0.5 text-[10px] text-slate-500">/min</p>
-                        {vitalsFieldSource.respiratory_rate === "nursing" ? (
-                          <p className="mt-0.5 text-[9px] text-sky-800">
-                            Auto-synced
-                            {latestNursingVitalsAt
-                              ? ` · ${formatDistanceToNow(new Date(latestNursingVitalsAt), { addSuffix: true })}`
-                              : ""}
-                          </p>
-                        ) : vitalsFieldSource.respiratory_rate === "doctor" ? (
-                          <p className="mt-0.5 text-[9px] text-slate-500">Doctor-entered</p>
-                        ) : null}
-                      </div>
-                      <div className="border-b border-slate-200 pb-2">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">Pain</p>
-                        <NumericLineInput
-                          value={noteDraft.pain_score}
-                          onChange={(v) => {
-                            markVitalsDoctorField("pain_score");
-                            setNoteDraft((d) => ({
-                              ...d,
-                              pain_score: String(
-                                Math.min(10, Math.max(0, parseInt(v.replace(/\D/g, "").slice(0, 2) || "0", 10) || 0)),
-                              ),
-                            }));
-                          }}
-                          className="mt-1 block w-full text-2xl font-bold"
-                        />
-                        <p className="mt-0.5 text-[10px] text-slate-500">/10 VAS</p>
-                        {vitalsFieldSource.pain_score === "nursing" ? (
-                          <p className="mt-0.5 text-[9px] text-sky-800">
-                            Auto-synced
-                            {latestNursingVitalsAt
-                              ? ` · ${formatDistanceToNow(new Date(latestNursingVitalsAt), { addSuffix: true })}`
-                              : ""}
-                          </p>
-                        ) : vitalsFieldSource.pain_score === "doctor" ? (
-                          <p className="mt-0.5 text-[9px] text-slate-500">Doctor-entered</p>
-                        ) : null}
-                      </div>
-                    </div>
                     <div>
                       <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
                         Today&apos;s condition
@@ -2222,49 +2264,61 @@ export default function IpdDailyNotesWorkspace({
                       />
                     </div>
 
-                    {/* Investigations */}
+                    {/* Investigations — expand control and action buttons are siblings to avoid nested <button> (invalid HTML / hydration). */}
                     <div className="rounded-lg bg-slate-100 p-3">
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between text-left"
-                        onClick={() => setInvOpen((o) => !o)}
-                      >
-                        <span className="text-xs font-semibold text-slate-800">
-                          Investigations · Orders &amp; results
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAddOrderOpen((o) => {
-                                const next = !o;
-                                if (next) {
-                                  setInvSearchQuery("");
-                                  setInvResults([]);
-                                }
-                                return next;
-                              });
-                            }}
-                            onKeyDown={(e) =>
-                              e.key === "Enter" &&
-                              setAddOrderOpen((o) => {
-                                const next = !o;
-                                if (next) {
-                                  setInvSearchQuery("");
-                                  setInvResults([]);
-                                }
-                                return next;
-                              })
-                            }
-                            className="rounded-full bg-sky-600 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-sky-500"
-                          >
-                            + Order
+                      <div className="flex w-full items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
+                          onClick={() => setInvOpen((o) => !o)}
+                        >
+                          <span className="text-xs font-semibold text-slate-800">
+                            Investigations · Orders &amp; results
                           </span>
-                          <ChevronDown className={cn("h-4 w-4 text-slate-500", invOpen ? "rotate-180" : "")} />
+                          <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-500", invOpen ? "rotate-180" : "")} />
+                        </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {addOrderOpen ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddOrderOpen(false);
+                                setInvSearchQuery("");
+                                setInvResults([]);
+                              }}
+                              className="rounded-full bg-slate-500 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-slate-400"
+                            >
+                              Close
+                            </button>
+                          ) : (
+                            <ConfirmationTooltip
+                              patientId={patientId}
+                              patientName={patientConfirmName}
+                              ageYears={patientConfirmAgeYears}
+                              sex={patientConfirmSex}
+                              docpadId={patientConfirmDocpad}
+                              actionNoun="investigation order"
+                              disabled={!patientId.trim()}
+                              onConfirm={() => {
+                                setAddOrderOpen(true);
+                                setInvSearchQuery("");
+                                setInvResults([]);
+                              }}
+                              confirmLabel="Continue"
+                              side="bottom"
+                              align="end"
+                            >
+                              <button
+                                type="button"
+                                className="rounded-full bg-sky-600 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-sky-500 disabled:opacity-40"
+                                disabled={!patientId.trim()}
+                              >
+                                Order Investigation
+                              </button>
+                            </ConfirmationTooltip>
+                          )}
                         </div>
-                      </button>
+                      </div>
                       {invOpen ? (
                         <div className="mt-3 space-y-2">
                           {addOrderOpen ? (
@@ -2556,14 +2610,28 @@ export default function IpdDailyNotesWorkspace({
                                   </option>
                                 ))}
                               </select>
-                              <Button
-                                type="button"
-                                size="sm"
-                                className="bg-violet-600 lg:col-span-1"
-                                onClick={() => void handleSaveTreatment()}
+                              <ConfirmationTooltip
+                                patientId={patientId}
+                                patientName={patientConfirmName}
+                                ageYears={patientConfirmAgeYears}
+                                sex={patientConfirmSex}
+                                docpadId={patientConfirmDocpad}
+                                actionNoun="doctor order"
+                                disabled={!patientId.trim() || !newMed.name.trim()}
+                                onConfirm={() => void handleSaveTreatment()}
+                                confirmLabel="Save order"
+                                side="top"
+                                align="end"
                               >
-                                Save
-                              </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="bg-violet-600 lg:col-span-1"
+                                  disabled={!patientId.trim() || !newMed.name.trim()}
+                                >
+                                  Add Doctor Order
+                                </Button>
+                              </ConfirmationTooltip>
                             </div>
                           ) : null}
                           {treatments.length === 0 ? (
@@ -2831,6 +2899,15 @@ export default function IpdDailyNotesWorkspace({
             <p className="font-bold text-slate-900">Admission summary</p>
             <dl className="mt-2 space-y-1.5 text-slate-600">
               <div>
+                <dt className="text-[10px] uppercase text-slate-500">Patient</dt>
+                <dd className="text-slate-800">
+                  <span className="font-semibold text-slate-900">{patientPanelName}</span>
+                  <span className="mt-0.5 block text-[11px] font-normal leading-snug text-slate-600">
+                    {patientPanelDob} · {patientPanelSex}
+                  </span>
+                </dd>
+              </div>
+              <div>
                 <dt className="text-[10px] uppercase text-slate-500">Diagnosis</dt>
                 <dd className="text-slate-800">
                   <DiagnosisWithIcd text={diagnosis} icd10={diagnosisIcd10} />
@@ -3041,6 +3118,11 @@ export default function IpdDailyNotesWorkspace({
         onCancel={() => setPendingInvTest(null)}
         onConfirm={(p) => void confirmPlaceInvestigationOrder(p)}
         busy={orderInvBusy}
+        patientId={patientId}
+        patientName={patientConfirmName}
+        patientAgeYears={patientConfirmAgeYears}
+        patientSex={patientConfirmSex}
+        patientDocpadId={patientConfirmDocpad}
       />
     </div>
   );

@@ -10,6 +10,7 @@ import { PharmacyExpiringStockWidget } from "./PharmacyExpiringStockWidget";
 import { PharmacyRestockForm } from "./PharmacyRestockForm";
 import {
   parseRpcReceiptData,
+  patchEncounterReceiptMedications,
   PrescriptionReceiptModal,
   withMedicationDispensedQuantity,
   type PrescriptionReceiptPayload,
@@ -19,16 +20,10 @@ import {
   filterPrescriptionQueueRows,
   type OrderedPrescriptionRow,
   PrescriptionQueue,
+  type ReceiptPreviewDispensePayload,
 } from "./PrescriptionQueue";
 
 type MainTab = "queue" | "ledger" | "formulary";
-
-type PendingQueueDispense = {
-  prescriptionId: string;
-  dispensedQuantity: number;
-  notes: string | null;
-  pharmacistId: string;
-};
 
 function patchReceiptPayloadDispensedQty(
   payload: PrescriptionReceiptPayload,
@@ -184,7 +179,7 @@ const tabBtnActive = "bg-emerald-600 text-white shadow-sm";
 const tabBtnIdle = "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
 
 export default function PharmacyDashboardPage() {
-  const pendingDispenseRef = useRef<PendingQueueDispense | null>(null);
+  const pendingDispenseRef = useRef<ReceiptPreviewDispensePayload | null>(null);
   const [hospitalId, setHospitalId] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState<MainTab>("queue");
   const [rows, setRows] = useState<OrderedPrescriptionRow[]>([]);
@@ -367,7 +362,7 @@ export default function PharmacyDashboardPage() {
   }, []);
 
   /** Queue: generate receipt first; user confirms dispense in modal. */
-  const openReceiptPreviewForDispense = useCallback(async (pending: PendingQueueDispense) => {
+  const openReceiptPreviewForDispense = useCallback(async (pending: ReceiptPreviewDispensePayload) => {
     pendingDispenseRef.current = pending;
     setReceiptAwaitingDispenseConfirm(true);
     setReceiptConfirmError(null);
@@ -375,9 +370,36 @@ export default function PharmacyDashboardPage() {
     setReceiptLoading(true);
     setReceiptError(null);
     setReceiptPayload(null);
-    setReceiptPrescriptionId(pending.prescriptionId);
-    const { data, error: rpcErr } = await supabase.rpc("generate_prescription_receipt", {
-      prescription_id: pending.prescriptionId,
+    setReceiptPrescriptionId(null);
+
+    if (pending.kind === "line") {
+      setReceiptPrescriptionId(pending.prescriptionId);
+      const { data, error: rpcErr } = await supabase.rpc("generate_prescription_receipt", {
+        prescription_id: pending.prescriptionId,
+      });
+      if (rpcErr) {
+        setReceiptLoading(false);
+        setReceiptError(rpcErr.message);
+        pendingDispenseRef.current = null;
+        setReceiptAwaitingDispenseConfirm(false);
+        return;
+      }
+      const parsed = parseRpcReceiptData(data);
+      if (!parsed) {
+        setReceiptLoading(false);
+        setReceiptError("Could not read receipt data.");
+        pendingDispenseRef.current = null;
+        setReceiptAwaitingDispenseConfirm(false);
+        return;
+      }
+      setReceiptPayload(patchReceiptPayloadDispensedQty(parsed, pending.dispensedQuantity));
+      setReceiptLoading(false);
+      return;
+    }
+
+    setReceiptPrescriptionId(pending.lines[0]?.prescriptionId ?? null);
+    const { data, error: rpcErr } = await supabase.rpc("generate_encounter_prescription_receipt", {
+      p_encounter_id: pending.encounterId,
     });
     if (rpcErr) {
       setReceiptLoading(false);
@@ -394,7 +416,12 @@ export default function PharmacyDashboardPage() {
       setReceiptAwaitingDispenseConfirm(false);
       return;
     }
-    setReceiptPayload(patchReceiptPayloadDispensedQty(parsed, pending.dispensedQuantity));
+    setReceiptPayload(
+      patchEncounterReceiptMedications(
+        parsed,
+        pending.lines.map((l) => ({ prescriptionId: l.prescriptionId, dispensedQuantity: l.dispensedQuantity })),
+      ),
+    );
     setReceiptLoading(false);
   }, []);
 
@@ -403,17 +430,38 @@ export default function PharmacyDashboardPage() {
     if (!p) return;
     setReceiptConfirmBusy(true);
     setReceiptConfirmError(null);
-    const { error: rpcErr } = await supabase.rpc("dispense_prescription", {
-      p_prescription_id: p.prescriptionId,
-      p_dispensed_quantity: p.dispensedQuantity,
-      p_pharmacist_id: p.pharmacistId,
-      p_notes: p.notes,
-    });
-    setReceiptConfirmBusy(false);
-    if (rpcErr) {
-      setReceiptConfirmError(rpcErr.message);
+
+    if (p.kind === "line") {
+      const { error: rpcErr } = await supabase.rpc("dispense_prescription", {
+        p_prescription_id: p.prescriptionId,
+        p_dispensed_quantity: p.dispensedQuantity,
+        p_pharmacist_id: p.pharmacistId,
+        p_notes: p.notes,
+      });
+      setReceiptConfirmBusy(false);
+      if (rpcErr) {
+        setReceiptConfirmError(rpcErr.message);
+        return;
+      }
+      resetReceiptUi();
+      void loadDashboard();
       return;
     }
+
+    for (const line of p.lines) {
+      const { error: rpcErr } = await supabase.rpc("dispense_prescription", {
+        p_prescription_id: line.prescriptionId,
+        p_dispensed_quantity: line.dispensedQuantity,
+        p_pharmacist_id: p.pharmacistId,
+        p_notes: line.notes,
+      });
+      if (rpcErr) {
+        setReceiptConfirmBusy(false);
+        setReceiptConfirmError(rpcErr.message);
+        return;
+      }
+    }
+    setReceiptConfirmBusy(false);
     resetReceiptUi();
     void loadDashboard();
   }, [loadDashboard, resetReceiptUi]);

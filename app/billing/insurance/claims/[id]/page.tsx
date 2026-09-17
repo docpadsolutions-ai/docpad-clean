@@ -10,8 +10,8 @@ export default function ViewClaimPage() {
   const id = String(params.id ?? "").trim();
   if (!id) {
     return (
-      <div className="space-y-3 p-6">
-        <p className="text-slate-700 dark:text-slate-300">Missing claim id.</p>
+      <div className="space-y-3 p-6 dark:text-gray-300">
+        <p className="text-slate-700 dark:text-gray-300">Missing claim id.</p>
         <Button type="button" variant="outline" asChild>
           <Link href="/billing/insurance">Back to insurance</Link>
         </Button>

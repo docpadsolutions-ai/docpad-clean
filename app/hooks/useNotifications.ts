@@ -41,6 +41,21 @@ function normalizeNotificationRow(row: Record<string, unknown>): AppNotification
   };
 }
 
+/** DB uses `read_at`; some clients may send `is_read`. */
+function isUnreadNotificationRow(row: Record<string, unknown>): boolean {
+  if (row.is_read === true) return false;
+  if (row.read_at != null && s(row.read_at)) return false;
+  return true;
+}
+
+function sortNotificationsByCreatedDesc(list: AppNotification[]): AppNotification[] {
+  return [...list].sort((a, b) => {
+    const ta = Date.parse(a.created_at);
+    const tb = Date.parse(b.created_at);
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  });
+}
+
 export async function fetchCurrentPractitionerId(client: SupabaseClient): Promise<string | null> {
   const { data: auth } = await client.auth.getUser();
   const uid = auth.user?.id;
@@ -79,7 +94,7 @@ export function useNotifications(context: NotificationContext) {
       return;
     }
     const rows = Array.isArray(data) ? data : [];
-    setItems(rows.map((r) => normalizeNotificationRow(r as Record<string, unknown>)));
+    setItems(sortNotificationsByCreatedDesc(rows.map((r) => normalizeNotificationRow(r as Record<string, unknown>))));
   }, [context]);
 
   useEffect(() => {
@@ -101,7 +116,7 @@ export function useNotifications(context: NotificationContext) {
     }
 
     const channel = supabase
-      .channel(`notifications:${practitionerId}:${context}`)
+      .channel(`notifications:${context}:${practitionerId}`)
       .on(
         "postgres_changes",
         {
@@ -113,14 +128,36 @@ export function useNotifications(context: NotificationContext) {
         (payload) => {
           const row = payload.new as Record<string, unknown>;
           if (s(row.context) !== contextRef.current) return;
+          if (!isUnreadNotificationRow(row)) return;
           const n = normalizeNotificationRow(row);
           setItems((prev) => {
             if (prev.some((p) => p.id === n.id)) return prev;
-            return [n, ...prev];
+            return sortNotificationsByCreatedDesc([n, ...prev]);
           });
           if (n.priority.toLowerCase() === "critical") {
             toast.error(n.title, { description: n.body ?? undefined });
           }
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "notifications",
+          filter: `recipient_id=eq.${practitionerId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          if (s(row.context) !== contextRef.current) return;
+          const n = normalizeNotificationRow(row);
+          setItems((prev) => {
+            const idx = prev.findIndex((p) => p.id === n.id);
+            if (idx < 0) return sortNotificationsByCreatedDesc([...prev, n]);
+            const next = [...prev];
+            next[idx] = n;
+            return sortNotificationsByCreatedDesc(next);
+          });
         },
       )
       .subscribe();

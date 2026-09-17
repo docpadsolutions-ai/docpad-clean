@@ -17,6 +17,7 @@ type Props = {
 export function ConsentNotificationBadge({ patientId, className = "" }: Props) {
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  /** Never auto-open — only the explicit Consent control sets this to true. */
   const [modalOpen, setModalOpen] = useState(false);
 
   const refreshCount = useCallback(async () => {
@@ -78,9 +79,9 @@ export function ConsentNotificationBadge({ patientId, className = "" }: Props) {
         type="button"
         onClick={() => setModalOpen(true)}
         disabled={loading}
-        className={`relative inline-flex h-9 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 ${className}`}
+        className={`relative inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 ${className}`}
         title={count > 0 ? `${count} pending consent request(s)` : "ABDM consent notifications"}
-        aria-label="Open consent notifications"
+        aria-label="Consent — open ABDM consent requests"
       >
         <span className="relative inline-flex">
           <Bell className="h-4 w-4" strokeWidth={2} />
@@ -88,15 +89,18 @@ export function ConsentNotificationBadge({ patientId, className = "" }: Props) {
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden />
           ) : null}
         </span>
+        <span className="text-[12px] font-semibold">Consent</span>
         {count > 0 ? <span className="text-[12px] font-semibold tabular-nums text-red-600">{count > 99 ? "99+" : count}</span> : null}
       </button>
 
-      <ConsentApprovalModal
-        patientId={patientId}
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onApproved={() => void refreshCount()}
-      />
+      {modalOpen ? (
+        <ConsentApprovalModal
+          patientId={patientId}
+          isOpen
+          onClose={() => setModalOpen(false)}
+          onApproved={() => void refreshCount()}
+        />
+      ) : null}
     </>
   );
 }

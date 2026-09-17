@@ -27,6 +27,25 @@ export async function rpcGetIpdAdmission(
   return { data: row, error: null };
 }
 
+/**
+ * Ensures a draft progress note exists for the current calendar day for this admission (idempotent).
+ * Call before `get_ipd_admission` so the bundle includes today’s row. Safe to ignore errors (e.g. RPC
+ * not deployed yet — client-side fallback in `IpdDailyNotesWorkspace` may still insert).
+ */
+export async function rpcEnsureDailyProgressNotes(
+  supabase: SupabaseClient,
+  admissionId: string,
+): Promise<{ error: Error | null }> {
+  const id = admissionId.trim();
+  if (!id) return { error: new Error("Missing admission id") };
+
+  const { error } = await supabase.rpc("ensure_daily_progress_notes", {
+    p_admission_id: id,
+  });
+  if (error) return { error: new Error(error.message) };
+  return { error: null };
+}
+
 /** Unwrap JSONB from `get_ipd_admission` when nested under `data`. */
 export function normalizeIpdAdmissionBundle(raw: unknown): Record<string, unknown> | null {
   const row = unwrapRpcRow<Record<string, unknown>>(raw);
@@ -153,6 +172,55 @@ function parseAdmissionIdFromRpcData(data: unknown): string | null {
   return null;
 }
 
+/** `admit_patient` may return `{ error: 'duplicate_active_admission', existing_admission_id, ... }` instead of raising. */
+export type ParsedAdmitPatientRpc =
+  | { kind: "success"; admissionId: string }
+  | {
+      kind: "duplicate_active_admission";
+      existingAdmissionId: string | null;
+      admissionNumber: string | null;
+    }
+  | { kind: "empty_or_unexpected" };
+
+function duplicatePayloadFromRow(row: Record<string, unknown>): ParsedAdmitPatientRpc | null {
+  const errCode = str(row.error);
+  if (errCode === "duplicate_active_admission") {
+    const eid = str(row.existing_admission_id);
+    const num = str(row.existing_admission_number ?? row.admission_number);
+    return {
+      kind: "duplicate_active_admission",
+      existingAdmissionId: eid || null,
+      admissionNumber: num || null,
+    };
+  }
+  return null;
+}
+
+export function parseAdmitPatientRpcResult(data: unknown): ParsedAdmitPatientRpc {
+  const row = unwrapRpcRow<Record<string, unknown>>(data);
+  if (row) {
+    const direct = duplicatePayloadFromRow(row);
+    if (direct) return direct;
+    const nested = row.result;
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      const fromNested = duplicatePayloadFromRow(nested as Record<string, unknown>);
+      if (fromNested) return fromNested;
+    }
+  }
+  const id = parseAdmissionIdFromRpcData(data);
+  if (id) return { kind: "success", admissionId: id };
+  return { kind: "empty_or_unexpected" };
+}
+
+/** User-facing copy when `admit_patient` reports an existing active admission (never a raw DB message). */
+export function duplicateActiveAdmissionMessage(admissionNumber: string | null): string {
+  const n = admissionNumber?.trim();
+  if (n) {
+    return `This patient already has an active admission (IPD #${n}). Go to the IPD module to view it.`;
+  }
+  return "This patient already has an active admission. Go to the IPD module to view it.";
+}
+
 function str(v: unknown): string {
   if (v == null) return "";
   return String(v).trim();
@@ -263,7 +331,12 @@ export type AdmitPatientInput = {
 export async function rpcAdmitPatient(
   supabase: SupabaseClient,
   input: AdmitPatientInput,
-): Promise<{ admissionId: string | null; error: Error | null }> {
+): Promise<{
+  admissionId: string | null;
+  error: Error | null;
+  /** Present when the RPC JSON reports `duplicate_active_admission` (not a thrown DB error). */
+  duplicateActiveAdmission?: { id: string | null; admissionNumber: string | null };
+}> {
   const { row: activeRow, error: activeErr } = await findActiveIpdAdmissionForPatient(
     supabase,
     input.p_patient_id,
@@ -318,9 +391,19 @@ export async function rpcAdmitPatient(
 
   const { data, error } = await supabase.rpc("admit_patient", params);
   if (error) return { admissionId: null, error: new Error(error.message) };
-  const id = parseAdmissionIdFromRpcData(data);
-  if (id) return { admissionId: id, error: null };
-  if (data != null) return { admissionId: String(data), error: null };
+  const parsed = parseAdmitPatientRpcResult(data);
+  if (parsed.kind === "duplicate_active_admission") {
+    return {
+      admissionId: null,
+      error: null,
+      duplicateActiveAdmission: {
+        id: parsed.existingAdmissionId,
+        admissionNumber: parsed.admissionNumber,
+      },
+    };
+  }
+  if (parsed.kind === "success") return { admissionId: parsed.admissionId, error: null };
+  if (data != null && typeof data !== "object") return { admissionId: String(data), error: null };
   return { admissionId: null, error: new Error("admit_patient returned no data") };
 }
 

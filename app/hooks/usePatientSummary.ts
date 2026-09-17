@@ -21,6 +21,17 @@ export type PatientSummaryCompleteData = {
 
 const EMPTY_CARE_TEAM: PatientSummaryCareTeam = { doctors: [], facilities: [] };
 
+function getErrorMessage(err: unknown): string {
+  if (err == null) return "An unexpected error occurred";
+  if (typeof err === "string" && err.trim()) return err.trim();
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const m = (err as { message?: unknown }).message;
+    if (typeof m === "string" && m.trim()) return m.trim();
+  }
+  if (err instanceof Error && err.message.trim()) return err.message.trim();
+  return "An unexpected error occurred";
+}
+
 function asArray<T = unknown>(v: unknown): T[] {
   if (v == null) return [];
   return Array.isArray(v) ? (v as T[]) : [];
@@ -128,14 +139,27 @@ export function usePatientSummaryComplete(patientId: string | null) {
       setLoading(true);
       setError(null);
 
-      const [headerRes, timelineRes, careTeamRes, medBundle] = await Promise.all([
-        supabase.rpc("get_patient_header_data", { p_patient_id: pid }),
+      let headerData: unknown;
+      try {
+        const headerRes = await supabase.rpc("get_patient_header_data", { p_patient_id: pid });
+        if (headerRes.error) {
+          throw headerRes.error;
+        }
+        headerData = headerRes.data;
+      } catch (err) {
+        console.error("get_patient_header_data failed:", err);
+        setError(new Error(getErrorMessage(err)));
+        setData(null);
+        return;
+      }
+
+      const [timelineRes, careTeamRes, medBundle] = await Promise.all([
         supabase.rpc("get_health_timeline_nodes", { p_patient_id: pid }),
         supabase.rpc("get_care_team", { p_patient_id: pid }),
         loadMedicationsForSummaryPatient(pid),
       ]);
 
-      const firstErr = headerRes.error ?? timelineRes.error ?? careTeamRes.error;
+      const firstErr = timelineRes.error ?? careTeamRes.error;
       if (firstErr) {
         throw firstErr;
       }
@@ -144,7 +168,7 @@ export function usePatientSummaryComplete(patientId: string | null) {
       const careTeamData = careTeamRes.data;
 
       setData({
-        header: headerRes.data,
+        header: headerData,
         medications: medBundle.list,
         medicationListError: medBundle.err,
         timelineNodes: asArray(timelineData ?? []),
@@ -152,7 +176,7 @@ export function usePatientSummaryComplete(patientId: string | null) {
       });
     } catch (err) {
       console.error("Error in usePatientSummaryComplete:", err);
-      setError(err instanceof Error ? err : new Error(String(err)));
+      setError(new Error(getErrorMessage(err)));
       setData(null);
     } finally {
       setLoading(false);

@@ -1,5 +1,6 @@
 "use client";
 
+import { format, isValid, parseISO } from "date-fns";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -50,6 +51,16 @@ function todayYmd(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function formatAssignmentRangeDisplay(startYmd: string, endYmd: string): string {
+  const s = parseISO(startYmd);
+  const e = parseISO(endYmd);
+  if (!isValid(s) || !isValid(e)) return "";
+  if (s.getFullYear() !== e.getFullYear()) {
+    return `${format(s, "d MMM yyyy")} – ${format(e, "d MMM yyyy")}`;
+  }
+  return `${format(s, "d MMM")} – ${format(e, "d MMM yyyy")}`;
 }
 
 function isNurseRole(r: StaffDirectoryDetailRow): boolean {
@@ -123,23 +134,42 @@ export default function StaffDirectoryDetailPage() {
       const [{ data: assigns }, { data: wards }] = await Promise.all([
         supabase
           .from("ward_staff_assignments")
-          .select("ward_id, shift")
+          .select("ward_id, shift, start_date, end_date")
           .eq("hospital_id", hid)
           .eq("practitioner_id", row.id)
-          .eq("assigned_date", ymd)
-          .maybeSingle(),
+          .lte("start_date", ymd)
+          .gte("end_date", ymd)
+          .eq("is_active", true),
         supabase.from("ipd_wards").select("id, name").eq("hospital_id", hid),
       ]);
       if (cancelled) return;
-      const a = assigns as Record<string, unknown> | null;
-      if (!a?.ward_id) {
-        setNurseWardToday("Not assigned today");
+      const list = (assigns ?? []) as {
+        ward_id?: unknown;
+        shift?: unknown;
+        start_date?: unknown;
+        end_date?: unknown;
+      }[];
+      if (list.length === 0) {
+        setNurseWardToday("No ward assignment for today");
         return;
       }
       const wmap = new Map((wards ?? []).map((w) => [String((w as Record<string, unknown>).id), String((w as Record<string, unknown>).name ?? "Ward")]));
-      const wn = wmap.get(String(a.ward_id)) ?? "Ward";
-      const shift = String(a.shift ?? "").trim();
-      setNurseWardToday(shift ? `${wn} · ${shift}` : wn);
+      const starts = list
+        .map((a) => (a.start_date != null ? String(a.start_date).slice(0, 10) : ""))
+        .filter((s) => s.length > 0);
+      const ends = list
+        .map((a) => (a.end_date != null ? String(a.end_date).slice(0, 10) : ""))
+        .filter((s) => s.length > 0);
+      const minStart = starts.length > 0 ? starts.reduce((a, b) => (a < b ? a : b)) : ymd;
+      const maxEnd = ends.length > 0 ? ends.reduce((a, b) => (a > b ? a : b)) : ymd;
+      const names = list.map((a) => wmap.get(String(a.ward_id ?? "")) ?? "Ward");
+      const uniq = [...new Set(names)];
+      const wardPart =
+        uniq.length === 0 ? "—" : uniq.length <= 2 ? uniq.join(", ") : `${uniq.length} wards`;
+      const shift = String(list[0]?.shift ?? "").trim();
+      const range = formatAssignmentRangeDisplay(minStart, maxEnd);
+      const rangePart = range ? ` · ${range}` : "";
+      setNurseWardToday(shift ? `${wardPart} · ${shift}${rangePart}` : `${wardPart}${rangePart}`);
     })();
     return () => {
       cancelled = true;

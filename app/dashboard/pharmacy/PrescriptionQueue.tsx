@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
 import { supabase } from "../../supabase";
 
 type PatientEmbed = {
@@ -110,12 +111,24 @@ type LineDraft = { dispensed: string; notes: string };
 const inputCls =
   "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
 
-export type ReceiptPreviewDispensePayload = {
+export type ReceiptPreviewLineDispensePayload = {
+  kind: "line";
   prescriptionId: string;
   dispensedQuantity: number;
   notes: string | null;
   pharmacistId: string;
 };
+
+export type ReceiptPreviewEncounterDispensePayload = {
+  kind: "encounter";
+  encounterId: string;
+  lines: { prescriptionId: string; dispensedQuantity: number; notes: string | null }[];
+  pharmacistId: string;
+};
+
+export type ReceiptPreviewDispensePayload =
+  | ReceiptPreviewLineDispensePayload
+  | ReceiptPreviewEncounterDispensePayload;
 
 type Props = {
   rows: OrderedPrescriptionRow[];
@@ -143,7 +156,8 @@ export function PrescriptionQueue({
 }: Props) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, LineDraft>>({});
-  const [busyLineId, setBusyLineId] = useState<string | null>(null);
+  /** Line id while a single-line action runs, or queue group key (`enc:…`) for encounter receipt. */
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const groups = useMemo(() => groupQueueRows(rows), [rows]);
@@ -195,19 +209,19 @@ export function PrescriptionQueue({
       return;
     }
 
-    setBusyLineId(line.id);
+    setBusyId(line.id);
     setActionError(null);
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      setBusyLineId(null);
+      setBusyId(null);
       setActionError("You must be signed in to dispense.");
       return;
     }
 
     if (!hospitalId?.trim()) {
-      setBusyLineId(null);
+      setBusyId(null);
       setActionError("No hospital context — cannot dispense.");
       return;
     }
@@ -220,13 +234,13 @@ export function PrescriptionQueue({
       .maybeSingle();
 
     if (prErr) {
-      setBusyLineId(null);
+      setBusyId(null);
       setActionError(prErr.message);
       return;
     }
     const pharmacistId = practitioner?.id != null ? String(practitioner.id).trim() : "";
     if (!pharmacistId) {
-      setBusyLineId(null);
+      setBusyId(null);
       setActionError("No practitioner profile found for your user in this hospital.");
       return;
     }
@@ -234,18 +248,93 @@ export function PrescriptionQueue({
     const notes = draft.notes.trim() || null;
     try {
       await openReceiptPreviewForDispense({
+        kind: "line",
         prescriptionId: line.id,
         dispensedQuantity: dispensed,
         notes,
         pharmacistId,
       });
     } finally {
-      setBusyLineId(null);
+      setBusyId(null);
+    }
+  };
+
+  const resolvePharmacistId = async (): Promise<string | "err"> => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setActionError("You must be signed in to dispense.");
+      return "err";
+    }
+    if (!hospitalId?.trim()) {
+      setActionError("No hospital context — cannot dispense.");
+      return "err";
+    }
+    const { data: practitioner, error: prErr } = await supabase
+      .from("practitioners")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("hospital_id", hospitalId.trim())
+      .maybeSingle();
+    if (prErr) {
+      setActionError(prErr.message);
+      return "err";
+    }
+    const pharmacistId = practitioner?.id != null ? String(practitioner.id).trim() : "";
+    if (!pharmacistId) {
+      setActionError("No practitioner profile found for your user in this hospital.");
+      return "err";
+    }
+    return pharmacistId;
+  };
+
+  const handlePrintEncounterReceiptPreview = async (g: QueueGroup) => {
+    if (!g.key.startsWith("enc:")) return;
+    const encounterId = g.key.slice(4).trim();
+    if (!encounterId) return;
+
+    setActionError(null);
+    const linePayloads: { prescriptionId: string; dispensedQuantity: number; notes: string | null }[] = [];
+    for (const line of g.lines) {
+      const total = Math.max(1, parseQty(line.total_quantity));
+      const draft = drafts[line.id] ?? { dispensed: String(total), notes: "" };
+      const dispensed = parseInt(draft.dispensed, 10);
+      if (!Number.isFinite(dispensed) || dispensed < 1 || dispensed > total) {
+        setActionError(`Dispensed quantity must be between 1 and ${total} for each medication.`);
+        return;
+      }
+      if (dispensed < total && !draft.notes.trim()) {
+        setActionError("Enter a reason on each line where you dispense fewer units than prescribed.");
+        return;
+      }
+      linePayloads.push({
+        prescriptionId: line.id,
+        dispensedQuantity: dispensed,
+        notes: draft.notes.trim() || null,
+      });
+    }
+
+    setBusyId(g.key);
+    const pharmacistId = await resolvePharmacistId();
+    if (pharmacistId === "err") {
+      setBusyId(null);
+      return;
+    }
+    try {
+      await openReceiptPreviewForDispense({
+        kind: "encounter",
+        encounterId,
+        lines: linePayloads,
+        pharmacistId,
+      });
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleRemoveFromQueue = async (line: OrderedPrescriptionRow) => {
-    setBusyLineId(line.id);
+    setBusyId(line.id);
     setActionError(null);
     const { error: upErr } = await supabase
       .from("prescriptions")
@@ -253,7 +342,7 @@ export function PrescriptionQueue({
       .eq("id", line.id)
       .eq("status", "ordered");
 
-    setBusyLineId(null);
+    setBusyId(null);
     if (upErr) {
       setActionError(upErr.message);
       return;
@@ -313,6 +402,7 @@ export function PrescriptionQueue({
       <div className="max-h-[min(70vh,720px)] space-y-2 overflow-y-auto pr-1">
         {groups.map((g) => {
           const open = expandedKey === g.key;
+          const isEncounterGroup = g.key.startsWith("enc:");
           const pt = g.patient;
           const count = g.lines.length;
           const timeLabel = g.latestAt
@@ -350,6 +440,15 @@ export function PrescriptionQueue({
                     <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
+                {pt?.id ? (
+                  <span className="shrink-0 pt-0.5">
+                    <PatientAvatar
+                      patientId={pt.id}
+                      patientName={(pt.full_name ?? "Unknown patient").trim() || "—"}
+                      size="sm"
+                    />
+                  </span>
+                ) : null}
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-slate-900">{(pt?.full_name ?? "Unknown patient").trim() || "—"}</p>
                   {pt?.docpad_id ? <p className="text-xs text-slate-500">{pt.docpad_id}</p> : null}
@@ -365,6 +464,25 @@ export function PrescriptionQueue({
 
               {open ? (
                 <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-4 space-y-4">
+                  {isEncounterGroup ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm">
+                      <button
+                        type="button"
+                        disabled={busyId === g.key}
+                        onClick={() => void handlePrintEncounterReceiptPreview(g)}
+                        className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {busyId === g.key
+                          ? "Loading…"
+                          : `Print receipt for this visit (${count} ${count === 1 ? "medication" : "medications"})`}
+                      </button>
+                      <p className="mt-2 text-[11px] leading-relaxed text-slate-600">
+                        One receipt lists every medication for this visit. Preview prints all lines;{" "}
+                        <span className="font-medium text-slate-700">Confirm &amp; Close</span> records each dispense.
+                        Inventory is not adjusted on this action (Phase 4).
+                      </p>
+                    </div>
+                  ) : null}
                   {g.lines.map((line) => {
                     const inv = inventoryFromEmbed(line.hospital_inventory);
                     const total = Math.max(1, parseQty(line.total_quantity));
@@ -373,7 +491,7 @@ export function PrescriptionQueue({
                     const showReason =
                       Number.isFinite(dispensedNum) && dispensedNum >= 1 && dispensedNum < total;
                     const sig = [line.dosage_text, line.frequency, line.duration].filter(Boolean).join(" · ");
-                    const busy = busyLineId === line.id;
+                    const busy = busyId === line.id || busyId === g.key;
 
                     return (
                       <div
@@ -440,14 +558,16 @@ export function PrescriptionQueue({
                           ) : null}
 
                           <div className="flex flex-wrap gap-2 pt-1">
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void handlePrintReceiptPreview(line)}
-                              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                            >
-                              {busy ? "Loading…" : "Print receipt"}
-                            </button>
+                            {!isEncounterGroup ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void handlePrintReceiptPreview(line)}
+                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {busy ? "Loading…" : "Print receipt"}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               disabled={busy}
@@ -457,10 +577,12 @@ export function PrescriptionQueue({
                               Remove from queue
                             </button>
                           </div>
-                          <p className="text-[11px] text-slate-400">
-                            Print receipt opens a preview; use <span className="font-medium">Confirm &amp; Close</span>{" "}
-                            there to record the dispense. Inventory is not adjusted on this action (Phase 4).
-                          </p>
+                          {!isEncounterGroup ? (
+                            <p className="text-[11px] text-slate-400">
+                              Print receipt opens a preview; use <span className="font-medium">Confirm &amp; Close</span>{" "}
+                              there to record the dispense. Inventory is not adjusted on this action (Phase 4).
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     );

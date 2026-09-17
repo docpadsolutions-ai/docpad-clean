@@ -42,6 +42,65 @@ function section(title: string, body: string): string {
   return `${title}\n${t}`;
 }
 
+/**
+ * Comma-separated diagnosis labels for investigation orders / clinical indication.
+ * Mirrors diagnosis hydration in `app/dashboard/opd/encounter/[id]/page.tsx`.
+ */
+export function clinicalIndicationFromEncounterDiagnosis(enc: Record<string, unknown>): string {
+  const dxFhirRaw = enc.diagnosis_fhir;
+  const dxFhirParsed =
+    dxFhirRaw != null && typeof dxFhirRaw === "object" && !Array.isArray(dxFhirRaw)
+      ? (dxFhirRaw as FhirCoding)
+      : parseJsonValue<FhirCoding>(dxFhirRaw);
+  const dxFhir = dxFhirParsed?.display ? dxFhirParsed : null;
+
+  type Entry = { term: string; icd10: string | null };
+  let entries: Entry[] = [];
+
+  if (dxFhir?.display) {
+    const parts = dxFhir.display.split(";").map((s) => s.trim()).filter(Boolean);
+    const icd = dxFhir.icd10 ?? null;
+    entries =
+      parts.length > 0
+        ? parts.map((term, i) => ({
+            term,
+            icd10: i === 0 ? strN(icd) : null,
+          }))
+        : [{ term: dxFhir.display.trim(), icd10: strN(icd) }];
+  } else if (
+    (enc.working_diagnosis != null && String(enc.working_diagnosis).trim()) ||
+    (enc.diagnosis != null && String(enc.diagnosis).trim())
+  ) {
+    const term = String(enc.working_diagnosis ?? enc.diagnosis).trim();
+    entries = [
+      {
+        term,
+        icd10: strN(enc.diagnosis_icd10),
+      },
+    ];
+  } else {
+    const dtOnly = strN(enc.diagnosis_term);
+    if (dtOnly) {
+      entries = [
+        {
+          term: dtOnly.trim(),
+          icd10: strN(enc.diagnosis_icd10),
+        },
+      ];
+    }
+  }
+
+  return entries
+    .map((e) => {
+      const t = e.term.trim();
+      if (!t) return "";
+      const icd = e.icd10?.trim();
+      return icd ? `${t} (ICD-10: ${icd})` : t;
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function buildEncounterClinicalSummary(enc: Record<string, unknown>): string {
   const parts: string[] = [];
 

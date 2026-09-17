@@ -76,6 +76,7 @@ export function ConsentApprovalModal({ patientId, isOpen, onClose, onApproved }:
       try {
         const { data, error: fnErr } = await supabase.functions.invoke("consent-approve", {
           body: { consentRequestId, status: "GRANTED" },
+          headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""}` },
         });
         if (fnErr) throw new Error(fnErr.message);
         const body = data as { ok?: boolean; error?: string };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import ErrorBanner from "../components/ErrorBanner";
 import { PermissionGate } from "../components/PermissionGate";
 import { supabase } from "../supabase";
 
@@ -195,14 +196,7 @@ export default function AdminPage() {
             </div>
           ) : null}
 
-          {error ? (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-            >
-              {error}
-            </div>
-          ) : null}
+          {error ? <ErrorBanner message={error} /> : null}
 
           <div>
             <label htmlFor="invite-email" className="mb-2 block text-sm font-medium text-gray-800">

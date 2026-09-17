@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
 import {
   ACCEPT_RELATIONS,
   CHARGE_CATEGORIES,
@@ -131,6 +132,7 @@ export function ProcedureEstimateClient({ admissionId }: { admissionId: string }
   const [loading, setLoading] = useState(true);
   const [estimate, setEstimate] = useState<EstimateRow | null>(null);
   const [patientName, setPatientName] = useState("");
+  const [estimatePatientId, setEstimatePatientId] = useState("");
   const [hospitalName, setHospitalName] = useState("");
   const [walletBalance, setWalletBalance] = useState(0);
   const [coverages, setCoverages] = useState<CoverageRow[]>([]);
@@ -189,6 +191,7 @@ export function ProcedureEstimateClient({ admissionId }: { admissionId: string }
         setDepositRequested("");
         setNotes("");
         setPatientName("");
+        setEstimatePatientId("");
         setWalletBalance(0);
         setCoverages([]);
         setActualInvoiceGross(null);
@@ -211,6 +214,7 @@ export function ProcedureEstimateClient({ admissionId }: { admissionId: string }
       }, 600);
 
       const pid = active.patient_id;
+      setEstimatePatientId(String(pid ?? "").trim());
       const hidRow = active.hospital_id;
 
       const [{ data: pat }, { data: org }, { data: wallet }, { data: covRows }, { data: invRow }] = await Promise.all([
@@ -540,6 +544,24 @@ export function ProcedureEstimateClient({ admissionId }: { admissionId: string }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {estimate && patientName ? (
+        <div className="no-print sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 md:px-6">
+            <PatientAvatar
+              patientId={estimatePatientId || admissionId}
+              patientName={patientName}
+              size="lg"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground">{patientName}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                Procedure estimate {estimate.estimate_number}
+                {embeddedSurgery?.procedure_name ? ` · ${embeddedSurgery.procedure_name}` : ""}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-6">
         <div className="no-print flex flex-wrap items-center justify-between gap-3">
           <div>

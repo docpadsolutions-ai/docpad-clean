@@ -111,6 +111,7 @@ export function useABHALinking(patient: ABHALinkPatient | null) {
 
         const { data, error: fnErr } = await supabase.functions.invoke("abha-link-init", {
           body: requestBody,
+          headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""}` },
         });
 
         if (fnErr) {
@@ -164,6 +165,7 @@ export function useABHALinking(patient: ABHALinkPatient | null) {
     try {
       const { data, error: fnErr } = await supabase.functions.invoke("abha-link-confirm", {
         body: { otp: code, txnId },
+        headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""}` },
       });
 
       if (fnErr) {

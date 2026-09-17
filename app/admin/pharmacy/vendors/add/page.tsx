@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSupabase } from "../../hooks/useSupabase";
+import { useToast } from "@/src/components/ui/toast-provider";
 
 const DRUG_LICENSE_RE = /^DL-[A-Z]{2}-\d+$/i;
 const GST_RE = /^[0-9A-Z]{15}$/i;
@@ -37,6 +38,7 @@ function rpcFailureMessage(err: unknown): string {
 }
 
 export default function AddVendorPage() {
+  const { toast } = useToast();
   const router = useRouter();
   const supabase = useSupabase();
 
@@ -175,7 +177,7 @@ export default function AddVendorPage() {
       }
     } catch (err) {
       const message = rpcFailureMessage(err);
-      alert(message);
+      toast.error({ title: "Vendor not created", body: message });
       setSubmitError(message);
       return;
     } finally {

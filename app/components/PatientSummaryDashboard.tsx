@@ -5,146 +5,21 @@ import { ABHAStatusIndicator } from "@/components/abdm/ABHAStatusIndicator";
 import { supabase } from "../supabase";
 import AddProblemListModal from "./AddProblemListModal";
 import ActiveProblemsPanel from "./patient-summary/active-problems-panel";
-import VitalsWidget from "./patient-summary/vitals-widget";
-import ClinicalHighlightsCard from "./ClinicalHighlightsCard";
+import PatientSummaryRecentVitals from "./patient-summary/PatientSummaryRecentVitals";
+import PatientSummaryOpdTimeline from "./patient-summary/PatientSummaryOpdTimeline";
+import PatientClinicalImagesSection from "./clinical-attachments/PatientClinicalImagesSection";
 import CurrentMedicationsCard from "./CurrentMedicationsCard";
 import SummaryQuickActions from "./SummaryQuickActions";
-import HealthTimeline from "./HealthTimeline";
 import EncounterHistorySection from "./EncounterHistorySection";
 import PatientSummaryAllergyBanner from "./PatientSummaryAllergyBanner";
+import { AlertBanner } from "@/src/components/ui/alert-banner";
 import { usePatientSummaryComplete } from "../hooks/usePatientSummary";
 import type { PatientSummaryRow } from "../hooks/usePatientSummaryHighlights";
 import type { HealthTimelineNode } from "../lib/fhirEncounterTimeline";
-import { sortTimelineByPeriodStart } from "../lib/fhirEncounterTimeline";
+import { useToast } from "@/src/components/ui/toast-provider";
+import AiSummaryCard from "./AiSummaryCard";
 
-function isHealthTimelineNode(v: unknown): v is HealthTimelineNode {
-  if (!v || typeof v !== "object") return false;
-  const o = v as Record<string, unknown>;
-  const period = o.period;
-  return (
-    typeof o.id === "string" &&
-    o.resourceType === "Encounter" &&
-    typeof o._kind === "string" &&
-    typeof o._displayLabel === "string" &&
-    typeof o._source === "string" &&
-    period != null &&
-    typeof period === "object"
-  );
-}
-
-function mergeTimelineNodes(
-  live: HealthTimelineNode[],
-  rpcRaw: unknown[],
-): HealthTimelineNode[] {
-  const fromRpc = rpcRaw.map((raw, i) => (isHealthTimelineNode(raw) ? raw : null)).filter(Boolean) as HealthTimelineNode[];
-  const seen = new Set<string>();
-  const out: HealthTimelineNode[] = [];
-  for (const n of live) {
-    if (!seen.has(n.id)) {
-      seen.add(n.id);
-      out.push(n);
-    }
-  }
-  for (const n of fromRpc) {
-    if (!seen.has(n.id)) {
-      seen.add(n.id);
-      out.push(n);
-    }
-  }
-  out.sort(sortTimelineByPeriodStart);
-  return out;
-}
-
-function pickHeaderString(o: Record<string, unknown> | null | undefined, keys: string[]): string | null {
-  if (!o) return null;
-  for (const k of keys) {
-    const v = o[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
-    if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  }
-  return null;
-}
-
-type CareTeamDoctorLine = { title: string; subtitle: string | null };
-
-function doctorLineFromUnknown(d: unknown, index: number): CareTeamDoctorLine | null {
-  if (d == null) return null;
-  if (typeof d === "string") {
-    const t = d.trim();
-    return t ? { title: t, subtitle: null } : null;
-  }
-  if (typeof d !== "object") {
-    const t = String(d).trim();
-    return t ? { title: t, subtitle: null } : null;
-  }
-  const o = d as Record<string, unknown>;
-  const nested =
-    o.practitioner && typeof o.practitioner === "object"
-      ? (o.practitioner as Record<string, unknown>)
-      : null;
-  const name =
-    pickHeaderString(o, [
-      "full_name",
-      "fullName",
-      "name",
-      "doctor_name",
-      "doctorName",
-      "display_name",
-      "practitioner_name",
-    ]) ?? pickHeaderString(nested, ["full_name", "fullName", "name", "display_name"]);
-  const subtitle =
-    pickHeaderString(o, ["specialty", "specialisation", "specialization", "role", "designation", "user_role"]) ??
-    pickHeaderString(nested, ["specialty", "role", "user_role"]);
-  if (!name && !subtitle) {
-    return { title: `Doctor ${index + 1}`, subtitle: null };
-  }
-  return { title: name || "Doctor", subtitle: subtitle ?? null };
-}
-
-function facilityLineFromUnknown(f: unknown, index: number): string | null {
-  if (f == null) return null;
-  if (typeof f === "string") {
-    const t = f.trim();
-    return t || null;
-  }
-  if (typeof f !== "object") {
-    const t = String(f).trim();
-    return t || null;
-  }
-  const o = f as Record<string, unknown>;
-  const name = pickHeaderString(o, [
-    "name",
-    "facility_name",
-    "hospital_name",
-    "organization_name",
-    "org_name",
-    "display_name",
-    "title",
-  ]);
-  const loc = pickHeaderString(o, ["city", "location", "address", "branch"]);
-  const type = pickHeaderString(o, ["type", "facility_type", "kind"]);
-  const parts = [name, type, loc].filter(Boolean) as string[];
-  if (parts.length) return parts.join(" · ");
-  return `Facility ${index + 1}`;
-}
-
-export default function PatientSummaryDashboard({
-  patientId,
-  liveOpdTimelineNodes,
-  encountersLoading,
-  encountersError,
-  summaryRow,
-  summaryLoading,
-  summaryError,
-  onRefreshHighlightsTimestamp,
-  summaryOrgId,
-  currentEncounterFinalized = false,
-  summaryEncounterId = null,
-  summaryReloadToken = 0,
-  onLiveOpdClick,
-  onNavigate,
-  onViewAllergyDetails,
-}: {
+type PatientSummaryDashboardProps = {
   patientId: string;
   liveOpdTimelineNodes: HealthTimelineNode[];
   encountersLoading: boolean;
@@ -157,12 +32,22 @@ export default function PatientSummaryDashboard({
   summaryOrgId: string | null;
   currentEncounterFinalized?: boolean;
   summaryEncounterId?: string | null;
-  /** Increment after encounter save so RPC-backed summary refetches. */
   summaryReloadToken?: number;
-  /** Tab / route navigation from quick actions (patientId included in params by the panel). */
   onNavigate?: (view: string, params?: Record<string, unknown>) => void;
   onViewAllergyDetails?: () => void;
-}) {
+};
+
+export default function PatientSummaryDashboard(props: PatientSummaryDashboardProps) {
+  const {
+    patientId,
+    summaryOrgId,
+    currentEncounterFinalized = false,
+    summaryEncounterId = null,
+    summaryReloadToken = 0,
+    onNavigate,
+    onViewAllergyDetails,
+  } = props;
+  const { toast } = useToast();
   const [problemModalOpen, setProblemModalOpen] = useState(false);
   const [problemPanelNonce, setProblemPanelNonce] = useState(0);
   const [patientRow, setPatientRow] = useState<{
@@ -180,7 +65,10 @@ export default function PatientSummaryDashboard({
     (view: string, params?: Record<string, unknown>) => {
       if (view === "add-problem") {
         if (!orgOk) {
-          alert("Organization context is missing; cannot add to problem list.");
+          toast.warning({
+            title: "Organization required",
+            body: "Organization context is missing; cannot add to problem list.",
+          });
           return;
         }
         setProblemModalOpen(true);
@@ -188,7 +76,7 @@ export default function PatientSummaryDashboard({
       }
       onNavigate?.(view, params);
     },
-    [orgOk, onNavigate],
+    [orgOk, onNavigate, toast],
   );
 
   const { data: complete, loading: completeLoading, error: completeError, refresh } = usePatientSummaryComplete(
@@ -240,26 +128,7 @@ export default function PatientSummaryDashboard({
     };
   }, [patientId, patientRow]);
 
-  const mergedTimelineNodes = useMemo(
-    () => mergeTimelineNodes(liveOpdTimelineNodes, complete?.timelineNodes ?? []),
-    [liveOpdTimelineNodes, complete?.timelineNodes],
-  );
-
-  const timelineLoading = completeLoading || encountersLoading;
-  const timelineError = completeError?.message ?? encountersError ?? null;
   const medicationsError = complete?.medicationListError ?? completeError?.message ?? null;
-
-  const careTeamDoctorLines = useMemo(() => {
-    const raw = complete?.careTeam?.doctors ?? [];
-    return raw
-      .map((d, i) => doctorLineFromUnknown(d, i))
-      .filter(Boolean) as CareTeamDoctorLine[];
-  }, [complete?.careTeam?.doctors]);
-
-  const careTeamFacilityLines = useMemo(() => {
-    const raw = complete?.careTeam?.facilities ?? [];
-    return raw.map((f, i) => facilityLineFromUnknown(f, i)).filter(Boolean) as string[];
-  }, [complete?.careTeam?.facilities]);
 
   if (!patientId.trim()) {
     return (
@@ -269,17 +138,16 @@ export default function PatientSummaryDashboard({
 
   if (completeLoading && !complete) {
     return (
-      <div className="patient-summary-root space-y-4 p-6">
-        <PatientSummaryAllergyBanner patientId={patientId.trim()} onViewDetails={onViewAllergyDetails} />
-        <ActiveProblemsPanel patientId={patientId.trim()} reloadToken={activeProblemsReloadKey} />
-        <VitalsWidget patientId={patientId.trim()} reloadToken={vitalsReloadKey} onNavigate={handleQuickNavigate} />
-        <div className="h-8 w-48 animate-pulse rounded-lg bg-gray-100" />
-        <div className="h-32 animate-pulse rounded-xl bg-gray-100" />
-        <div className="grid gap-4 lg:grid-cols-12">
-          <div className="h-40 animate-pulse rounded-xl bg-gray-100 lg:col-span-5" />
-          <div className="h-40 animate-pulse rounded-xl bg-gray-100 lg:col-span-4" />
-          <div className="h-40 animate-pulse rounded-xl bg-gray-100 lg:col-span-3" />
+      <div className="patient-summary-root space-y-4 bg-white p-4 sm:p-6">
+        <div className="h-10 animate-pulse rounded-lg bg-gray-100" />
+        <div className="h-14 animate-pulse rounded-lg bg-red-100/80" />
+        <div className="h-36 animate-pulse rounded-xl bg-gray-100" />
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="h-48 animate-pulse rounded-xl bg-gray-100" />
+          <div className="h-48 animate-pulse rounded-xl bg-gray-100" />
+          <div className="h-48 animate-pulse rounded-xl bg-gray-100" />
         </div>
+        <div className="h-28 animate-pulse rounded-xl bg-gray-100" />
         <p className="text-center text-xs text-gray-500">Loading patient summary…</p>
       </div>
     );
@@ -287,28 +155,31 @@ export default function PatientSummaryDashboard({
 
   if (completeError && !complete) {
     return (
-      <div className="patient-summary-root space-y-4 p-6" role="alert">
+      <div className="patient-summary-root space-y-4 bg-white p-6">
         <PatientSummaryAllergyBanner patientId={patientId.trim()} onViewDetails={onViewAllergyDetails} />
-        <ActiveProblemsPanel patientId={patientId.trim()} reloadToken={activeProblemsReloadKey} />
-        <VitalsWidget patientId={patientId.trim()} reloadToken={vitalsReloadKey} onNavigate={handleQuickNavigate} />
-        <h2 className="text-lg font-bold text-gray-900">Summary unavailable</h2>
-        <p className="mt-2 text-sm text-red-600">{completeError.message}</p>
-        <p className="mt-2 text-xs text-gray-500">
-          Ensure RPCs such as{" "}
-          <code className="rounded bg-gray-100 px-1">get_patient_header_data</code> are deployed. Active problems load
-          directly from <code className="rounded bg-gray-100 px-1">active_problems</code>.
-        </p>
+        <AlertBanner
+          severity="high"
+          title="Summary unavailable"
+          body={
+            <>
+              <p>{completeError?.message || "An unexpected error occurred"}</p>
+              <p className="mt-2 text-xs text-slate-600">
+                Ensure RPCs such as{" "}
+                <code className="rounded bg-gray-100 px-1">get_patient_header_data</code> are deployed. Active problems
+                load directly from <code className="rounded bg-gray-100 px-1">active_problems</code>.
+              </p>
+            </>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="patient-summary-root space-y-6 p-4 sm:p-6">
-      <PatientSummaryAllergyBanner patientId={patientId.trim()} onViewDetails={onViewAllergyDetails} />
-
+    <div className="patient-summary-root space-y-5 bg-white p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Global patient summary</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Patient summary</p>
           {patientData ? (
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="text-lg font-bold tracking-tight text-gray-900">
@@ -343,93 +214,43 @@ export default function PatientSummaryDashboard({
         ) : null}
       </div>
 
-      {timelineError && (
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {timelineError}
-        </div>
-      )}
+      <AiSummaryCard patientId={patientId.trim()} />
 
-      {timelineLoading ? (
-        <div className="h-32 animate-pulse rounded-xl bg-gray-100" aria-busy />
-      ) : (
-        <HealthTimeline nodes={mergedTimelineNodes} onLiveOpdClick={onLiveOpdClick} />
-      )}
+      <PatientSummaryAllergyBanner patientId={patientId.trim()} onViewDetails={onViewAllergyDetails} />
 
-      {patientId.trim() ? (
-        <EncounterHistorySection
-          patientId={patientId.trim()}
-          currentEncounterId={summaryEncounterId}
-          onNavigate={onNavigate}
-        />
-      ) : null}
+      <PatientSummaryOpdTimeline patientId={patientId.trim()} />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
-        <div className="min-w-0 space-y-4 lg:col-span-5">
-          <ActiveProblemsPanel patientId={patientId.trim()} reloadToken={activeProblemsReloadKey} />
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">Care team</h3>
-            {completeLoading ? (
-              <div className="mt-3 h-20 animate-pulse rounded-lg bg-gray-100" aria-busy />
-            ) : careTeamDoctorLines.length === 0 && careTeamFacilityLines.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">No care team on file for this patient.</p>
-            ) : (
-              <div className="mt-3 space-y-4">
-                {careTeamDoctorLines.length > 0 ? (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Doctors</p>
-                    <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100 bg-slate-50/50">
-                      {careTeamDoctorLines.map((row, i) => (
-                        <li key={`care-doc-${i}`} className="px-3 py-2.5 first:rounded-t-lg last:rounded-b-lg">
-                          <p className="text-sm font-semibold text-gray-900">{row.title}</p>
-                          {row.subtitle ? (
-                            <p className="mt-0.5 text-xs text-gray-500">{row.subtitle}</p>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {careTeamFacilityLines.length > 0 ? (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                      Hospitals &amp; facilities
-                    </p>
-                    <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100 bg-slate-50/50">
-                      {careTeamFacilityLines.map((line, i) => (
-                        <li
-                          key={`care-fac-${i}`}
-                          className="px-3 py-2.5 text-sm font-medium text-gray-800 first:rounded-t-lg last:rounded-b-lg"
-                        >
-                          {line}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-          <div className="rounded-xl border border-gray-100 bg-slate-50/80 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Allergies &amp; alerts</p>
-            <p className="mt-2 text-sm text-gray-600">Link EMR alerts here when available.</p>
-          </div>
-        </div>
+      <PatientClinicalImagesSection patientId={patientId.trim()} reloadToken={summaryReloadToken} />
 
-        <div className="min-w-0 lg:col-span-4">
-          <ClinicalHighlightsCard
-            row={summaryRow}
-            loading={summaryLoading}
-            error={summaryError}
-            onRefreshTimestamp={onRefreshHighlightsTimestamp}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-start">
+        <div className="min-w-0 space-y-4">
+          <ActiveProblemsPanel
+            patientId={patientId.trim()}
+            reloadToken={activeProblemsReloadKey}
+            onAdd={() => handleQuickNavigate("add-problem")}
           />
-          <VitalsWidget patientId={patientId.trim()} reloadToken={vitalsReloadKey} onNavigate={handleQuickNavigate} />
         </div>
-
-        <div className="min-w-0 space-y-4 lg:col-span-3">
-          <CurrentMedicationsCard requests={medicationRequests} loading={completeLoading} error={medicationsError} />
+        <div className="min-w-0">
+          {patientId.trim() ? (
+            <EncounterHistorySection
+              patientId={patientId.trim()}
+              currentEncounterId={summaryEncounterId}
+              onNavigate={onNavigate}
+            />
+          ) : null}
+        </div>
+        <div className="min-w-0 space-y-4">
+          <CurrentMedicationsCard
+            requests={medicationRequests}
+            loading={completeLoading}
+            error={medicationsError}
+            onPastRx={() => handleQuickNavigate("prescriptions")}
+          />
           <SummaryQuickActions patientId={patientId} onNavigate={handleQuickNavigate} />
         </div>
       </div>
+
+      <PatientSummaryRecentVitals patientId={patientId.trim()} reloadToken={vitalsReloadKey} />
 
       {orgOk && summaryOrgId && patientId.trim() ? (
         <AddProblemListModal

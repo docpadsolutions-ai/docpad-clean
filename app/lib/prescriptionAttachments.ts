@@ -23,6 +23,17 @@ export type LabResultEntryLite = {
   value_text: string | null;
   unit: string | null;
   ref_range_text: string | null;
+  /** When present, row may print bold/red as abnormal/critical. */
+  is_abnormal?: boolean | null;
+};
+
+export type InvestigationPrintMeta = {
+  id: string;
+  test_name: string | null;
+  ordered_at: string | null;
+  resulted_at: string | null;
+  result_status: string | null;
+  ordered_by_label: string | null;
 };
 
 function formatReportDate(iso: string | null | undefined): string {
@@ -105,7 +116,7 @@ export async function fetchLabResultEntriesForOcrUploads(
 
   const { data, error } = await supabase
     .from("lab_result_entries")
-    .select("ocr_upload_id, parameter_name, value_numeric, value_text, unit, ref_range_text")
+    .select("ocr_upload_id, parameter_name, value_numeric, value_text, unit, ref_range_text, is_abnormal")
     .in("ocr_upload_id", ids);
 
   if (error) return { byUploadId: {}, error: error.message };
@@ -122,10 +133,125 @@ export async function fetchLabResultEntriesForOcrUploads(
       value_text: row.value_text != null ? String(row.value_text) : null,
       unit: row.unit != null ? String(row.unit) : null,
       ref_range_text: row.ref_range_text != null ? String(row.ref_range_text) : null,
+      is_abnormal: row.is_abnormal === true ? true : row.is_abnormal === false ? false : null,
     });
   }
 
   return { byUploadId, error: null };
+}
+
+/** Latest line per parameter_name per investigation (for prescription print attachment). */
+export async function fetchLabResultEntriesForInvestigationIds(
+  investigationIds: string[],
+): Promise<{ byInvestigationId: Record<string, LabResultEntryLite[]>; error: string | null }> {
+  const ids = [...new Set(investigationIds.map((x) => x.trim()).filter(Boolean))];
+  if (ids.length === 0) return { byInvestigationId: {}, error: null };
+
+  const { data, error } = await supabase
+    .from("lab_result_entries")
+    .select(
+      "investigation_id, parameter_name, value_numeric, value_text, unit, ref_range_text, is_abnormal, created_at",
+    )
+    .in("investigation_id", ids)
+    .order("created_at", { ascending: false });
+
+  if (error) return { byInvestigationId: {}, error: error.message };
+
+  const acc: Record<string, Map<string, LabResultEntryLite>> = {};
+  for (const raw of data ?? []) {
+    const row = raw as Record<string, unknown>;
+    const iid = row.investigation_id != null ? String(row.investigation_id) : "";
+    if (!iid) continue;
+    if (!acc[iid]) acc[iid] = new Map();
+    const nameKey = (row.parameter_name != null ? String(row.parameter_name) : "").trim() || "__unnamed";
+    const entry: LabResultEntryLite = {
+      parameter_name: row.parameter_name != null ? String(row.parameter_name) : null,
+      value_numeric: typeof row.value_numeric === "number" ? row.value_numeric : null,
+      value_text: row.value_text != null ? String(row.value_text) : null,
+      unit: row.unit != null ? String(row.unit) : null,
+      ref_range_text: row.ref_range_text != null ? String(row.ref_range_text) : null,
+      is_abnormal: row.is_abnormal === true ? true : row.is_abnormal === false ? false : null,
+    };
+    if (!acc[iid].has(nameKey)) acc[iid].set(nameKey, entry);
+  }
+
+  const byInvestigationId: Record<string, LabResultEntryLite[]> = {};
+  for (const iid of Object.keys(acc)) {
+    byInvestigationId[iid] = Array.from(acc[iid].values());
+  }
+  return { byInvestigationId, error: null };
+}
+
+export async function fetchInvestigationPrintMetaForIds(
+  investigationIds: string[],
+): Promise<{ byId: Record<string, InvestigationPrintMeta>; error: string | null }> {
+  const ids = [...new Set(investigationIds.map((x) => x.trim()).filter(Boolean))];
+  if (ids.length === 0) return { byId: {}, error: null };
+
+  const { data: invs, error } = await supabase
+    .from("investigations")
+    .select("id, test_name, ordered_at, resulted_at, result_status, doctor_id")
+    .in("id", ids);
+
+  if (error) return { byId: {}, error: error.message };
+
+  const doctorIds = [
+    ...new Set(
+      (invs ?? [])
+        .map((r) => (r as { doctor_id?: string | null }).doctor_id)
+        .filter((x): x is string => Boolean(x && String(x).trim())),
+    ),
+  ];
+
+  const prMap = new Map<string, { first_name: string | null; last_name: string | null; full_name: string | null }>();
+  if (doctorIds.length > 0) {
+    const { data: prs } = await supabase
+      .from("practitioners")
+      .select("id, first_name, last_name, full_name")
+      .in("id", doctorIds);
+    for (const p of prs ?? []) {
+      const row = p as {
+        id: string;
+        first_name: string | null;
+        last_name: string | null;
+        full_name: string | null;
+      };
+      prMap.set(String(row.id), row);
+    }
+  }
+
+  const byId: Record<string, InvestigationPrintMeta> = {};
+  for (const raw of invs ?? []) {
+    const r = raw as {
+      id: string;
+      test_name: string | null;
+      ordered_at: string | null;
+      resulted_at: string | null;
+      result_status: string | null;
+      doctor_id: string | null;
+    };
+    let ordered_by_label: string | null = null;
+    if (r.doctor_id) {
+      const pr = prMap.get(String(r.doctor_id));
+      if (pr) {
+        const fn = (pr.full_name ?? "").trim();
+        if (fn) ordered_by_label = fn;
+        else {
+          const parts = [pr.first_name, pr.last_name].filter((x) => (x ?? "").trim());
+          ordered_by_label = parts.length ? parts.join(" ") : null;
+        }
+      }
+    }
+    byId[r.id] = {
+      id: r.id,
+      test_name: r.test_name,
+      ordered_at: r.ordered_at,
+      resulted_at: r.resulted_at,
+      result_status: r.result_status,
+      ordered_by_label,
+    };
+  }
+  return { byId, error: null };
 }
 
 function formatEntryLine(e: LabResultEntryLite): string {

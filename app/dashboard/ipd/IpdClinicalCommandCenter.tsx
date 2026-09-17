@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { Activity, AlertCircle, Droplets, Heart, Thermometer } from "lucide-react";
+import { PatientAvatar } from "@/src/components/patient/patient-avatar";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +12,7 @@ import {
   type PendingIpdAdmissionRow,
   type UseIpdDoctorAdmissionsResult,
 } from "./useIpdDoctorAdmissions";
+import { patientIdsWithSimilarNamePeer } from "../../lib/patientNameSimilarity";
 
 function TabButton({
   active,
@@ -420,6 +422,28 @@ export default function IpdClinicalCommandCenter(ipd: UseIpdDoctorAdmissionsResu
     pendingAdmissionRows,
   } = ipd;
 
+  const wardSimilarAdmissionIds = useMemo(
+    () =>
+      patientIdsWithSimilarNamePeer(
+        displayRows.map((r) => ({
+          id: r.admission_id,
+          fullName: (r.patient_name ?? "").trim(),
+        })),
+      ),
+    [displayRows],
+  );
+
+  const pendingSimilarAdmissionIds = useMemo(
+    () =>
+      patientIdsWithSimilarNamePeer(
+        pendingAdmissionRows.map((r) => ({
+          id: r.admission_id,
+          fullName: (r.patient_name ?? "").trim(),
+        })),
+      ),
+    [pendingAdmissionRows],
+  );
+
   const isPendingTab = tab === "pending_admission";
   const emptyMain = !commandCenterLoading && !isPendingTab && displayRows.length === 0;
   const emptyPending = !commandCenterLoading && isPendingTab && pendingAdmissionRows.length === 0;
@@ -566,8 +590,16 @@ export default function IpdClinicalCommandCenter(ipd: UseIpdDoctorAdmissionsResu
                 const typeMeta = admissionTypeBadge(row.admission_type);
                 const waiting = formatWaitingSince(row.admitted_at);
 
+                const pidForAvatar = (row.patient_id ?? "").trim() || row.admission_id;
                 return (
-                  <tr key={row.admission_id} className="transition hover:bg-slate-50/90">
+                  <tr
+                    key={row.admission_id}
+                    className={`transition hover:bg-slate-50/90 ${
+                      pendingSimilarAdmissionIds.has(row.admission_id)
+                        ? "border-l-4 border-amber-300/90 bg-amber-50/50"
+                        : ""
+                    }`}
+                  >
                     <td className="min-w-0 px-2 py-4 pl-4 align-top lg:pl-5">
                       <div className="flex min-w-0 flex-col gap-1">
                         <p className="text-sm font-semibold leading-snug text-slate-900">
@@ -585,12 +617,28 @@ export default function IpdClinicalCommandCenter(ipd: UseIpdDoctorAdmissionsResu
                       </div>
                     </td>
                     <td className="min-w-0 px-2 py-4 align-top">
-                      <p className="truncate font-semibold text-slate-900" title={name}>
-                        {name}
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {age != null ? `${Math.round(age)}Y` : "—"}, {sex}
-                      </p>
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className="shrink-0 pt-0.5">
+                          <PatientAvatar patientId={pidForAvatar} patientName={name} size="sm" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold text-slate-900" title={name}>
+                            {name}
+                            {pendingSimilarAdmissionIds.has(row.admission_id) ? (
+                              <span
+                                className="ml-1 inline-block text-amber-600"
+                                title="Similar name to another patient in this list"
+                                aria-label="Similar name warning"
+                              >
+                                ⚠️
+                              </span>
+                            ) : null}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {age != null ? `${Math.round(age)}Y` : "—"}, {sex}
+                          </p>
+                        </div>
+                      </div>
                     </td>
                     <td className="min-w-0 px-2 py-4 align-top text-xs text-slate-600">
                       <span className="line-clamp-2 break-words" title={dx || undefined}>
@@ -667,8 +715,16 @@ export default function IpdClinicalCommandCenter(ipd: UseIpdDoctorAdmissionsResu
                 const pendingInv = toNum(row.pending_investigations) ?? 0;
                 const pendingTx = toNum(row.pending_treatments) ?? 0;
 
+                const pidForAvatar = (row.patient_id ?? "").trim() || admissionId;
                 return (
-                  <tr key={admissionId} className="transition hover:bg-slate-50/90">
+                  <tr
+                    key={admissionId}
+                    className={`transition hover:bg-slate-50/90 ${
+                      wardSimilarAdmissionIds.has(admissionId)
+                        ? "border-l-4 border-amber-300/90 bg-amber-50/50"
+                        : ""
+                    }`}
+                  >
                     <td className="min-w-0 px-2 py-4 pl-4 align-top lg:pl-5">
                       <div className="flex w-[110px] max-w-[110px] min-w-0 flex-col gap-0.5">
                         <p className="truncate font-semibold text-sm text-slate-900">{bed}</p>
@@ -686,19 +742,33 @@ export default function IpdClinicalCommandCenter(ipd: UseIpdDoctorAdmissionsResu
                       </div>
                     </td>
                     <td className="min-w-0 px-2 py-4 align-top">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                        <p className="min-w-0 truncate font-semibold text-slate-900" title={name}>
-                          {name}
-                        </p>
-                        {hasAllergies ? (
-                          <span
-                            className="inline-flex shrink-0 text-red-600"
-                            title={allergies ?? "Allergies on file"}
-                            aria-label={`Allergies: ${allergies}`}
-                          >
-                            ⚠
-                          </span>
-                        ) : null}
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className="shrink-0 pt-0.5">
+                          <PatientAvatar patientId={pidForAvatar} patientName={name} size="sm" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <p className="min-w-0 truncate font-semibold text-slate-900" title={name}>
+                              {name}
+                            </p>
+                            {wardSimilarAdmissionIds.has(admissionId) ? (
+                              <span
+                                className="inline-flex shrink-0 text-amber-600"
+                                title="Similar name to another patient in this list"
+                                aria-label="Similar name warning"
+                              >
+                                ⚠️
+                              </span>
+                            ) : null}
+                            {hasAllergies ? (
+                              <span
+                                className="inline-flex shrink-0 text-red-600"
+                                title={allergies ?? "Allergies on file"}
+                                aria-label={`Allergies: ${allergies}`}
+                              >
+                                ⚠
+                              </span>
+                            ) : null}
                         {hd != null ? (
                           <span
                             className="inline-flex shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-800 ring-1 ring-inset ring-blue-200/80"
@@ -707,15 +777,17 @@ export default function IpdClinicalCommandCenter(ipd: UseIpdDoctorAdmissionsResu
                             HD-{Math.round(hd)}
                           </span>
                         ) : null}
-                        {pod != null && pod > 0 ? (
-                          <span className="inline-flex shrink-0 rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-900 ring-1 ring-inset ring-orange-200/80">
-                            POD-{Math.round(pod)}
-                          </span>
-                        ) : null}
+                            {pod != null && pod > 0 ? (
+                              <span className="inline-flex shrink-0 rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-900 ring-1 ring-inset ring-orange-200/80">
+                                POD-{Math.round(pod)}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="truncate text-xs text-slate-500">
+                            {age != null ? `${Math.round(age)}Y` : "—"}, {sex}
+                          </p>
+                        </div>
                       </div>
-                      <p className="truncate text-xs text-slate-500">
-                        {age != null ? `${Math.round(age)}Y` : "—"}, {sex}
-                      </p>
                     </td>
                     <td className="min-w-[120px] align-top px-2 py-4">
                       <VitalsCell row={row} />
