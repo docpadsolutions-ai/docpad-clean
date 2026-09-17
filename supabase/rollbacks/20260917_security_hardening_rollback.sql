@@ -122,3 +122,27 @@ end $$;
 -- create policy authenticated_update on public.rx_templates for update to authenticated using (true) with check (true);
 -- create policy authenticated_delete on public.rx_templates for delete to authenticated using (true);
 -- alter policy authenticated_select on public.medication_proposals using (true);
+
+-----------------------------------------------------------------------------------------------
+-- J. OP consult FHIR document bundle (20260917184152)
+-----------------------------------------------------------------------------------------------
+-- Restores the previous three-field fhir_json stub on opd_encounters and removes the document
+-- builder, its read RPC and the helper. Existing rows keep whatever bundle they last had until
+-- they are next written, so run the backfill at the end if you want the stub shape back.
+-- create or replace function public.fn_fhir_opd_encounter() returns trigger
+--   language plpgsql security definer set search_path to 'public' as $fn$
+-- begin
+--   new.fhir_json := jsonb_build_object(
+--     'class', 'AMB',
+--     'subject', new.patient_id,
+--     'reasonCode', new.chief_complaint);
+--   return new;
+-- end; $fn$;
+-- drop function if exists public.get_opd_consult_bundle(uuid);
+-- drop function if exists public.build_opd_consult_bundle(public.opd_encounters);
+-- drop function if exists public._fhir_instant(timestamptz);
+-- update public.opd_encounters set updated_at = updated_at;
+--
+-- get_active_medications() was also widened in this migration to accept status 'final'
+-- (finalize_prescription writes that status). Narrowing it again re-hides finalised drugs from
+-- the interaction and duplicate checks, so only do this together with a rollback of 20260917182819.

@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(23);
+select plan(27);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -170,6 +170,40 @@ insert into tap select cmp_ok(
       format('select public.check_prescription_safety(%L, %L::jsonb)', (select patient_id from t_rx),
              '[{"medicine_name":"TAP NEW BRAND","generic_name":"Ciprofloxacin"}]'))::json -> 'duplicates')::int,
   '>', 0, 'prescribing the same generic again raises duplicate therapy');
+
+-- ----------------------------------------------------------------- FHIR OP consult document (SOW 4)
+create temp table t_fhir as
+select e.id as encounter_id
+from opd_encounters e
+where e.hospital_id = (select a_hospital from t_ab)
+  and exists (select 1 from prescriptions p where p.encounter_id = e.id)
+limit 1;
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select public.get_opd_consult_bundle(%L)->'entry'->0->'resource'->>'resourceType'$q$,
+           (select encounter_id from t_fhir))),
+  'Composition', 'the OP consult bundle leads with a Composition');
+
+insert into tap select cmp_ok(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select jsonb_array_length(public.get_opd_consult_bundle(%L)->'entry'->0->'resource'->'section')::text$q$,
+           (select encounter_id from t_fhir)))::int,
+  '>', 0, 'the Composition carries at least one clinical section');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select (select count(*)::text
+                        from jsonb_path_query(s.b, 'strict $.**.reference') r
+                       where (r #>> '{}') not in (select e->>'fullUrl' from jsonb_array_elements(s.b->'entry') e))
+               from (select public.get_opd_consult_bundle(%L) as b) s$q$,
+           (select encounter_id from t_fhir))),
+  '0', 'every reference in the document resolves to an entry inside it');
+
+insert into tap select isnt(
+  pg_temp.as_user_err((select b_user from t_ab),
+    format($q$select public.get_opd_consult_bundle(%L)$q$, (select encounter_id from t_fhir))),
+  'none', 'a doctor from another hospital cannot fetch the document');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';
