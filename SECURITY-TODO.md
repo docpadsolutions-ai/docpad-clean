@@ -68,3 +68,29 @@ record that *is* yours, tell me the RPC name — that means a parameter of that
 function needs a different scope rule, and it is a one-line fix.
 `supabase/rollbacks/20260917_security_hardening_rollback.sql` can reverse any
 individual piece if something blocks you at the hospital.
+
+## 7. For tomorrow's session (nothing to do now, just context)
+
+Two items from the review are still open, and both need something from you before
+they can be built:
+
+**Backups.** The code in `app/api/admin/backups/*` assumes `pg_dump`, which cannot run
+on Vercel, and the tables it writes to (`backup_logs`, `backup_worker_settings`,
+`hospital_backup_schedule`) plus the `hospital-backups` bucket exist only in a local
+migration file that was never applied. Pick one:
+- Supabase Pro scheduled backups (~$25/mo, restores the whole project, no code), or
+- a per-hospital encrypted logical export (SQL → AES-GCM → Storage, on a schedule) that
+  works on the current plan but covers data only, not schema.
+
+**Migration drift.** `supabase/migrations` and the live database no longer agree, so
+`supabase db push` is unsafe. The fix starts on your Mac, where there is network access
+to the database:
+
+```bash
+cd ~/docpad-clean
+supabase link --project-ref hvjbzlwlqnntwxgufjkm
+supabase db pull        # writes a baseline migration from the live schema
+```
+
+Then I reconcile the old files against that baseline and we get a migrations folder that
+can actually be replayed.
