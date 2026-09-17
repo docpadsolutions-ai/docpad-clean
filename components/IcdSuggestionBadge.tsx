@@ -21,6 +21,29 @@ interface Props {
 const DEBOUNCE_MS = 2000;
 const MIN_NOTE_LEN = 6;
 
+/**
+ * The Edge Function answers with a short machine code. Turn it into something a
+ * doctor can act on, and keep the raw code for anything unrecognised so a new
+ * failure mode is still legible.
+ */
+const ERROR_TEXT: Record<string, string> = {
+  missing_gemini_key: "the AI key is not set on the server",
+  missing_supabase_env: "the server is missing its database configuration",
+  unauthorized: "your session was not accepted; sign in again",
+  missing_clinical_note: "there is no clinical text to work from yet",
+  embed_failed: "the AI service rejected the request",
+  embed_shape: "the AI service returned nothing usable",
+  search_failed: "the ICD-10 index could not be searched",
+  gemini_failed: "the AI service is unavailable right now",
+  parse_failed: "the AI returned an unreadable answer",
+  incomplete_suggestion: "the AI could not settle on a code",
+  unhandled: "the coding service hit an unexpected error",
+};
+
+function humanError(code: string): string {
+  return ERROR_TEXT[code] ?? code;
+}
+
 export default function IcdSuggestionBadge({ clinicalNote, readOnly = false, onAccept }: Props) {
   const [suggestion, setSuggestion] = useState<Icd10Suggestion | null>(null);
   const [applied, setApplied] = useState(false);
@@ -61,47 +84,25 @@ export default function IcdSuggestionBadge({ clinicalNote, readOnly = false, onA
             headers: { Authorization: `Bearer ${session?.access_token}` },
           });
 
-          // #region agent log
-          let fnCtx: unknown = null;
-          try {
-            const ctx = (fnErr as { context?: Response } | null)?.context;
-            if (ctx && typeof ctx.json === "function") {
-              fnCtx = await ctx.clone().json().catch(() => null);
-            } else if (ctx) {
-              fnCtx = { status: (ctx as Response).status, statusText: (ctx as Response).statusText };
-            }
-          } catch {
-            fnCtx = "ctx_parse_failed";
-          }
-          fetch("http://127.0.0.1:7697/ingest/f6453cc0-026a-4d25-9f79-d1bfa1f76227", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "147753" },
-            body: JSON.stringify({
-              sessionId: "147753",
-              runId: "pre-fix",
-              hypothesisId: "A-E",
-              location: "IcdSuggestionBadge.tsx:invoke",
-              message: "suggest-icd10 invoke result",
-              data: {
-                noteLen: note.length,
-                hasSession: Boolean(session?.access_token),
-                fnErrName: fnErr ? (fnErr as Error).name : null,
-                fnErrMessage: fnErr ? (fnErr as Error).message : null,
-                fnCtx,
-                dataSuccess: (data as { success?: unknown } | null)?.success ?? null,
-                dataError: (data as { error?: unknown } | null)?.error ?? null,
-                dataKeys: data && typeof data === "object" ? Object.keys(data as object) : typeof data,
-              },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
 
-          if (fnErr) throw fnErr;
+          // supabase-js throws a bare "Edge Function returned a non-2xx status
+          // code" and leaves the real reason in the response body, so read it.
+          if (fnErr) {
+            const ctx = (fnErr as { context?: Response }).context;
+            let code: string | null = null;
+            if (ctx && typeof ctx.json === "function") {
+              const body = (await ctx
+                .clone()
+                .json()
+                .catch(() => null)) as { error?: unknown } | null;
+              code = body?.error != null ? String(body.error) : null;
+            }
+            throw new Error(humanError(code ?? (fnErr as Error).message));
+          }
 
           const d = data as Record<string, unknown> | null;
           if (!d?.success) {
-            throw new Error(String(d?.error ?? "edge_error"));
+            throw new Error(humanError(String(d?.error ?? "edge_error")));
           }
 
           setSuggestion({

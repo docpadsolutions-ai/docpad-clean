@@ -115,6 +115,7 @@ function FlipCard({
 
 export default function SimilarPastPrescriptions({ query, practitionerId, onSelect }: Props) {
   const [suggestions, setSuggestions] = useState<SuggestedPrescription[]>([]);
+  const [lookupError, setLookupError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [dismissed, setDismissed] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -132,14 +133,19 @@ export default function SimilarPastPrescriptions({ query, practitionerId, onSele
     const trimmed = query.trim();
     if (trimmed.length < MIN_QUERY_LEN || !practitionerId) {
       setSuggestions([]);
+      setLookupError(null);
       return;
     }
 
     debounceRef.current = setTimeout(() => {
       lastQueryRef.current = trimmed;
       startTransition(async () => {
-        const results = await getSuggestedPrescriptions(trimmed, practitionerId);
+        const { suggestions: results, error } = await getSuggestedPrescriptions(
+          trimmed,
+          practitionerId,
+        );
         setSuggestions(results);
+        setLookupError(error);
       });
     }, DEBOUNCE_MS);
 
@@ -148,7 +154,9 @@ export default function SimilarPastPrescriptions({ query, practitionerId, onSele
     };
   }, [query, practitionerId]);
 
-  if (dismissed || (!isPending && suggestions.length === 0)) return null;
+  // A failed lookup stays on screen with its reason. Silently disappearing is what
+  // made this look like a feature that simply never worked.
+  if (dismissed || (!isPending && suggestions.length === 0 && !lookupError)) return null;
 
   return (
     <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
@@ -191,14 +199,14 @@ export default function SimilarPastPrescriptions({ query, practitionerId, onSele
             />
           ))}
         </div>
+      ) : lookupError ? (
+        <p className="text-[11px] text-red-500">
+          Could not look up past prescriptions — {lookupError}.
+        </p>
       ) : (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {suggestions.map((s, i) => (
-            <FlipCard
-              key={s.id ?? `idx-${i}`}
-              suggestion={s}
-              onSelect={onSelect}
-            />
+            <FlipCard key={s.id ?? `idx-${i}`} suggestion={s} onSelect={onSelect} />
           ))}
         </div>
       )}
