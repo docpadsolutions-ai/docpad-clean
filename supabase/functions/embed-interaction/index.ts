@@ -18,6 +18,48 @@ const INTERACTION_TYPES = new Set([
   "referral",
 ]);
 
+
+/** verify_jwt=true means the gateway already checked the signature, so the role claim can be trusted. */
+function isServiceRoleJwt(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.role === "service_role";
+  } catch {
+    return false;
+  }
+}
+
+type Caller =
+  | { kind: "service" }
+  | { kind: "staff"; userId: string; practitionerId: string; hospitalId: string };
+
+/** Only the service role or an active, hospital-linked practitioner may call this function. */
+async function authenticateCaller(
+  req: Request,
+  supabaseUrl: string,
+  serviceKey: string,
+): Promise<Caller | null> {
+  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+  if (token === serviceKey || isServiceRoleJwt(token)) return { kind: "service" };
+
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: userData, error: userErr } = await admin.auth.getUser(token);
+  const user = userData?.user;
+  if (userErr || !user) return null;
+
+  const { data: prac } = await admin
+    .from("practitioners")
+    .select("id, hospital_id, is_active")
+    .or(`user_id.eq.${user.id},id.eq.${user.id}`)
+    .limit(1)
+    .maybeSingle();
+  if (!prac?.hospital_id || prac.is_active === false) return null;
+  return { kind: "staff", userId: user.id, practitionerId: String(prac.id), hospitalId: String(prac.hospital_id) };
+}
+
 function json200(body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -92,6 +134,38 @@ Deno.serve(async (req: Request) => {
       return json200({ success: false, error: "missing_supabase_env" });
     }
 
+    // Callers may only write embeddings for their own hospital's encounters and practitioners.
+    const caller = await authenticateCaller(req, supabaseUrl, serviceKey);
+    if (!caller) {
+      return new Response(JSON.stringify({ success: false, error: "unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (caller.kind === "staff") {
+      const scopeClient = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const [{ data: prac }, { data: enc }] = await Promise.all([
+        scopeClient.from("practitioners").select("hospital_id").eq("id", practitioner_id).maybeSingle(),
+        source_table === "opd_encounters"
+          ? scopeClient.from("opd_encounters").select("hospital_id").eq("id", source_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      const encHospital = (enc as { hospital_id?: string } | null)?.hospital_id;
+      if (
+        hospital_id !== caller.hospitalId ||
+        (prac as { hospital_id?: string } | null)?.hospital_id !== caller.hospitalId ||
+        source_table !== "opd_encounters" ||
+        encHospital !== caller.hospitalId
+      ) {
+        return new Response(JSON.stringify({ success: false, error: "forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const embedRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${geminiKey}`,
       {
@@ -148,19 +222,12 @@ Deno.serve(async (req: Request) => {
 
     if (upErr) {
       console.error("[embed-interaction] upsert error", upErr.message, upErr);
-      return json200({ 
-        success: false, 
-        error: "upsert_failed",
-        db_message: upErr.message,
-        db_details: upErr.details,
-        db_hint: upErr.hint
-      });
+      return json200({ success: false, error: "upsert_failed" });
     }
 
     return json200({ success: true });
   } catch (e) {
     console.error("[embed-interaction] unhandled", e);
-    const errMsg = e instanceof Error ? e.message : String(e);
-    return json200({ success: false, error: "unhandled", details: errMsg });
+    return json200({ success: false, error: "unhandled" });
   }
 });

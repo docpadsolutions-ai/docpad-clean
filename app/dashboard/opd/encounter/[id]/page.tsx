@@ -2318,7 +2318,7 @@ export default function EncounterPage() {
         },
       });
 
-      // Fire and forget — no session needed, JWT verification is disabled on this function
+      // Fire and forget — the function checks the signed-in user's hospital before writing
       void (async () => {
         try {
           let embedPractitionerId = doctorPractitionerId;

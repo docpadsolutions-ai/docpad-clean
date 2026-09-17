@@ -164,35 +164,20 @@ export function JoinFlow() {
 
       let data: InviteRow | null = null;
 
-      if (tokenParam) {
-        const { data: row, error } = await supabase
-          .from("invitations")
-          .select("token, email, hospital_id, role, designation")
-          .eq("token", tokenParam)
-          .eq("status", "pending")
-          .maybeSingle();
-        if (cancelled) return;
-        if (error || !row) {
-          setPageStatus("invalid");
-          return;
-        }
-        data = row as InviteRow;
-      } else {
-        const em = emailParam!.trim().toLowerCase();
-        const { data: rows, error } = await supabase
-          .from("invitations")
-          .select("token, email, hospital_id, role, designation")
-          .eq("email", em)
-          .eq("status", "pending")
-          .order("created_at", { ascending: false })
-          .limit(1);
-        if (cancelled) return;
-        if (error || !rows?.length) {
-          setPageStatus("invalid");
-          return;
-        }
-        data = rows[0] as InviteRow;
+      // Invitees are signed out, so the invitation is read through a token-only RPC
+      // (the old email lookup exposed invitation tokens to anyone who knew the email).
+      if (!tokenParam) {
+        setPageStatus("invalid");
+        return;
       }
+      const { data: rows, error } = await supabase.rpc("get_invitation_by_token", { p_token: tokenParam });
+      if (cancelled) return;
+      const row = Array.isArray(rows) ? rows[0] : null;
+      if (error || !row) {
+        setPageStatus("invalid");
+        return;
+      }
+      data = row as InviteRow;
 
       const roleStr = data.role != null && String(data.role).trim() !== "" ? String(data.role).trim() : null;
       const kind = classifyInviteRole(roleStr);

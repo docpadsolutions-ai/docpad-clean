@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveIndiaRefsetId } from "../../../lib/indiaSnomedRefsets";
 import { validateConceptInValueSet } from "../../../lib/snomedCsiroExpand";
 import { buildConstrainedSearchEcl, HIERARCHY_ECL, sanitizeSctId, type ConstrainedEclInput } from "../../../lib/snomedEclBuilder";
+import { requireStaff } from "@/app/lib/supabase/server";
 
 const CSIRO_TIMEOUT_MS = 4000;
 
@@ -10,6 +11,8 @@ const CSIRO_TIMEOUT_MS = 4000;
  * GET ?conceptId=386661006&hierarchy=complaint&indiaRefset=orthopedics&descendantOf=...
  */
 export async function GET(req: NextRequest) {
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
   const { searchParams } = new URL(req.url);
   const conceptIdRaw = searchParams.get("conceptId");
   const conceptId = sanitizeSctId(conceptIdRaw);

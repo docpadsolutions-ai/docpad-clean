@@ -1,6 +1,7 @@
 "use server";
 
 import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
+import { requireStaff } from "@/app/lib/supabase/server";
 
 export type AiSummaryResult =
   | { success: true; summary: string; cached: boolean }
@@ -20,8 +21,20 @@ type PrescriptionRow = {
   drug_name: string | null;
   dose: string | null;
   frequency: string | null;
-  duration_days: number | null;
+  duration: string | null;
 };
+
+/** Server actions are public endpoints: only staff of the patient's own hospital may read or summarise. */
+async function staffCanAccessPatient(patientId: string): Promise<boolean> {
+  const gate = await requireStaff();
+  if (!gate.ok) return false;
+  const { data } = await createSupabaseAdmin()
+    .from("patients")
+    .select("hospital_id")
+    .eq("id", patientId)
+    .maybeSingle();
+  return !!data && (data as { hospital_id: string | null }).hospital_id === gate.staff.hospitalId;
+}
 
 function buildPatientHistoryText(
   encounters: EncounterRow[],
@@ -55,7 +68,7 @@ function buildPatientHistoryText(
         rxList.length > 0
           ? rxList
               .map((r) =>
-                [r.drug_name, r.dose, r.frequency, r.duration_days ? `${r.duration_days}d` : null]
+                [r.drug_name, r.dose, r.frequency, r.duration?.trim() || null]
                   .filter(Boolean)
                   .join(" "),
               )
@@ -78,6 +91,7 @@ function buildPatientHistoryText(
 
 export async function generateAiSummary(patientId: string): Promise<AiSummaryResult> {
   if (!patientId.trim()) return { success: false, error: "missing_patient_id" };
+  if (!(await staffCanAccessPatient(patientId.trim()))) return { success: false, error: "forbidden" };
 
   const supabase = createSupabaseAdmin();
 
@@ -94,12 +108,28 @@ export async function generateAiSummary(patientId: string): Promise<AiSummaryRes
   const encounterIds = (encounters ?? []).map((e) => e.id);
 
   // Fetch prescriptions for those encounters in one query
-  const { data: prescriptions } = encounterIds.length > 0
+  const { data: rxRows } = encounterIds.length > 0
     ? await supabase
-        .from("prescription_items")
-        .select("encounter_id, drug_name, dose, frequency, duration_days")
+        .from("prescriptions")
+        .select("encounter_id, medicine_name, dosage_text, dosage, frequency, duration")
         .in("encounter_id", encounterIds)
     : { data: [] };
+  const prescriptions: PrescriptionRow[] = (
+    (rxRows ?? []) as {
+      encounter_id: string | null;
+      medicine_name: string | null;
+      dosage_text: string | null;
+      dosage: string | null;
+      frequency: string | null;
+      duration: string | null;
+    }[]
+  ).map((r) => ({
+    encounter_id: r.encounter_id,
+    drug_name: r.medicine_name,
+    dose: r.dosage_text ?? r.dosage,
+    frequency: r.frequency,
+    duration: r.duration,
+  }));
 
   const patientHistory = buildPatientHistoryText(
     (encounters ?? []) as EncounterRow[],
@@ -139,6 +169,7 @@ export async function loadCachedAiSummary(
   patientId: string,
 ): Promise<{ summary: string | null; lastUpdated: string | null }> {
   if (!patientId.trim()) return { summary: null, lastUpdated: null };
+  if (!(await staffCanAccessPatient(patientId.trim()))) return { summary: null, lastUpdated: null };
   const supabase = createSupabaseAdmin();
   const { data } = await supabase
     .from("patients")

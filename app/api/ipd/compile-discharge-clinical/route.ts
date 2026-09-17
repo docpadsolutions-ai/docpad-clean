@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireStaff, getGeminiApiKey } from "@/app/lib/supabase/server";
 
 type ProgressNote = Record<string, unknown>;
 type InvRow = Record<string, unknown>;
@@ -80,9 +81,11 @@ Write the discharge summary now.`;
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    console.error("[ipd/compile-discharge-clinical] NEXT_PUBLIC_GEMINI_API_KEY is not set.");
+    console.error("[ipd/compile-discharge-clinical] GEMINI_API_KEY is not set.");
     return NextResponse.json(
       { error: "Clinical summary service is not configured. Contact your admin." },
       { status: 503 },

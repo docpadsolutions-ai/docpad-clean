@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { OPD_ENCOUNTERS_AUTH_USER_COLUMN } from "./tenantSchema";
 
 /**
  * Silent chart creation from a waiting `appointments` row (triage / queue handoff).

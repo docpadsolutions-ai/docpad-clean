@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireStaff } from "@/app/lib/supabase/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,6 +11,8 @@ type ValidHierarchy = "diagnosis" | "complaint" | "procedure" | "allergy" | "fin
 const VALID_HIERARCHIES: ValidHierarchy[] = ["diagnosis", "complaint", "procedure", "allergy", "finding"];
 
 export async function POST(req: NextRequest) {
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
   try {
     const body = await req.json() as { conceptId?: unknown; term?: unknown; hierarchy?: unknown; icd10?: unknown };
     const { conceptId, term, hierarchy, icd10 = null } = body;

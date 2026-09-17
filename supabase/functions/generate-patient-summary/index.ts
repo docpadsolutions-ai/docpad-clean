@@ -6,10 +6,30 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+/** verify_jwt=true means the gateway already checked the signature, so the role claim can be trusted. */
+function isServiceRoleJwt(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.role === "service_role";
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight for browser requests
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Only the DocPad server (service role, from app/actions/generateAiSummary.ts) may call this.
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim() ?? "";
+  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!token || (token !== serviceKey && !isServiceRoleJwt(token))) {
+    return new Response(JSON.stringify({ success: false, error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -66,7 +86,7 @@ Deno.serve(async (req: Request) => {
 
   } catch (e) {
     console.error("[generate-summary] unhandled", e);
-    return new Response(JSON.stringify({ success: false, error: String(e) }), { 
+    return new Response(JSON.stringify({ success: false, error: "unhandled" }), { 
       status: 500, headers: corsHeaders 
     });
   }

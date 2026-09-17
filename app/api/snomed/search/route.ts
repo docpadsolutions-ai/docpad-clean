@@ -14,6 +14,7 @@ import {
   type ConstrainedEclInput,
 } from "../../../lib/snomedEclBuilder";
 import { resolveIndiaRefsetId } from "../../../lib/indiaSnomedRefsets";
+import { requireStaff } from "@/app/lib/supabase/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -200,6 +201,8 @@ async function collectTieredSnomedResults(params: {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
   const { searchParams } = new URL(req.url);
   const query = searchParams.get("q");
   const bodySiteParam = searchParams.get("bodySite");

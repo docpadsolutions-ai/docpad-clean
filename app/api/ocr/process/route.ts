@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdmin } from "../../../lib/supabase/admin";
+import { requireStaff, getGeminiApiKey } from "@/app/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -63,6 +64,8 @@ function extractJsonArrayFromGeminiText(text: string): GeminiLabRow[] {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
   let body: ProcessBody;
   try {
     body = (await req.json()) as ProcessBody;
@@ -81,9 +84,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    console.error("[ocr/process] Missing NEXT_PUBLIC_GEMINI_API_KEY.");
+    console.error("[ocr/process] Missing GEMINI_API_KEY.");
     return NextResponse.json(
       { error: "OCR service is not configured on the server." },
       { status: 503 },
@@ -108,6 +111,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "OCR upload record not found." }, { status: 404 });
   }
   const row = uploadRow as { id: string; storage_path: string; hospital_id?: string | null };
+  if (row.hospital_id !== gate.staff.hospitalId) {
+    return NextResponse.json({ error: "OCR upload record not found." }, { status: 404 });
+  }
   if (row.storage_path !== storagePath) {
     return NextResponse.json({ error: "Storage path does not match upload record." }, { status: 400 });
   }

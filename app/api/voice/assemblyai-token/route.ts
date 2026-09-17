@@ -1,5 +1,6 @@
 import { AssemblyAI } from "assemblyai";
 import { NextResponse } from "next/server";
+import { requireStaff } from "@/app/lib/supabase/server";
 
 /**
  * Short-lived token for browser StreamingTranscriber (API keys must not run in the client).
@@ -9,6 +10,8 @@ import { NextResponse } from "next/server";
  * https://www.assemblyai.com/docs/api-reference/streaming-api/generate-streaming-token
  */
 export async function GET() {
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
   const apiKey = process.env.ASSEMBLYAI_API_KEY?.trim();
   if (!apiKey) {
     console.error("[voice/assemblyai-token] ASSEMBLYAI_API_KEY is not set.");

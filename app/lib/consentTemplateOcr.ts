@@ -35,9 +35,6 @@ export async function fileToGeminiInlinePart(file: File): Promise<{ data: string
 }
 
 export async function extractConsentFormTextFromFile(file: File): Promise<string> {
-  if (!process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim()) {
-    throw new Error("Gemini API key is not configured.");
-  }
   const { data, mimeType } = await fileToGeminiInlinePart(file);
   const model = geminiFlashClient.getGenerativeModel({
     model: "gemini-2.5-flash",

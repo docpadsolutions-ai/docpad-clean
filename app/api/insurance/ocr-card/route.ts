@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { getGeminiApiKey } from "@/app/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
   const mimeRaw = (body.mime_type ?? "image/jpeg").trim() || "image/jpeg";
   const inlineMime = geminiMimeForInlineData(mimeRaw);
 
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
     return NextResponse.json({ error: "OCR is not configured (Gemini API key missing)." }, { status: 503 });
   }

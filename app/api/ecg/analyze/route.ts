@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireStaff, getGeminiApiKey } from "@/app/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -63,6 +64,8 @@ export type EcgVisionResult = {
 };
 
 export async function POST(req: NextRequest) {
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
   let body: {
     imageUrl?: string;
     imageBase64?: string;
@@ -75,10 +78,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
     return NextResponse.json(
-      { error: "ECG vision is not configured (missing NEXT_PUBLIC_GEMINI_API_KEY)." },
+      { error: "ECG vision is not configured (missing GEMINI_API_KEY)." },
       { status: 503 },
     );
   }
@@ -99,6 +102,23 @@ export async function POST(req: NextRequest) {
     inlineMime = geminiMimeForInlineData(body.mimeType ?? "image/jpeg");
   } else {
     const imageUrl = (body.imageUrl ?? "").trim();
+    // Only fetch images from this project's Supabase Storage (prevents the server being used to fetch arbitrary URLs).
+    let allowedHost = "";
+    try {
+      allowedHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").host;
+    } catch {
+      allowedHost = "";
+    }
+    let imageHostOk = false;
+    try {
+      const u = new URL(imageUrl);
+      imageHostOk = u.protocol === "https:" && !!allowedHost && u.host === allowedHost;
+    } catch {
+      imageHostOk = false;
+    }
+    if (!imageHostOk) {
+      return NextResponse.json({ error: "imageUrl must point to this project's storage." }, { status: 400 });
+    }
     if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
       return NextResponse.json(
         { error: "Provide a valid imageUrl or imageBase64." },
@@ -108,7 +128,7 @@ export async function POST(req: NextRequest) {
 
     let imgRes: Response;
     try {
-      imgRes = await fetch(imageUrl, { cache: "no-store" });
+      imgRes = await fetch(imageUrl, { cache: "no-store", redirect: "error" });
     } catch (e) {
       console.error("[ecg/analyze] image fetch:", e);
       return NextResponse.json({ error: "Failed to download image." }, { status: 502 });

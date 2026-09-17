@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireStaff } from "@/app/lib/supabase/server";
 // import { Resend } from "resend";
 
 // const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: Request) {
+  const gate = await requireStaff();
+  if (!gate.ok) return gate.response;
   try {
     const { email, role, designation, token } = (await request.json()) as {
       email?: string;

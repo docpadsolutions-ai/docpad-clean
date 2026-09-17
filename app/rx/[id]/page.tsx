@@ -141,121 +141,54 @@ export default function RxPage({ params }: { params: Promise<{ id: string }> }) 
       setLoading(true);
       setError(null);
 
-      // 1. Fetch encounter
-      const { data: enc, error: encErr } = await supabase
-        .from("opd_encounters")
-        .select("id, encounter_number, encounter_date, chief_complaint, weight, blood_pressure, pulse, temperature, spo2, patient_id, hospital_id, doctor_id")
-        .eq("id", encounterId)
-        .maybeSingle();
+      // Public link: patients are not signed in, so everything comes from one narrow
+      // SECURITY DEFINER RPC keyed by the (unguessable) encounter UUID.
+      const { data, error: rpcErr } = await supabase.rpc("get_public_prescription", {
+        p_encounter_id: encounterId,
+      });
 
-      if (encErr || !enc) {
+      type LabRow = {
+        parameter_name: string | null;
+        value_numeric: number | null;
+        value_text: string | null;
+        unit: string | null;
+        ref_range_text: string | null;
+      };
+      const payload = data as {
+        encounter: Encounter;
+        patient: Omit<Patient, "phone"> | null;
+        hospital: HospitalRow | null;
+        doctor: DoctorRow | null;
+        prescriptions: Prescription[];
+        lab_blocks: { id: string; title: string; rows: LabRow[] }[];
+      } | null;
+
+      if (rpcErr || !payload?.encounter) {
         setError("Prescription not found. The link may be invalid or expired.");
         setLoading(false);
         return;
       }
-      setEncounter(enc as Encounter);
 
-      // Fetch hospital letterhead data
-      const encRow = enc as Record<string, unknown>;
-      const hospitalId = encRow.hospital_id as string | null;
-      const doctorId = encRow.doctor_id as string | null;
-
-      if (hospitalId) {
-        const { data: hosp } = await supabase
-          .from("hospitals")
-          .select("name, address_line1, city, state, pincode, phone, email, website, logo_url, tagline, registration_no, letterhead_color, nabh_accredited, nabh_certificate_number, prescription_header_config")
-          .eq("id", hospitalId)
-          .maybeSingle();
-        if (hosp) setHospital(hosp as HospitalRow);
-      }
-
-      // Fetch doctor info
-      if (doctorId) {
-        const { data: doc } = await supabase
-          .from("practitioners")
-          .select("full_name, specialty, registration_no")
-          .or(`id.eq.${doctorId},user_id.eq.${doctorId}`)
-          .maybeSingle();
-        if (doc) setDoctor(doc as DoctorRow);
-      }
-
-      // 2. Fetch patient
-      if (enc.patient_id) {
-        const { data: pat } = await supabase
-          .from("patients")
-          .select("id, full_name, age_years, sex, blood_group, docpad_id, phone")
-          .eq("id", enc.patient_id)
-          .maybeSingle();
-        if (pat) setPatient(pat as Patient);
-      }
-
-      // 3. Fetch prescriptions
-      const { data: rxRows, error: rxErr } = await supabase
-        .from("prescriptions")
-        .select("id, medicine_name, active_ingredient_name, dosage_form_name, dosage_text, frequency, duration, instructions")
-        .eq("encounter_id", encounterId)
-        .order("id", { ascending: true });
-
-      if (rxErr) {
-        setError("Could not load prescription details. Please try again.");
-        setLoading(false);
-        return;
-      }
-      setPrescriptions((rxRows ?? []) as Prescription[]);
-
-      const { data: attachRows } = await supabase
-        .from("prescription_attachments")
-        .select("ocr_upload_id, display_name")
-        .eq("encounter_id", encounterId)
-        .eq("include_in_print", true);
+      setEncounter(payload.encounter);
+      setPatient(payload.patient ? { ...payload.patient, phone: null } : null);
+      setHospital(payload.hospital);
+      setDoctor(payload.doctor);
+      setPrescriptions(payload.prescriptions ?? []);
 
       const blocks: LabPrintBlock[] = [];
-      const attaches = (attachRows ?? []) as { ocr_upload_id: string; display_name: string | null }[];
-      const ocrIds = [...new Set(attaches.map((a) => String(a.ocr_upload_id ?? "").trim()).filter(Boolean))];
-      if (ocrIds.length > 0) {
-        const { data: labRows } = await supabase
-          .from("lab_result_entries")
-          .select("ocr_upload_id, parameter_name, value_numeric, value_text, unit, ref_range_text")
-          .in("ocr_upload_id", ocrIds);
-        const byOcr: Record<string, typeof labRows> = {};
-        for (const row of labRows ?? []) {
-          const r = row as {
-            ocr_upload_id: string;
-            parameter_name: string | null;
-            value_numeric: number | null;
-            value_text: string | null;
-            unit: string | null;
-            ref_range_text: string | null;
-          };
-          const id = String(r.ocr_upload_id ?? "");
-          if (!id) continue;
-          if (!byOcr[id]) byOcr[id] = [];
-          byOcr[id].push(row);
-        }
-        for (const a of attaches) {
-          const oid = String(a.ocr_upload_id ?? "").trim();
-          const rows = byOcr[oid] ?? [];
-          if (rows.length === 0) continue;
-          const title = (a.display_name ?? "").trim() || "Lab report";
-          const lines = rows.map((raw) => {
-            const e = raw as {
-              parameter_name: string | null;
-              value_numeric: number | null;
-              value_text: string | null;
-              unit: string | null;
-              ref_range_text: string | null;
-            };
-            const name = (e.parameter_name ?? "").trim() || "—";
-            const val =
-              e.value_text?.trim() ||
-              (e.value_numeric != null && Number.isFinite(e.value_numeric) ? String(e.value_numeric) : "");
-            const u = (e.unit ?? "").trim();
-            const ref = (e.ref_range_text ?? "").trim();
-            const valuePart = [val, u].filter(Boolean).join(" ");
-            return valuePart ? `${name}: ${valuePart}${ref ? ` (Ref: ${ref})` : ""}` : `${name}${ref ? ` (Ref: ${ref})` : ""}`;
-          });
-          blocks.push({ id: oid, title, lines });
-        }
+      for (const b of payload.lab_blocks ?? []) {
+        if (!b.rows?.length) continue;
+        const lines = b.rows.map((e) => {
+          const name = (e.parameter_name ?? "").trim() || "—";
+          const val =
+            e.value_text?.trim() ||
+            (e.value_numeric != null && Number.isFinite(Number(e.value_numeric)) ? String(e.value_numeric) : "");
+          const u = (e.unit ?? "").trim();
+          const ref = (e.ref_range_text ?? "").trim();
+          const valuePart = [val, u].filter(Boolean).join(" ");
+          return valuePart ? `${name}: ${valuePart}${ref ? ` (Ref: ${ref})` : ""}` : `${name}${ref ? ` (Ref: ${ref})` : ""}`;
+        });
+        blocks.push({ id: b.id, title: b.title, lines });
       }
       setLabPrintBlocks(blocks);
 

@@ -1,6 +1,7 @@
 "use server";
 
 import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
+import { getGeminiApiKey, requireStaff } from "@/app/lib/supabase/server";
 
 export type SuggestedPrescription = {
   id: string;
@@ -13,8 +14,20 @@ export async function getSuggestedPrescriptions(
   text: string,
   practitionerId: string,
 ): Promise<SuggestedPrescription[]> {
-  const geminiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+  const geminiKey = getGeminiApiKey();
   if (!geminiKey || !text.trim() || !practitionerId.trim()) return [];
+
+  // Server actions are public endpoints: caller must be staff, and may only query practitioners in their own hospital.
+  if (!/^[0-9a-f-]{36}$/i.test(practitionerId.trim())) return [];
+  const gate = await requireStaff();
+  if (!gate.ok) return [];
+  const { data: target } = await createSupabaseAdmin()
+    .from("practitioners")
+    .select("hospital_id")
+    .or(`id.eq.${practitionerId.trim()},user_id.eq.${practitionerId.trim()}`)
+    .limit(1)
+    .maybeSingle();
+  if (!target || (target as { hospital_id: string | null }).hospital_id !== gate.staff.hospitalId) return [];
 
   let embedRes: Response;
   try {
