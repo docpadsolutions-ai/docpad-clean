@@ -57,6 +57,12 @@ comment on column public.appointments.booking_source is
 comment on column public.appointments.parent_encounter_id is
   'The encounter that asked for this follow-up, when there is one.';
 
+-- NOTE: this is the SECOND foreign key from appointments to opd_encounters
+-- (encounter_id was the first). PostgREST cannot resolve a bare embed between two
+-- tables that have more than one relationship, so any `appointments ( ... )` or
+-- `opd_encounters ( ... )` embed must now name its constraint, e.g.
+-- `appointments!appointments_encounter_id_fkey ( vitals )`.
+
 -- One live follow-up per encounter: re-running schedule_follow_up moves the date
 -- rather than stacking bookings.
 create unique index if not exists appointments_one_live_followup_per_encounter

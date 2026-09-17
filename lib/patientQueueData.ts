@@ -206,7 +206,7 @@ export async function fetchMergedWaitingRoom(
   let receptionData: RqRow[] = [];
 
   if (practitionerId) {
-    let rq = supabase
+    const rq = supabase
       .from("reception_queue")
       .select(receptionSelect)
       .eq("hospital_id", id)
@@ -417,7 +417,15 @@ export async function fetchWaitingAppointmentsWithoutEncounter(
   return rows;
 }
 
-/** `opd_encounters` in draft or in progress with patient + optional appointment vitals. */
+/**
+ * `opd_encounters` in draft or in progress with patient + optional appointment vitals.
+ *
+ * The `appointments` embed has to name its foreign key. There are two paths from
+ * appointments back to opd_encounters - `encounter_id` (the visit this booking
+ * turned into) and `parent_encounter_id` (the encounter that asked for this
+ * follow-up) - and a bare `appointments ( ... )` embed fails with "more than one
+ * relationship was found". We want the first one: the booking this chart came from.
+ */
 export async function fetchActiveDraftEncounters(
   orgId: string | null,
   signal?: AbortSignal,
@@ -441,7 +449,7 @@ export async function fetchActiveDraftEncounters(
       chief_complaint,
       chief_complaints_fhir,
       patients ( full_name, age_years, sex ),
-      appointments ( vitals ),
+      appointments!appointments_encounter_id_fkey ( vitals ),
       practitioners!fk_treating_doctor ( id, full_name )
     `,
     )
