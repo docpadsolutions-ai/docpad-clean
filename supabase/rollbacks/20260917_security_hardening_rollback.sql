@@ -146,3 +146,41 @@ end $$;
 -- get_active_medications() was also widened in this migration to accept status 'final'
 -- (finalize_prescription writes that status). Narrowing it again re-hides finalised drugs from
 -- the interaction and duplicate checks, so only do this together with a rollback of 20260917182819.
+
+-----------------------------------------------------------------------------------------------
+-- K. appointments, visit type and follow-up (20260917185822)
+-----------------------------------------------------------------------------------------------
+-- Dropping the columns loses which visits were booked; prefer leaving them in place and simply
+-- not calling the RPCs. If the whole feature must go:
+-- drop function if exists public.get_doctor_day_schedule(uuid, date);
+-- drop function if exists public.check_in_appointment(uuid, uuid, text);
+-- drop function if exists public.find_appointment_for_patient(uuid, date);
+-- drop function if exists public.get_follow_up_for_encounter(uuid);
+-- drop function if exists public.cancel_follow_up(uuid);
+-- drop function if exists public.schedule_follow_up(uuid, date, time, uuid, text);
+-- drop trigger if exists set_encounter_visit_type on public.opd_encounters;
+-- drop function if exists public.trg_set_encounter_visit_type();
+-- drop function if exists public._derive_encounter_visit_type(uuid, uuid, uuid, uuid, timestamptz);
+-- drop index if exists public.reception_queue_token_per_day_unique;   -- re-allows duplicate tokens
+-- drop index if exists public.appointments_one_live_followup_per_encounter;
+-- alter table public.opd_encounters drop column if exists visit_type;
+-- alter table public.appointments drop column if exists visit_type,
+--   drop column if exists booking_source, drop column if exists parent_encounter_id,
+--   drop column if exists booked_at;
+--
+-- _assert_hospital_scope() gained 'appointment' and 'queue' kinds in this migration. Leave them:
+-- removing them only widens what the RPCs accept.
+--
+-- The Encounter.type block spliced into build_opd_consult_bundle() references
+-- opd_encounters.visit_type, so drop that column only after re-running section J's restore of
+-- fn_fhir_opd_encounter, or the next write to an encounter will fail.
+
+-----------------------------------------------------------------------------------------------
+-- L. appointment reminders (20260917190512)
+-----------------------------------------------------------------------------------------------
+-- Dropping the table loses the record of which patients were already messaged, so a later
+-- re-enable would message them again. Disable the Vercel cron entries instead if you only want
+-- sending to stop.
+-- drop function if exists public.record_appointment_reminder(uuid, text, text, text, text, text);
+-- drop function if exists public.due_appointment_reminders(text, uuid);
+-- drop table if exists public.appointment_reminders;

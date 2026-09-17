@@ -17,6 +17,7 @@ import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
 import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
 import { unwrapRpcArray } from "@/lib/ipdConsults";
 import { fetchDoctorAssignmentOptions } from "@/lib/doctorAssignmentOptions";
+import { checkInAppointment, findAppointmentForPatient } from "@/lib/daySchedule";
 import { enqueueReceptionWalkIn } from "@/lib/receptionEnqueue";
 import type { RegisteredPatientRow } from "@/lib/registerNewPatient";
 import { supabase } from "@/lib/supabase";
@@ -583,6 +584,31 @@ function ReceptionPageContent() {
     setEnrolling(true);
     try {
       const qd = todayLocalDateString();
+
+      // The patient may already be booked for today - a follow-up the doctor
+      // scheduled, or an appointment taken earlier. Check that booking in rather
+      // than opening a second walk-in beside it.
+      const booked = (await findAppointmentForPatient(pendingQueuePatient.id, qd)).find(
+        (a) => !a.already_checked_in,
+      );
+
+      if (booked) {
+        const { result, error } = await checkInAppointment(booked.appointment_id, {
+          doctorId: enrollDoctorId,
+        });
+        if (error) throw new Error(error);
+        setQueueDrawerOpen(false);
+        setPendingQueuePatient(null);
+        setEnrollDoctorId("");
+        const when = booked.scheduled_time ? ` (${booked.scheduled_time.slice(0, 5)})` : "";
+        const kind = booked.visit_type === "follow_up" ? "follow-up" : "appointment";
+        showToast(
+          `Checked in against their ${kind}${when} - ${result?.token_display ?? "token issued"}.`,
+        );
+        void loadQueue(hospitalId, { silent: true });
+        return;
+      }
+
       const tokenNum = await nextTokenNumber(hospitalId, qd);
       const enq = await enqueueReceptionWalkIn({
         hospitalId,

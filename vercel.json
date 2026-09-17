@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/reminders/appointments?kind=day_before",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/reminders/appointments?kind=same_day",
+      "schedule": "30 2 * * *"
+    }
+  ]
+}

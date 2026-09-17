@@ -12,6 +12,7 @@ import {
 } from "@/hooks/usePrescriptionSafety";
 import ActiveMedicationsPanel from "@/components/prescribing/ActiveMedicationsPanel";
 import PrescribingSafetyBanner from "@/components/prescribing/PrescribingSafetyBanner";
+import { saveEncounterFollowUp } from "@/lib/followUp";
 import type { CatalogEntry } from "@/lib/medicineCatalog";
 import { formatAbdmMedicationLabel, medicineCatalog } from "@/lib/medicineCatalog";
 import {
@@ -527,34 +528,6 @@ function formatFollowUpForPrint(ymd: string): string {
     month: "short",
     year: "numeric",
   });
-}
-
-/** Merge follow-up into `plan_details` and set `opd_encounters.follow_up_date`. */
-async function persistEncounterFollowUp(
-  eid: string,
-  dateYmd: string | null | undefined,
-): Promise<string | null> {
-  const trimmed = dateYmd?.trim() || null;
-  const { data: row, error: selErr } = await supabase
-    .from("opd_encounters")
-    .select("plan_details")
-    .eq("id", eid)
-    .maybeSingle();
-  if (selErr) return selErr.message;
-  const prev =
-    row?.plan_details != null && typeof row.plan_details === "object" && !Array.isArray(row.plan_details)
-      ? { ...(row.plan_details as Record<string, unknown>) }
-      : {};
-  const plan_details = { ...prev, follow_up_date: trimmed };
-  const { error: upErr } = await supabase
-    .from("opd_encounters")
-    .update({
-      follow_up_date: trimmed,
-      plan_details,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", eid);
-  return upErr?.message ?? null;
 }
 
 export default function PrescriptionModal({
@@ -1407,7 +1380,7 @@ export default function PrescriptionModal({
       return;
     }
 
-    const fuErr = await persistEncounterFollowUp(eid, followUpDate ?? null);
+    const fuErr = await saveEncounterFollowUp(eid, followUpDate ?? null);
     if (fuErr) console.warn("Could not persist follow-up on encounter:", fuErr);
     await persistMedicationReconciliation(eid);
 
@@ -1492,7 +1465,7 @@ export default function PrescriptionModal({
         setIsSendingWhatsApp(false);
         return;
       }
-      const fuErr = await persistEncounterFollowUp(encounterId, followUpDate ?? null);
+      const fuErr = await saveEncounterFollowUp(encounterId, followUpDate ?? null);
       if (fuErr) console.warn("Could not persist follow-up on encounter:", fuErr);
       await persistMedicationReconciliation(encounterId);
       const invErr = await deductHospitalInventoryForPrescription(addedMedicines, sessionOrgId);

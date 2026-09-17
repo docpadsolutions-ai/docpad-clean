@@ -15,6 +15,7 @@ import {
 } from "@/lib/practitionerAuthLookup";
 import { parsePractitionerRoleColumn, type UserRole } from "@/lib/userRole";
 import { supabase } from "@/lib/supabase";
+import { bookEncounterFollowUp } from "@/lib/followUp";
 import { createEncounterFromAppointment } from "@/lib/opdEncounterFromAppointment";
 import { DocPadLogoMark } from "@/components/DocPadLogoMark";
 import { PermissionSurface } from "@/components/PermissionGate";
@@ -2277,6 +2278,16 @@ export default function EncounterPage() {
         .single();
 
       if (encError) throw new Error(encError.message);
+
+      // Book / move / cancel the follow-up appointment so the patient shows up on
+      // the doctor's day and can be reminded. A booking failure is not fatal to the
+      // clinical save, so it is surfaced as a warning rather than thrown.
+      const followUpBookErr = await bookEncounterFollowUp(encounterId, followUpYmd, {
+        doctorId: doctorPractitionerId ?? null,
+      });
+      if (followUpBookErr) {
+        console.warn("saveEncounter: follow-up appointment not booked", followUpBookErr);
+      }
 
       const contentText = [
         typeof chiefComplaintLine === "string" ? chiefComplaintLine : "",

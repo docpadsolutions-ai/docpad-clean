@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
+import ExpectedTodayPanel from "@/components/opd/ExpectedTodayPanel";
 import ClinicalQueueRow, { displayToken } from "@/components/ClinicalQueueRow";
 import { patientIdsWithSimilarNamePeer } from "@/lib/patientNameSimilarity";
 import type { DraftEncounterRow, WaitingPatientRow } from "@/lib/clinicalQueue";
@@ -63,6 +64,8 @@ export default function ClinicalCommandCenterQueue() {
     drafts,
     loading,
     fetchError,
+    refresh,
+    practitionerId,
     startingRowKey,
     onWaitingRowClick,
     onDraftRowClick,
@@ -176,6 +179,10 @@ export default function ClinicalCommandCenterQueue() {
             />
           </div>
         </div>
+      </div>
+
+      <div className="px-5 pt-4 lg:px-6">
+        <ExpectedTodayPanel doctorPractitionerId={practitionerId} onCheckedIn={refresh} />
       </div>
 
       {fetchError ? (

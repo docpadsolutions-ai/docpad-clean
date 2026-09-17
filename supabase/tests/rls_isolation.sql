@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(27);
+select plan(34);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -204,6 +204,60 @@ insert into tap select isnt(
   pg_temp.as_user_err((select b_user from t_ab),
     format($q$select public.get_opd_consult_bundle(%L)$q$, (select encounter_id from t_fhir))),
   'none', 'a doctor from another hospital cannot fetch the document');
+
+-- ----------------------------------------------------------------- appointments & follow-up (SOW 2.5)
+create temp table t_fu as
+select e.id as encounter_id, e.patient_id
+from opd_encounters e
+where e.hospital_id = (select a_hospital from t_ab) and e.patient_id is not null
+  and not exists (select 1 from appointments ap where ap.parent_encounter_id = e.id)
+limit 1;
+
+insert into tap select isnt(
+  pg_temp.as_user_err((select b_user from t_ab),
+    format($q$select public.schedule_follow_up(%L, current_date + 7)$q$, (select encounter_id from t_fu))),
+  'none', 'a doctor from another hospital cannot book a follow-up on this encounter');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select public.schedule_follow_up(%L, current_date + 7) ->> 'created'$q$,
+           (select encounter_id from t_fu))),
+  'true', 'scheduling a follow-up books a real appointment');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select public.schedule_follow_up(%L, current_date + 14) ->> 'created'$q$,
+           (select encounter_id from t_fu))),
+  'false', 'changing the date moves that booking rather than stacking a second one');
+
+insert into tap select is(
+  (select count(*)::int from appointments
+    where parent_encounter_id = (select encounter_id from t_fu) and coalesce(status, '') <> 'cancelled'),
+  1, 'an encounter never carries more than one live follow-up');
+
+insert into tap select cmp_ok(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select json_array_length(public.get_doctor_day_schedule(%L, current_date + 14))::text$q$,
+           (select a_user from t_ab)))::int,
+  '>', 0, 'a booked follow-up is on the doctor day before the patient arrives');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select public.check_in_appointment(
+                     (select id from appointments
+                       where parent_encounter_id = %L and coalesce(status, '') <> 'cancelled' limit 1))
+                   ->> 'already_checked_in'$q$,
+           (select encounter_id from t_fu))),
+  'false', 'checking a booking in creates the waiting-room entry');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select public.check_in_appointment(
+                     (select id from appointments
+                       where parent_encounter_id = %L and coalesce(status, '') <> 'cancelled' limit 1))
+                   ->> 'already_checked_in'$q$,
+           (select encounter_id from t_fu))),
+  'true', 'checking the same booking in twice does not open a second entry');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';

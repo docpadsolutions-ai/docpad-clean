@@ -94,3 +94,31 @@ supabase db pull        # writes a baseline migration from the live schema
 
 Then I reconcile the old files against that baseline and we get a migrations folder that
 can actually be replayed.
+
+---
+
+## 8. Appointment reminders — environment setup (added with the follow-up work)
+
+The reminder job is built and deployed with the app, but it will not send anything until
+these are set in **Vercel → Project → Settings → Environment Variables** (Production):
+
+- `CRON_SECRET` — any long random string. Vercel Cron sends it as
+  `Authorization: Bearer <value>`; without it the route answers 503 and nothing is sent.
+  Generate one with `openssl rand -hex 32`.
+- `TWILIO_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` — these are the same three
+  the prescription-link feature already uses. If WhatsApp sending works today, they exist.
+
+`vercel.json` schedules two runs (times are UTC): 12:30 UTC — 18:00 IST — for tomorrow's
+bookings, and 02:30 UTC — 08:00 IST — for today's. Change the `schedule` fields if the
+clinic wants different hours.
+
+To check it end to end without messaging anyone, call it with `?dry=1`:
+
+```bash
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
+  "https://<your-domain>/api/reminders/appointments?kind=day_before&dry=1"
+```
+
+It answers with how many bookings it would have messaged. Every real send is recorded in
+`appointment_reminders`, and the job skips anything already recorded, so a double-fired
+cron cannot message a patient twice.

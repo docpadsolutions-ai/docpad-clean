@@ -24,6 +24,7 @@ function todayYmd(): string {
 export function useClinicalCommandCenter() {
   const router = useRouter();
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [practitionerId, setPractitionerId] = useState<string | null>(null);
   const [tab, setTab] = useState<ClinicalQueueTab>("waiting");
   const [waiting, setWaiting] = useState<WaitingPatientRow[]>([]);
   const [drafts, setDrafts] = useState<DraftEncounterRow[]>([]);
@@ -65,6 +66,7 @@ export function useClinicalCommandCenter() {
       }
       if (signal?.aborted) return;
       const practitionerId = pr?.id != null ? String(pr.id) : null;
+      setPractitionerId(practitionerId);
       const [w, d] = await Promise.all([
         fetchWaitingPatients(id, { authUserId: user.id, practitionerId }, signal),
         fetchDraftEncounters(id, signal),
@@ -168,6 +170,7 @@ export function useClinicalCommandCenter() {
   return {
     tab,
     setTab,
+    practitionerId,
     waiting,
     drafts,
     loading,
