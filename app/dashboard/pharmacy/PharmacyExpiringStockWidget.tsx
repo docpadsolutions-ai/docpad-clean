@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "../../supabase";
-import { useToast } from "@/src/components/ui/toast-provider";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/components/ui/toast-provider";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 

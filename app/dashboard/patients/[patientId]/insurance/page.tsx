@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
-import { supabase } from "@/app/supabase";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { EligibilitySummaryCard, type CoverageSummary } from "@/app/components/insurance/EligibilitySummaryCard";
-import { InsuranceCardCaptureFlow } from "@/app/components/insurance/InsuranceCardCaptureFlow";
+import { EligibilitySummaryCard, type CoverageSummary } from "@/components/insurance/EligibilitySummaryCard";
+import { InsuranceCardCaptureFlow } from "@/components/insurance/InsuranceCardCaptureFlow";
 
 function normalizeCompanyEmbed(raw: unknown): { name: string } | null {
   if (raw == null) return null;

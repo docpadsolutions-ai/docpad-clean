@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 
 export type ABHALinkPatient = {
   id: string;

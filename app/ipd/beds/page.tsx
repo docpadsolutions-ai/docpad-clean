@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/app/supabase";
-import { fetchAuthOrgId } from "@/app/lib/authOrg";
+import { supabase } from "@/lib/supabase";
+import { fetchAuthOrgId } from "@/lib/authOrg";
 import {
   fetchBedAvailability,
   fetchWardCensus,
   groupBedsByWard,
   type BedAvailabilityRow,
   type WardCensusRow,
-} from "@/app/lib/ipdAdmission";
+} from "@/lib/ipdAdmission";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

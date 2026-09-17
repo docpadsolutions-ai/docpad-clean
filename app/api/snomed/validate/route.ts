@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveIndiaRefsetId } from "../../../lib/indiaSnomedRefsets";
-import { validateConceptInValueSet } from "../../../lib/snomedCsiroExpand";
-import { buildConstrainedSearchEcl, HIERARCHY_ECL, sanitizeSctId, type ConstrainedEclInput } from "../../../lib/snomedEclBuilder";
-import { requireStaff } from "@/app/lib/supabase/server";
+import { resolveIndiaRefsetId } from "@/lib/indiaSnomedRefsets";
+import { validateConceptInValueSet } from "@/lib/snomedCsiroExpand";
+import { buildConstrainedSearchEcl, HIERARCHY_ECL, sanitizeSctId, type ConstrainedEclInput } from "@/lib/snomedEclBuilder";
+import { requireStaff } from "@/lib/supabase/server";
 
 const CSIRO_TIMEOUT_MS = 4000;
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
-import { supabase } from "../../supabase";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
+import { supabase } from "@/lib/supabase";
 
 type PatientEmbed = {
   id: string;

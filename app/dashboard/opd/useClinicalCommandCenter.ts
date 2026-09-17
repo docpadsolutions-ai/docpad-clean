@@ -7,12 +7,12 @@ import {
   fetchWaitingPatients,
   type DraftEncounterRow,
   type WaitingPatientRow,
-} from "../../lib/clinicalQueue";
-import { fetchAuthOrgId } from "../../lib/authOrg";
-import { startInProgressEncounterFromReceptionHandoff } from "../../lib/opdEncounterFromAppointment";
-import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
-import { isSupabaseAbortError, sx } from "../../lib/supabaseAbort";
-import { supabase } from "../../supabase";
+} from "@/lib/clinicalQueue";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { startInProgressEncounterFromReceptionHandoff } from "@/lib/opdEncounterFromAppointment";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { isSupabaseAbortError, sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 
 export type ClinicalQueueTab = "waiting" | "drafts";
 

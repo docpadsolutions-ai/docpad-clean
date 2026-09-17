@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 import {
   ABDM_CONSENT_EVENT_TYPES,
   extractConsentRequestId,

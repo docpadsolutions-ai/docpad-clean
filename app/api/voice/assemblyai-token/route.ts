@@ -1,6 +1,6 @@
 import { AssemblyAI } from "assemblyai";
 import { NextResponse } from "next/server";
-import { requireStaff } from "@/app/lib/supabase/server";
+import { requireStaff } from "@/lib/supabase/server";
 
 /**
  * Short-lived token for browser StreamingTranscriber (API keys must not run in the client).

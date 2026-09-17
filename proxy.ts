@@ -1,12 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import type { DashboardRoleRouting } from "./app/lib/dashboardRoleRouting";
+import type { DashboardRoleRouting } from "@/lib/dashboardRoleRouting";
 import {
   fetchEffectiveRoleRawFromDb,
   isPathAllowedByPrefixes,
   resolveDashboardRoutingFromRoleRaw,
-} from "./app/lib/dashboardRoleRouting";
-import { rawRoleHasAdminPrivileges } from "./app/lib/userRole";
+} from "@/lib/dashboardRoleRouting";
+import { rawRoleHasAdminPrivileges } from "@/lib/userRole";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/pharmacy", "/admin"] as const;
 

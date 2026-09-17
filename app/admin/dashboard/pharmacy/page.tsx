@@ -1,4 +1,4 @@
-import { PharmacyInventory } from "@/app/components/pharmacy/PharmacyInventory";
+import { PharmacyInventory } from "@/components/pharmacy/PharmacyInventory";
 
 export default function PharmacyDrugMasterPage() {
   return <PharmacyInventory role="admin" />;

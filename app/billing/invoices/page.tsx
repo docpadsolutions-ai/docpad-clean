@@ -6,14 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
-import { fetchHospitalIdFromPractitionerAuthId } from "../../lib/authOrg";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
 import {
   patientIdsWithSimilarNamePeer,
   similarFullNamesToSelected,
   similarPatientNamesWarningBody,
-} from "../../lib/patientNameSimilarity";
-import { supabase } from "../../supabase";
-import { useToast } from "@/src/components/ui/toast-provider";
+} from "@/lib/patientNameSimilarity";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/components/ui/toast-provider";
 import { PaymentRecordModal } from "../../../components/billing/PaymentRecordModal";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";

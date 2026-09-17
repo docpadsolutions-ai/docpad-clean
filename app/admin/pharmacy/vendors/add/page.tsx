@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAuthOrgId } from "@/app/lib/authOrg";
+import { fetchAuthOrgId } from "@/lib/authOrg";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSupabase } from "../../hooks/useSupabase";
-import { useToast } from "@/src/components/ui/toast-provider";
+import { useToast } from "@/components/ui/toast-provider";
 
 const DRUG_LICENSE_RE = /^DL-[A-Z]{2}-\d+$/i;
 const GST_RE = /^[0-9A-Z]{15}$/i;

@@ -9,21 +9,21 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { CurrentUserBadge } from "../../components/CurrentUserBadge";
-import NewPatientModal from "../../components/NewPatientModal";
-import { AdmissionBillingSheet, type PendingAdmissionRow } from "../../components/reception/AdmissionBillingSheet";
-import { PendingLabPaymentsSection } from "../../components/reception/PendingLabPayments";
-import { fetchHospitalIdFromPractitionerAuthId } from "../../lib/authOrg";
-import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
-import { unwrapRpcArray } from "../../lib/ipdConsults";
-import { fetchDoctorAssignmentOptions } from "../../lib/doctorAssignmentOptions";
-import { enqueueReceptionWalkIn } from "../../lib/receptionEnqueue";
-import type { RegisteredPatientRow } from "../../lib/registerNewPatient";
-import { supabase } from "../../supabase";
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+import { CurrentUserBadge } from "@/components/CurrentUserBadge";
+import NewPatientModal from "@/components/NewPatientModal";
+import { AdmissionBillingSheet, type PendingAdmissionRow } from "@/components/reception/AdmissionBillingSheet";
+import { PendingLabPaymentsSection } from "@/components/reception/PendingLabPayments";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { unwrapRpcArray } from "@/lib/ipdConsults";
+import { fetchDoctorAssignmentOptions } from "@/lib/doctorAssignmentOptions";
+import { enqueueReceptionWalkIn } from "@/lib/receptionEnqueue";
+import type { RegisteredPatientRow } from "@/lib/registerNewPatient";
+import { supabase } from "@/lib/supabase";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
 
 const AdmitPatientModal = dynamic(
-  () => import("@/app/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
+  () => import("@/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
   { ssr: false },
 );
 

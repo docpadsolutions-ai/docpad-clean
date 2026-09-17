@@ -7,11 +7,11 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import OCRUploadModal from "../../components/investigations/OCRUploadModal";
-import { fetchAuthOrgId } from "../../lib/authOrg";
-import { formatOrderedDate } from "../../lib/investigationsUi";
-import { practitionerDisplayNameFromRow, practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
-import { supabase } from "../../supabase";
+import OCRUploadModal from "@/components/investigations/OCRUploadModal";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { formatOrderedDate } from "@/lib/investigationsUi";
+import { practitionerDisplayNameFromRow, practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { supabase } from "@/lib/supabase";
 
 /** Row from `get_lab_queue` / `get_lab_queue_external` RPCs, plus merged OPD `investigations` rows. */
 type InvestigationLabRow = {

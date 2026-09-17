@@ -2,7 +2,7 @@
 
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 
 export type ChargeDefinitionOption = {
   id: string;

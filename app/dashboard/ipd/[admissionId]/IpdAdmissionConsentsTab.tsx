@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { fetchActiveConsentTypesForHospital } from "../../../lib/ipdConsentTypes";
-import { supabase } from "@/app/supabase";
-import { patientFromAdmission } from "../../../lib/ipdAdmissionDisplay";
+import { fetchActiveConsentTypesForHospital } from "@/lib/ipdConsentTypes";
+import { supabase } from "@/lib/supabase";
+import { patientFromAdmission } from "@/lib/ipdAdmissionDisplay";
 import { Button } from "../../../../components/ui/button";
-import RequestCustomConsentModal from "../../../components/ipd/RequestCustomConsentModal";
+import RequestCustomConsentModal from "@/components/ipd/RequestCustomConsentModal";
 
 const CARD_BG = "bg-white";
 const PAGE_OVERLAY = "bg-black/55";

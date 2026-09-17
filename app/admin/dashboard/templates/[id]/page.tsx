@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
 
 const TEMPLATE_TYPES = ["consultation", "follow_up", "procedure", "intake", "other"] as const;
 

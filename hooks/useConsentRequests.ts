@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 import { ABDM_CONSENT_EVENT_TYPES, isAbdmConsentEventType } from "@/components/abdm/consentInboxUtils";
 
 export type ConsentRequestItem = {

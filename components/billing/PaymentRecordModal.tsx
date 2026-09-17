@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "../../app/supabase";
+import { supabase } from "@/lib/supabase";
 
 const METHODS = ["cash", "upi", "card", "netbanking", "cheque"] as const;
 export type PaymentMethod = (typeof METHODS)[number];

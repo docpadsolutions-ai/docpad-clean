@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { fetchHospitalIdFromPractitionerUser } from "../../../lib/authOrg";
-import { supabase } from "../../../supabase";
+import { fetchHospitalIdFromPractitionerUser } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 import { InventoryItemModal, type InventoryTableRow } from "./InventoryItemModal";
-import { useToast } from "@/src/components/ui/toast-provider";
+import { useToast } from "@/components/ui/toast-provider";
 
 function matchesSearch(row: InventoryTableRow, q: string): boolean {
   const t = q.trim().toLowerCase();

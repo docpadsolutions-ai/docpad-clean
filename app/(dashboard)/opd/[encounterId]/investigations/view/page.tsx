@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import InvestigationsTabContent from "../../../../../components/patient-investigations/InvestigationsTabContent";
+import InvestigationsTabContent from "@/components/patient-investigations/InvestigationsTabContent";
 import {
   practitionerDisplayNameFromRow,
-} from "../../../../../lib/practitionerAuthLookup";
-import { supabase } from "../../../../../supabase";
+} from "@/lib/practitionerAuthLookup";
+import { supabase } from "@/lib/supabase";
 
 export default function InvestigationsViewPage() {
   const params = useParams();

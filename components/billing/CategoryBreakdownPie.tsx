@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 
 function n(v: unknown): number {
   const x = typeof v === "number" ? v : Number(v);

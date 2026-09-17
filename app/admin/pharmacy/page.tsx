@@ -1,4 +1,4 @@
-import { PharmacyInventory } from "@/app/components/pharmacy/PharmacyInventory";
+import { PharmacyInventory } from "@/components/pharmacy/PharmacyInventory";
 
 /** Alias route: same formulary as /admin/dashboard/pharmacy (admin role). */
 export default function AdminPharmacyPage() {

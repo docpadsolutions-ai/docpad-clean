@@ -7,15 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Resolver, useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
 import {
   patientIdsWithSimilarNamePeer,
   similarFullNamesToSelected,
   similarPatientNamesWarningBody,
-} from "@/app/lib/patientNameSimilarity";
-import { useToast } from "@/src/components/ui/toast-provider";
-import { composePreauthClinicalSummary } from "@/app/lib/buildEncounterClinicalSummary";
-import { supabase } from "@/app/supabase";
+} from "@/lib/patientNameSimilarity";
+import { useToast } from "@/components/ui/toast-provider";
+import { composePreauthClinicalSummary } from "@/lib/buildEncounterClinicalSummary";
+import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

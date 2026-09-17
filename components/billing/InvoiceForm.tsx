@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Loader2, Plus, Trash2, UserRoundSearch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
-import { supabase } from "@/app/supabase";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 import {
   ChargeItemSelector,
   type ChargeDefinitionOption,
@@ -14,9 +14,9 @@ import {
   patientIdsWithSimilarNamePeer,
   similarFullNamesToSelected,
   similarPatientNamesWarningBody,
-} from "@/app/lib/patientNameSimilarity";
-import { useToast } from "@/src/components/ui/toast-provider";
-import { PatientActionConfirmPopover } from "@/src/components/patient/patient-action-confirm-popover";
+} from "@/lib/patientNameSimilarity";
+import { useToast } from "@/components/ui/toast-provider";
+import { PatientActionConfirmPopover } from "@/components/patient/patient-action-confirm-popover";
 
 type PatientOpt = { id: string; full_name: string | null; docpad_id: string | null; phone: string | null };
 type EncounterOpt = { id: string; encounter_date: string | null; status: string | null };

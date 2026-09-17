@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditVendorModal } from "@/components/admin/EditVendorModal";
-import { fetchAuthOrgId } from "../../../lib/authOrg";
+import { fetchAuthOrgId } from "@/lib/authOrg";
 import { Button } from "../../../../components/ui/button";
 import {
   Select,
@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "../../../../components/ui/table";
 import { useSupabase } from "../hooks/useSupabase";
-import { useToast } from "@/src/components/ui/toast-provider";
+import { useToast } from "@/components/ui/toast-provider";
 
 type VendorRow = {
   id: string;

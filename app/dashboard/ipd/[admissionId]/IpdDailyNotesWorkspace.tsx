@@ -4,15 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ChevronDown, Minus, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/app/supabase";
-import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
+import { supabase } from "@/lib/supabase";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { cn } from "../../../../lib/utils";
-import { formatClinicalDate, patientFromAdmission, preAdmissionFrom } from "../../../lib/ipdAdmissionDisplay";
-import { rpcGetOrCreateProgressNote } from "../../../lib/ipdData";
-import { IPD_DEFAULT_HOSPITAL_ID } from "../../../lib/ipdConstants";
-import { formatRequestedAgo, rpcGetAdmissionConsults } from "../../../lib/ipdConsults";
-import { readIndiaRefsetKeyFromEnv } from "@/app/lib/snomedUiConfig";
-import type { ClinicalChip } from "../../../lib/clinicalChipTypes";
+import { formatClinicalDate, patientFromAdmission, preAdmissionFrom } from "@/lib/ipdAdmissionDisplay";
+import { rpcGetOrCreateProgressNote } from "@/lib/ipdData";
+import { IPD_DEFAULT_HOSPITAL_ID } from "@/lib/ipdConstants";
+import { formatRequestedAgo, rpcGetAdmissionConsults } from "@/lib/ipdConsults";
+import { readIndiaRefsetKeyFromEnv } from "@/lib/snomedUiConfig";
+import type { ClinicalChip } from "@/lib/clinicalChipTypes";
 import {
   buildAssessmentDisplayText,
   buildAssessmentSnomedPayload,
@@ -29,14 +29,14 @@ import {
   readLegacyFreeTextFromJson,
   recoverFreeTextBelowChipLine,
   type IpdDiagnosisEntry,
-} from "../../../lib/ipdProgressNoteSnomed";
+} from "@/lib/ipdProgressNoteSnomed";
 import {
   IpdAssessmentSnomedBlock,
   IpdExaminationSnomedBlock,
   IpdSubjectiveSnomedBlock,
-} from "../../../components/ipd/IpdProgressNoteSnomedFields";
-import VoiceDictationButton from "../../../components/VoiceDictationButton";
-import { DiagnosisWithIcd } from "../../../components/clinical/DiagnosisWithIcd";
+} from "@/components/ipd/IpdProgressNoteSnomedFields";
+import VoiceDictationButton from "@/components/VoiceDictationButton";
+import { DiagnosisWithIcd } from "@/components/clinical/DiagnosisWithIcd";
 import { Button } from "../../../../components/ui/button";
 import { Skeleton } from "../../../../components/ui/skeleton";
 import {
@@ -50,8 +50,8 @@ import {
 import { Textarea } from "../../../../components/ui/textarea";
 import OrderInvestigationModal, {
   type OrderInvestigationCatalogRow,
-} from "../../../components/ipd/order-investigation-modal";
-import { ConfirmationTooltip } from "@/src/components/patient/patient-action-confirm-popover";
+} from "@/components/ipd/order-investigation-modal";
+import { ConfirmationTooltip } from "@/components/patient/patient-action-confirm-popover";
 
 function s(v: unknown): string {
   if (v == null) return "";

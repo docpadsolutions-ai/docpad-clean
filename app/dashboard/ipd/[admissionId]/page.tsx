@@ -4,24 +4,24 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, CheckCircle2, ClipboardList, FileText, Paperclip, Pill, Stethoscope, X } from "lucide-react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 import IpdDailyNotesWorkspace from "./IpdDailyNotesWorkspace";
 import {
   normalizeIpdAdmissionBundle,
   rpcEnsureDailyProgressNotes,
   rpcGetIpdAdmission,
   updateIpdPreAdmissionAssessment,
-} from "../../../lib/ipdData";
-import { IPD_DEFAULT_HOSPITAL_ID } from "../../../lib/ipdConstants";
-import { buildAdmissionCardView } from "../../../lib/ipdAdmissionDisplay";
+} from "@/lib/ipdData";
+import { IPD_DEFAULT_HOSPITAL_ID } from "@/lib/ipdConstants";
+import { buildAdmissionCardView } from "@/lib/ipdAdmissionDisplay";
 import IpdAdmissionConsentsTab from "./IpdAdmissionConsentsTab";
 import IpdTreatmentsTab from "./IpdTreatmentsTab";
 import ScheduleSurgeryModal from "./ScheduleSurgeryModal";
-import { DischargeSummaryModal } from "../../../components/ipd/discharge-summary-modal";
-import { RequestConsultModal } from "../../../components/ipd/RequestConsultModal";
-import { DiagnosisWithIcd } from "../../../components/clinical/DiagnosisWithIcd";
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
-import IpdClinicalAttachmentsSection from "../../../components/clinical-attachments/IpdClinicalAttachmentsSection";
+import { DischargeSummaryModal } from "@/components/ipd/discharge-summary-modal";
+import { RequestConsultModal } from "@/components/ipd/RequestConsultModal";
+import { DiagnosisWithIcd } from "@/components/clinical/DiagnosisWithIcd";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
+import IpdClinicalAttachmentsSection from "@/components/clinical-attachments/IpdClinicalAttachmentsSection";
 import NursingShiftChecklist from "../../../../components/ipd/NursingShiftChecklist";
 import MewsVitalsCard from "../../../../components/ipd/MewsVitalsCard";
 import { UnbilledNursingChargesSection } from "../../../../components/billing/UnbilledNursingChargesSection";

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { fetchHospitalIdFromPractitionerUser } from "../../../lib/authOrg";
-import { supabase } from "../../../supabase";
+import { fetchHospitalIdFromPractitionerUser } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 
 export const TRANSACTION_TYPES = ["restock", "dispense", "return", "adjustment", "expired"] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];

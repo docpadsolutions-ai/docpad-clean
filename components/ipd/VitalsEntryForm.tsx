@@ -3,8 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/app/supabase";
-import { parseBloodPressureText } from "../../app/lib/ipdNursingVitalsRanges";
+import { supabase } from "@/lib/supabase";
+import { parseBloodPressureText } from "@/lib/ipdNursingVitalsRanges";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";

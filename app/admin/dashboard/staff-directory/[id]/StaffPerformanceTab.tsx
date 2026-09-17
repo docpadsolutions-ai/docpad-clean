@@ -14,8 +14,8 @@ import {
 import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useAppRole } from "@/app/hooks/useAppRole";
-import { supabase } from "@/app/supabase";
+import { useAppRole } from "@/hooks/useAppRole";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

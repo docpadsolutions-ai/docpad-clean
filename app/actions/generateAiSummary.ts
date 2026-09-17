@@ -1,7 +1,7 @@
 "use server";
 
-import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
-import { requireStaff } from "@/app/lib/supabase/server";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { requireStaff } from "@/lib/supabase/server";
 
 export type AiSummaryResult =
   | { success: true; summary: string; cached: boolean }

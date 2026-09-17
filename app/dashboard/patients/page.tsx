@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ClinicalQueueRow from "../../components/ClinicalQueueRow";
-import { useKeyboardNav } from "@/src/hooks/use-keyboard-nav";
-import { KeyboardShortcutsHelp } from "@/src/components/ui/keyboard-shortcuts-help";
-import { patientIdsWithSimilarNamePeer } from "../../lib/patientNameSimilarity";
-import { createEncounterFromAppointment } from "../../lib/opdEncounterFromAppointment";
-import type { PatientQueueVitals } from "../../lib/patientQueueData";
-import { vitalsFromJson } from "../../lib/patientQueueData";
-import { fetchAuthOrgId } from "../../lib/authOrg";
-import { isSupabaseAbortError, sx } from "../../lib/supabaseAbort";
-import { supabase } from "../../supabase";
+import ClinicalQueueRow from "@/components/ClinicalQueueRow";
+import { useKeyboardNav } from "@/hooks/use-keyboard-nav";
+import { KeyboardShortcutsHelp } from "@/components/ui/keyboard-shortcuts-help";
+import { patientIdsWithSimilarNamePeer } from "@/lib/patientNameSimilarity";
+import { createEncounterFromAppointment } from "@/lib/opdEncounterFromAppointment";
+import type { PatientQueueVitals } from "@/lib/patientQueueData";
+import { vitalsFromJson } from "@/lib/patientQueueData";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { isSupabaseAbortError, sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 
 type NestedPatient = {
   full_name?: string | null;

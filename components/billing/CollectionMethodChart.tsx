@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 
 function n(v: unknown): number {
   const x = typeof v === "number" ? v : Number(v);

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
-import { supabase } from "@/app/supabase";
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGeminiApiKey, requireStaff } from "@/app/lib/supabase/server";
+import { getGeminiApiKey, requireStaff } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -19,7 +19,7 @@ type GenerateBody = {
 
 /**
  * Authenticated server-side proxy for Gemini `generateContent`.
- * Keeps the API key off the browser; used by `app/lib/geminiFlashClient.ts`.
+ * Keeps the API key off the browser; used by `lib/geminiFlashClient.ts`.
  */
 export async function POST(req: NextRequest) {
   const gate = await requireStaff();

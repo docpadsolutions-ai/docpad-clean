@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Paperclip } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
-import { supabase } from "@/app/supabase";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 import ClinicalConfigurationNav from "@/components/admin/ClinicalConfigurationNav";
 import { ConsentTemplateModal, type ConsentTemplateModalMode } from "@/components/admin/ConsentTemplateModal";
 import { Button } from "@/components/ui/button";

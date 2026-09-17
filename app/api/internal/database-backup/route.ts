@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
-import { loadBackupRow, runHospitalBackupJob } from "@/app/lib/backup/runHospitalBackup";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { loadBackupRow, runHospitalBackupJob } from "@/lib/backup/runHospitalBackup";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;

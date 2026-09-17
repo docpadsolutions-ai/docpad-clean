@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "../../supabase";
+import { supabase } from "@/lib/supabase";
 
 type InventoryOption = {
   id: string;

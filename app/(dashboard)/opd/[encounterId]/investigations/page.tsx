@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchAuthOrgId } from "../../../../lib/authOrg";
-import { practitionersOrFilterForAuthUid } from "../../../../lib/practitionerAuthLookup";
-import { clinicalIndicationFromEncounterDiagnosis } from "../../../../lib/buildEncounterClinicalSummary";
-import { mapCatalogCategoryToInvestigationTestCategory } from "../../../../lib/investigationTestCategory";
-import { supabase } from "../../../../supabase";
-import { PatientActionConfirmPopover } from "@/src/components/patient/patient-action-confirm-popover";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { clinicalIndicationFromEncounterDiagnosis } from "@/lib/buildEncounterClinicalSummary";
+import { mapCatalogCategoryToInvestigationTestCategory } from "@/lib/investigationTestCategory";
+import { supabase } from "@/lib/supabase";
+import { PatientActionConfirmPopover } from "@/components/patient/patient-action-confirm-popover";
 
 type TestCatalogueRow = {
   id: string;

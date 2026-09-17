@@ -4,16 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CurrentUserBadge } from "@/app/components/CurrentUserBadge";
-import { supabase } from "@/app/supabase";
-import { fetchHospitalIdFromPractitionerAuthId } from "../../../lib/authOrg";
+import { CurrentUserBadge } from "@/components/CurrentUserBadge";
+import { supabase } from "@/lib/supabase";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
 import {
   fetchBedAvailability,
   fetchWardCensus,
   groupBedsByWard,
   type BedAvailabilityRow,
   type WardCensusRow,
-} from "@/app/lib/ipdAdmission";
+} from "@/lib/ipdAdmission";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

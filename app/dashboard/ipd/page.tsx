@@ -4,23 +4,23 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchAuthOrgId } from "../../lib/authOrg";
+import { fetchAuthOrgId } from "@/lib/authOrg";
 import {
   practitionerHeaderSubtitle,
   practitionerHeaderTitle,
-} from "../../lib/practitionerHeader";
-import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
-import { sx } from "../../lib/supabaseAbort";
-import { supabase } from "../../supabase";
+} from "@/lib/practitionerHeader";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 import IpdClinicalCommandCenter from "./IpdClinicalCommandCenter";
 import WardCensusTab from "./WardCensusTab";
 import { useIpdDoctorAdmissions } from "./useIpdDoctorAdmissions";
-import { DashboardHeaderNotificationBell } from "@/app/components/dashboard/DashboardHeaderNotificationBell";
-import { DashboardNotificationsPanel } from "@/app/components/dashboard/DashboardNotificationsPanel";
-import { useNotificationCounts } from "@/app/hooks/useNotifications";
+import { DashboardHeaderNotificationBell } from "@/components/dashboard/DashboardHeaderNotificationBell";
+import { DashboardNotificationsPanel } from "@/components/dashboard/DashboardNotificationsPanel";
+import { useNotificationCounts } from "@/hooks/useNotifications";
 
 const AdmitPatientModal = dynamic(
-  () => import("@/app/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
+  () => import("@/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
   { ssr: false },
 );
 

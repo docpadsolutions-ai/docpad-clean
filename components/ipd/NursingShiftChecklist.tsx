@@ -26,11 +26,11 @@ import {
   Syringe,
   X,
 } from "lucide-react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 import { MANUAL_TASK_CATEGORY_OPTIONS, type NursingTaskCategoryDb } from "./nursing/NursingTaskQueue";
 import { NursingTaskCompleteModal, type NursingTaskForCompletion } from "./nursing/NursingTaskCompleteModal";
-import TimeWheelPicker, { time12hTo24hForDb, time24hTo12hDisplay } from "@/app/components/TimeWheelPicker";
-import { useToast } from "../../src/components/ui/toast-provider";
+import TimeWheelPicker, { time12hTo24hForDb, time24hTo12hDisplay } from "@/components/TimeWheelPicker";
+import { useToast } from "@/components/ui/toast-provider";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";

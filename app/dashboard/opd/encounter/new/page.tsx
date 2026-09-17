@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { fetchAuthOrgId } from "../../../../lib/authOrg";
-import { createOpdEncounterForPatient } from "../../../../lib/createOpdEncounterForPatient";
-import { supabase } from "../../../../supabase";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { createOpdEncounterForPatient } from "@/lib/createOpdEncounterForPatient";
+import { supabase } from "@/lib/supabase";
 
 function isLikelyUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());

@@ -10,7 +10,7 @@ import { DepartmentPerformanceGrid } from "@/components/billing/DepartmentPerfor
 import { OutstandingInvoicesTable } from "@/components/billing/OutstandingInvoicesTable";
 import { ProviderPerformanceTable } from "@/components/billing/ProviderPerformanceTable";
 import { RevenuePieChart } from "@/components/billing/RevenuePieChart";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
 import {
   CategoryBreakdownPie,
   DateRangePicker,

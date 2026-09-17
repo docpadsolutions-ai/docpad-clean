@@ -2,7 +2,7 @@
 
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 import { ConsentApprovalModal } from "./ConsentApprovalModal";
 import { ABDM_CONSENT_EVENT_TYPES, inboxRowMatchesPatient } from "./consentInboxUtils";
 

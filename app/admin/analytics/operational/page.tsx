@@ -16,8 +16,8 @@ import {
   YAxis,
 } from "recharts";
 import { endOfDay, startOfDay, startOfMonth, startOfWeek } from "date-fns";
-import { supabase } from "@/app/supabase";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
+import { supabase } from "@/lib/supabase";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

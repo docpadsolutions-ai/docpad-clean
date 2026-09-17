@@ -15,8 +15,8 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { practitionerRoleRawFromRow, practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
-import { supabase } from "../../supabase";
+import { practitionerRoleRawFromRow, practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { supabase } from "@/lib/supabase";
 import { WardInventoryManager } from "../../../components/admin/WardInventoryManager";
 import { Card, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
 import { cn } from "../../../lib/utils";

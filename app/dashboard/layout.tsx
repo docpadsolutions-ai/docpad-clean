@@ -1,11 +1,11 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { AppWorkspaceProvider } from "../contexts/AppWorkspaceContext";
-import { CurrentUserBadge } from "../components/CurrentUserBadge";
-import { RoleSidebar } from "../components/RoleSidebar";
-import { useAppRole } from "../hooks/useAppRole";
-import { rawRoleHasAdminPrivileges } from "../lib/userRole";
+import { AppWorkspaceProvider } from "@/components/contexts/AppWorkspaceContext";
+import { CurrentUserBadge } from "@/components/CurrentUserBadge";
+import { RoleSidebar } from "@/components/RoleSidebar";
+import { useAppRole } from "@/hooks/useAppRole";
+import { rawRoleHasAdminPrivileges } from "@/lib/userRole";
 
 function DashboardLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

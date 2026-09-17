@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type ReactNode, useMemo } from "react";
 import { Activity, AlertCircle, Droplets, Heart, Thermometer } from "lucide-react";
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,7 +12,7 @@ import {
   type PendingIpdAdmissionRow,
   type UseIpdDoctorAdmissionsResult,
 } from "./useIpdDoctorAdmissions";
-import { patientIdsWithSimilarNamePeer } from "../../lib/patientNameSimilarity";
+import { patientIdsWithSimilarNamePeer } from "@/lib/patientNameSimilarity";
 
 function TabButton({
   active,

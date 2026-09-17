@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PharmacyInventory } from "@/app/components/pharmacy/PharmacyInventory";
-import { fetchAuthOrgId } from "../../lib/authOrg";
-import { supabase } from "../../supabase";
+import { PharmacyInventory } from "@/components/pharmacy/PharmacyInventory";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 import { filterLedgerRows, PharmacyLedger, type PharmacyLedgerRow } from "./PharmacyLedger";
 import { PharmacyExpiringStockWidget } from "./PharmacyExpiringStockWidget";
 import { PharmacyRestockForm } from "./PharmacyRestockForm";

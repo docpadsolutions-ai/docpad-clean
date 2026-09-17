@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { AlertTriangle, Banknote, Coins, CreditCard, Smartphone } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchHospitalIdFromPractitionerAuthId } from "../../../lib/authOrg";
-import { supabase } from "../../../supabase";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 
 function todayYmd(): string {
   const d = new Date();

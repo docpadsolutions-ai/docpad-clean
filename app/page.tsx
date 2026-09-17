@@ -2,9 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import ErrorBanner from "./components/ErrorBanner";
-import { DocPadLogoMark } from "./components/DocPadLogoMark";
-import { supabase } from "./supabase";
+import ErrorBanner from "@/components/ErrorBanner";
+import { DocPadLogoMark } from "@/components/DocPadLogoMark";
+import { supabase } from "@/lib/supabase";
 
 function ShieldIcon({ className }: { className?: string }) {
   return (

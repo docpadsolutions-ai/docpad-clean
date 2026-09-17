@@ -3,8 +3,8 @@ import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import "../styles/themes.css";
 import "./globals.css";
-import { ThemeProviderWrapper } from "./theme-provider";
-import { ToastProvider } from "@/src/components/ui/toast-provider";
+import { ThemeProviderWrapper } from "@/components/theme-provider";
+import { ToastProvider } from "@/components/ui/toast-provider";
 
 export const metadata: Metadata = {
   title: "DocPad",

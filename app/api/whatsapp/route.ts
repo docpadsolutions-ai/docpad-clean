@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
-import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
-import { requireStaff } from "@/app/lib/supabase/server";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { requireStaff } from "@/lib/supabase/server";
 
 const MAX_TEXT_BLOCK = 3000;
 

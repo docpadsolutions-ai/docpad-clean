@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { z } from "zod";
-import { practitionersOrFilterForAuthUid } from "@/app/lib/practitionerAuthLookup";
-import { supabase } from "@/app/supabase";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
 type Pgish = { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };

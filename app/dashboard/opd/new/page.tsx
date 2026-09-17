@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { NewPatientRegistrationForm } from "../../../components/NewPatientRegistrationForm";
-import { createOpdEncounterForPatient } from "../../../lib/createOpdEncounterForPatient";
-import { fetchAuthOrgId } from "../../../lib/authOrg";
-import { sx } from "../../../lib/supabaseAbort";
-import { supabase } from "../../../supabase";
+import { NewPatientRegistrationForm } from "@/components/NewPatientRegistrationForm";
+import { createOpdEncounterForPatient } from "@/lib/createOpdEncounterForPatient";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 
 // ─── Style constants ──────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import { PharmacyInventory } from "@/app/components/pharmacy/PharmacyInventory";
+import { PharmacyInventory } from "@/components/pharmacy/PharmacyInventory";
 
 /** Drug master UI (same as /admin/pharmacy). */
 export default function PharmacyDrugMasterPage() {

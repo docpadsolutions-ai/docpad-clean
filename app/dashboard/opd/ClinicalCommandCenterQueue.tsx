@@ -3,12 +3,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
-import ClinicalQueueRow, { displayToken } from "../../components/ClinicalQueueRow";
-import { patientIdsWithSimilarNamePeer } from "../../lib/patientNameSimilarity";
-import type { DraftEncounterRow, WaitingPatientRow } from "../../lib/clinicalQueue";
+import ClinicalQueueRow, { displayToken } from "@/components/ClinicalQueueRow";
+import { patientIdsWithSimilarNamePeer } from "@/lib/patientNameSimilarity";
+import type { DraftEncounterRow, WaitingPatientRow } from "@/lib/clinicalQueue";
 import { useClinicalCommandCenter } from "./useClinicalCommandCenter";
-import { useKeyboardNav } from "@/src/hooks/use-keyboard-nav";
-import { KeyboardShortcutsHelp } from "@/src/components/ui/keyboard-shortcuts-help";
+import { useKeyboardNav } from "@/hooks/use-keyboard-nav";
+import { KeyboardShortcutsHelp } from "@/components/ui/keyboard-shortcuts-help";
 
 const WAITING_BADGE = "bg-amber-50 text-amber-700 ring-amber-200";
 

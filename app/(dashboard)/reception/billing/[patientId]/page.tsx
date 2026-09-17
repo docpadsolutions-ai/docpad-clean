@@ -9,11 +9,11 @@ import {
   patientIdsWithSimilarNamePeer,
   similarFullNamesToSelected,
   similarPatientNamesWarningBody,
-} from "@/app/lib/patientNameSimilarity";
-import { useToast } from "@/src/components/ui/toast-provider";
-import { CurrentUserBadge } from "@/app/components/CurrentUserBadge";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
-import { supabase } from "@/app/supabase";
+} from "@/lib/patientNameSimilarity";
+import { useToast } from "@/components/ui/toast-provider";
+import { CurrentUserBadge } from "@/components/CurrentUserBadge";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

@@ -4,17 +4,17 @@ import {
   filterFindingResultsForBodySite,
   rankSnomedResultsForBodySite,
   type SnomedRow,
-} from "../../../lib/snomedBodySiteRank";
-import { filterSnomedByBodySiteAnatomy } from "../../../lib/snomedAnatomyExclusions";
-import { expandValueSetFromCsiro } from "../../../lib/snomedCsiroExpand";
+} from "@/lib/snomedBodySiteRank";
+import { filterSnomedByBodySiteAnatomy } from "@/lib/snomedAnatomyExclusions";
+import { expandValueSetFromCsiro } from "@/lib/snomedCsiroExpand";
 import {
   buildConstrainedSearchEcl,
   HIERARCHY_ECL,
   hasActiveConstraints,
   type ConstrainedEclInput,
-} from "../../../lib/snomedEclBuilder";
-import { resolveIndiaRefsetId } from "../../../lib/indiaSnomedRefsets";
-import { requireStaff } from "@/app/lib/supabase/server";
+} from "@/lib/snomedEclBuilder";
+import { resolveIndiaRefsetId } from "@/lib/indiaSnomedRefsets";
+import { requireStaff } from "@/lib/supabase/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

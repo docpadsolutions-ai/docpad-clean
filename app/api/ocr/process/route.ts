@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "../../../lib/supabase/admin";
-import { requireStaff, getGeminiApiKey } from "@/app/lib/supabase/server";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { requireStaff, getGeminiApiKey } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;

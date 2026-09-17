@@ -1,7 +1,7 @@
 "use client";
 
-import { RoleSidebar } from "../components/RoleSidebar";
-import { useAppRole } from "../hooks/useAppRole";
+import { RoleSidebar } from "@/components/RoleSidebar";
+import { useAppRole } from "@/hooks/useAppRole";
 
 export default function PharmacyLayout({ children }: { children: React.ReactNode }) {
   const { role, loading } = useAppRole();

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { JoinFlow } from "../components/join/JoinFlow";
+import { JoinFlow } from "@/components/join/JoinFlow";
 
 function Spinner() {
   return (

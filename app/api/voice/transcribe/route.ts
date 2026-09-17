@@ -2,7 +2,7 @@ import { AssemblyAI } from "assemblyai";
 import { NextRequest, NextResponse } from "next/server";
 import orthoVocab from "../../../../lib/snomed-ortho-vocabulary.json";
 import generalVocab from "../../../../lib/snomed-general-vocabulary.json";
-import { requireStaff } from "@/app/lib/supabase/server";
+import { requireStaff } from "@/lib/supabase/server";
 
 export async function POST(req: NextRequest) {
   const gate = await requireStaff();

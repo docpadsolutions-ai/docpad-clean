@@ -7,63 +7,63 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, Microscope, Paperclip, PlusCircle, Ruler, Save } from "lucide-react";
 
-import { fetchAuthOrgId } from "../../../../lib/authOrg";
+import { fetchAuthOrgId } from "@/lib/authOrg";
 import {
   practitionerDisplayNameFromRow,
   practitionerRoleRawFromRow,
   practitionersOrFilterForAuthUid,
-} from "../../../../lib/practitionerAuthLookup";
-import { parsePractitionerRoleColumn, type UserRole } from "../../../../lib/userRole";
-import { supabase } from "@/app/supabase";
-import { createEncounterFromAppointment } from "../../../../lib/opdEncounterFromAppointment";
-import { DocPadLogoMark } from "../../../../components/DocPadLogoMark";
-import { PermissionSurface } from "../../../../components/PermissionGate";
-import PrescriptionModal, { type VoiceRxPrefillRow } from "../../../../components/PrescriptionModal";
+} from "@/lib/practitionerAuthLookup";
+import { parsePractitionerRoleColumn, type UserRole } from "@/lib/userRole";
+import { supabase } from "@/lib/supabase";
+import { createEncounterFromAppointment } from "@/lib/opdEncounterFromAppointment";
+import { DocPadLogoMark } from "@/components/DocPadLogoMark";
+import { PermissionSurface } from "@/components/PermissionGate";
+import PrescriptionModal, { type VoiceRxPrefillRow } from "@/components/PrescriptionModal";
 
-import SnomedSearch, { buildSnomedSearchQueryString } from "../../../../components/SnomedSearch";
+import SnomedSearch, { buildSnomedSearchQueryString } from "@/components/SnomedSearch";
 import {
   SNOMED_ECL_CLINICAL_FINDING,
   SNOMED_ECL_MSK_FINDING,
   SNOMED_ECL_PROCEDURE,
   isOrthopedicsSpecialty,
-} from "../../../../lib/ipdSnomedEcl";
-import { practitionerHasSurgicalSpecialty } from "../../../../lib/surgicalSpecialties";
-import { DiagnosisWithIcd } from "../../../../components/clinical/DiagnosisWithIcd";
+} from "@/lib/ipdSnomedEcl";
+import { practitionerHasSurgicalSpecialty } from "@/lib/surgicalSpecialties";
+import { DiagnosisWithIcd } from "@/components/clinical/DiagnosisWithIcd";
 import VoiceDictationButton, {
   type ClinicalFinding,
   type PlanExtractionResult,
-} from "../../../../components/VoiceDictationButton";
-import PatientEncountersList from "../../../../components/PatientEncountersList";
-import { personInitialsDisplay } from "@/app/lib/personInitialsDisplay";
+} from "@/components/VoiceDictationButton";
+import PatientEncountersList from "@/components/PatientEncountersList";
+import { personInitialsDisplay } from "@/lib/personInitialsDisplay";
 import {
   useEncounterDraftStore,
   type EncounterDraft,
-} from "@/src/stores/encounterDraftStore";
+} from "@/lib/stores/encounterDraftStore";
 import { AbdmConsentNotificationGate } from "@/components/abdm/AbdmConsentNotificationGate";
-import PatientSummaryDashboard from "../../../../components/PatientSummaryDashboard";
-import InvestigationsTabContent from "../../../../components/patient-investigations/InvestigationsTabContent";
-import InvestigationsLabOrdersModal from "../../../../components/InvestigationsLabOrdersModal";
-import ClinicalAttachmentModal from "../../../../components/clinical-attachments/ClinicalAttachmentModal";
-import ClinicalAttachmentThumbnailStrip from "../../../../components/clinical-attachments/ClinicalAttachmentThumbnailStrip";
-import SimilarPastPrescriptions from "../../../../components/SimilarPastPrescriptions";
-import IcdSuggestionBadge from "../../../../components/IcdSuggestionBadge";
+import PatientSummaryDashboard from "@/components/PatientSummaryDashboard";
+import InvestigationsTabContent from "@/components/patient-investigations/InvestigationsTabContent";
+import InvestigationsLabOrdersModal from "@/components/InvestigationsLabOrdersModal";
+import ClinicalAttachmentModal from "@/components/clinical-attachments/ClinicalAttachmentModal";
+import ClinicalAttachmentThumbnailStrip from "@/components/clinical-attachments/ClinicalAttachmentThumbnailStrip";
+import SimilarPastPrescriptions from "@/components/SimilarPastPrescriptions";
+import IcdSuggestionBadge from "@/components/IcdSuggestionBadge";
 
 const XrayMeasurementTool = dynamic(
-  () => import("../../../../components/measurements/XrayMeasurementTool"),
+  () => import("@/components/measurements/XrayMeasurementTool"),
   { ssr: false },
 );
 const AdmitPatientModal = dynamic(
-  () => import("@/app/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
+  () => import("@/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
   { ssr: false },
 );
-import { usePermission } from "../../../../hooks/usePermission";
-import { usePatientOpdEncounters } from "../../../../hooks/usePatientOpdEncounters";
-import { usePatientSummaryHighlights } from "../../../../hooks/usePatientSummaryHighlights";
-import { useToast } from "@/src/components/ui/toast-provider";
-import { PatientEncounterBanner } from "@/src/components/patient/patient-avatar";
-import { PatientActionConfirmPopover } from "@/src/components/patient/patient-action-confirm-popover";
-import { readIndiaRefsetKeyFromEnv } from "../../../../lib/snomedUiConfig";
-import { buildDiagnosesForSync, syncActiveProblemsFromEncounter } from "../../../../lib/syncActiveProblems";
+import { usePermission } from "@/hooks/usePermission";
+import { usePatientOpdEncounters } from "@/hooks/usePatientOpdEncounters";
+import { usePatientSummaryHighlights } from "@/hooks/usePatientSummaryHighlights";
+import { useToast } from "@/components/ui/toast-provider";
+import { PatientEncounterBanner } from "@/components/patient/patient-avatar";
+import { PatientActionConfirmPopover } from "@/components/patient/patient-action-confirm-popover";
+import { readIndiaRefsetKeyFromEnv } from "@/lib/snomedUiConfig";
+import { buildDiagnosesForSync, syncActiveProblemsFromEncounter } from "@/lib/syncActiveProblems";
 import {
   type ClinicalChip,
   clinicalChipFromLegacyDisplay,
@@ -71,10 +71,10 @@ import {
   clinicalChipPrimaryLabel,
   clinicalExamChipPersistLine,
   newClinicalChipId,
-} from "../../../../lib/clinicalChipTypes";
+} from "@/lib/clinicalChipTypes";
 import ClinicalEntityChipPopover, {
   ClinicalChipEditedMarker,
-} from "../../../../components/ClinicalEntityChipPopover";
+} from "@/components/ClinicalEntityChipPopover";
 /** Optional India NRC refset filter for all SNOMED pickers (`NEXT_PUBLIC_SNOMED_INDIA_REFSET`). */
 const SNOMED_INDIA_REFSET_UI = readIndiaRefsetKeyFromEnv();
 
@@ -4460,7 +4460,7 @@ export default function EncounterPage() {
                         try {
                           const { data: enc } = await supabase.from("opd_encounters").select("*").eq("id", encounterId).maybeSingle();
                           const row = (enc ?? {}) as Record<string, unknown>;
-                          const { composePreauthClinicalSummary: compose } = await import("../../../../lib/buildEncounterClinicalSummary");
+                          const { composePreauthClinicalSummary: compose } = await import("@/lib/buildEncounterClinicalSummary");
                           const summary = compose(row);
                           const payload = {
                             p_preauth_id: null,

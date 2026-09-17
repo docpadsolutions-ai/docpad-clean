@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FileText, Loader2, X } from "lucide-react";
-import { supabase } from "@/app/supabase";
+import { supabase } from "@/lib/supabase";
 import {
   extractConsentFormTextFromFile,
   inferConsentCategoryFromText,
   inferConsentDisplayNameFromText,
   isAllowedConsentOcrFile,
-} from "@/app/lib/consentTemplateOcr";
-import { consentCodeFromDisplayName } from "@/app/lib/ipdConsentTypes";
+} from "@/lib/consentTemplateOcr";
+import { consentCodeFromDisplayName } from "@/lib/ipdConsentTypes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

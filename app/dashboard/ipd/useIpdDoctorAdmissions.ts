@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { unwrapRpcArray } from "../../lib/ipdConsults";
-import { isSupabaseAbortError, sx } from "../../lib/supabaseAbort";
-import { supabase } from "../../supabase";
+import { unwrapRpcArray } from "@/lib/ipdConsults";
+import { isSupabaseAbortError, sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 
 export type IpdDoctorAdmissionSummaryRow = {
   admission_id: string;

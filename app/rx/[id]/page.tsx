@@ -2,9 +2,9 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
-import { personInitialsDisplay } from "@/app/lib/personInitialsDisplay";
-import { supabase } from "../../supabase";
-import { HospitalLetterhead, type HospitalLetterheadData, type DoctorLineData } from "../../components/HospitalLetterhead";
+import { personInitialsDisplay } from "@/lib/personInitialsDisplay";
+import { supabase } from "@/lib/supabase";
+import { HospitalLetterhead, type HospitalLetterheadData, type DoctorLineData } from "@/components/HospitalLetterhead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

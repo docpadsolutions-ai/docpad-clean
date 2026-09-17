@@ -2,19 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { fetchAuthOrgId } from "../../lib/authOrg";
-import { fetchOpdDashboardStats } from "../../lib/opdDashboardStats";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { fetchOpdDashboardStats } from "@/lib/opdDashboardStats";
 import {
   practitionerHeaderSubtitle,
   practitionerHeaderTitle,
-} from "../../lib/practitionerHeader";
-import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
-import { sx } from "../../lib/supabaseAbort";
-import { supabase } from "../../supabase";
+} from "@/lib/practitionerHeader";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 import ClinicalCommandCenterQueue from "./ClinicalCommandCenterQueue";
-import { DashboardHeaderNotificationBell } from "@/app/components/dashboard/DashboardHeaderNotificationBell";
-import { DashboardNotificationsPanel } from "@/app/components/dashboard/DashboardNotificationsPanel";
-import { useNotificationCounts } from "@/app/hooks/useNotifications";
+import { DashboardHeaderNotificationBell } from "@/components/dashboard/DashboardHeaderNotificationBell";
+import { DashboardNotificationsPanel } from "@/components/dashboard/DashboardNotificationsPanel";
+import { useNotificationCounts } from "@/hooks/useNotifications";
 
 export default function OpdDashboardPage() {
   const [hospitalName, setHospitalName] = useState<string | null>(null);

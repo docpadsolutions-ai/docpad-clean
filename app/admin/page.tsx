@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import ErrorBanner from "../components/ErrorBanner";
-import { PermissionGate } from "../components/PermissionGate";
-import { supabase } from "../supabase";
+import ErrorBanner from "@/components/ErrorBanner";
+import { PermissionGate } from "@/components/PermissionGate";
+import { supabase } from "@/lib/supabase";
 
 const ORG_ID = "e90e4607-dd60-4821-b736-02a2577432e0";
 

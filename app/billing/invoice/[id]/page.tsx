@@ -9,7 +9,7 @@ import {
   type InvoicePdfData,
 } from "../../../../components/billing/InvoicePDF";
 import { PaymentRecordModal } from "../../../../components/billing/PaymentRecordModal";
-import { supabase } from "../../../supabase";
+import { supabase } from "@/lib/supabase";
 
 type InvoiceRow = {
   id: string;

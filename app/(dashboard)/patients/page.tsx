@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PatientAvatar } from "../../../src/components/patient/patient-avatar";
-import { useToast } from "../../../src/components/ui/toast-provider";
-import { fetchAuthOrgId } from "../../lib/authOrg";
-import { practitionersOrFilterForAuthUid } from "../../lib/practitionerAuthLookup";
-import { isSupabaseAbortError, sx } from "../../lib/supabaseAbort";
-import { supabase } from "../../supabase";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
+import { useToast } from "@/components/ui/toast-provider";
+import { fetchAuthOrgId } from "@/lib/authOrg";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { isSupabaseAbortError, sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 
 type MyPatientRow = {
   patient_id: string;

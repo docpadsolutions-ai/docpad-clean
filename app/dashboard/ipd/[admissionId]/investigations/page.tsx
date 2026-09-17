@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import IPDPendingResultsPanel from "@/src/components/investigations/ipd-pending-results-panel";
-import { supabase } from "@/app/supabase";
+import IPDPendingResultsPanel from "@/components/investigations/ipd-pending-results-panel";
+import { supabase } from "@/lib/supabase";
 
 function s(v: unknown): string {
   if (v == null) return "";

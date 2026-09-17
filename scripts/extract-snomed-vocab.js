@@ -4,7 +4,7 @@ const path = require("path");
 const FILE = path.join(
   __dirname,
   "..",
-  "app/snomed/SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z/Snapshot/Terminology/sct2_Description_Snapshot-en_INT_20260401.txt",
+  "snomed/SnomedCT_InternationalRF2_PRODUCTION_20260401T120000Z/Snapshot/Terminology/sct2_Description_Snapshot-en_INT_20260401.txt",
 );
 
 const SYNONYM_TYPE = "900000000000013009";
@@ -94,7 +94,7 @@ for (let i = 1; i < lines.length; i++) {
 }
 
 const result = Array.from(vocab);
-const outDir = path.join(__dirname, "..", "lib");
+const outDir = path.join(__dirname, "..", "..", "lib");
 const outFile = path.join(outDir, "snomed-general-vocabulary.json");
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(outFile, JSON.stringify(result, null, 2));

@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { fetchHospitalIdFromPractitionerAuthId } from "@/app/lib/authOrg";
-import { practitionersOrFilterForAuthUid } from "@/app/lib/practitionerAuthLookup";
-import { supabase } from "@/app/supabase";
+import { fetchHospitalIdFromPractitionerAuthId } from "@/lib/authOrg";
+import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
 import {
   ACCEPT_RELATIONS,
   CHARGE_CATEGORIES,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireStaff, getGeminiApiKey } from "@/app/lib/supabase/server";
+import { requireStaff, getGeminiApiKey } from "@/lib/supabase/server";
 
 type ProgressNote = Record<string, unknown>;
 type InvRow = Record<string, unknown>;

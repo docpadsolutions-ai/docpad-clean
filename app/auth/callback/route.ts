@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import {
   fetchPractitionerRoleColumnForAuth,
   resolveDefaultHomePathFromPractitionerRole,
-} from "../../lib/postLoginHomePath";
+} from "@/lib/postLoginHomePath";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);

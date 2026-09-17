@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { getGeminiApiKey } from "@/app/lib/supabase/server";
+import { getGeminiApiKey } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;

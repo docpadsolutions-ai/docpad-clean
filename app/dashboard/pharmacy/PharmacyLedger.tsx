@@ -1,6 +1,6 @@
 "use client";
 
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
 
 /** Row from `pharmacy_dispensed_prescriptions` (`SELECT *`); core columns used in UI. */
 export type PharmacyLedgerRow = Record<string, unknown> & {

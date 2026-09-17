@@ -3,22 +3,22 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/app/supabase";
-import { rpcMarkSurgeryDay } from "../../../lib/ipdData";
+import { supabase } from "@/lib/supabase";
+import { rpcMarkSurgeryDay } from "@/lib/ipdData";
 import {
   practitionerPrimaryLine,
   searchPractitioners,
   type PractitionerRoleFilter,
   type PractitionerSearchRow,
-} from "../../../lib/ipdSearchPractitioners";
-import ProcedureSnomedSearchField from "../../../components/ProcedureSnomedSearchField";
+} from "@/lib/ipdSearchPractitioners";
+import ProcedureSnomedSearchField from "@/components/ProcedureSnomedSearchField";
 import TimeWheelPicker, {
   parseDbStartTimeTo12hDisplay,
   parseTime12h,
   time12hTo24hForDb,
-} from "../../../components/TimeWheelPicker";
-import OtRoomDropdown from "../../../components/OtRoomDropdown";
-import { PatientAvatar } from "@/src/components/patient/patient-avatar";
+} from "@/components/TimeWheelPicker";
+import OtRoomDropdown from "@/components/OtRoomDropdown";
+import { PatientAvatar } from "@/components/patient/patient-avatar";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";
 import { Label } from "../../../../components/ui/label";

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import PreAdmissionAssessmentPage from "@/app/components/ipd/PreAdmissionAssessmentPage";
+import PreAdmissionAssessmentPage from "@/components/ipd/PreAdmissionAssessmentPage";
 
 export default function IpdPreAdmissionRoutePage() {
   return (

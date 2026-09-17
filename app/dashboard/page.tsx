@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { fetchAuthOrgId } from "../lib/authOrg";
+import { fetchAuthOrgId } from "@/lib/authOrg";
 import {
   practitionerDisplayNameFromRow,
   practitionerRoleRawFromRow,
   practitionersOrFilterForAuthUid,
-} from "../lib/practitionerAuthLookup";
-import { parsePractitionerRoleColumn, type UserRole } from "../lib/userRole";
-import { DocPadLogoMark } from "../components/DocPadLogoMark";
-import { sx } from "../lib/supabaseAbort";
-import { supabase } from "../supabase";
+} from "@/lib/practitionerAuthLookup";
+import { parsePractitionerRoleColumn, type UserRole } from "@/lib/userRole";
+import { DocPadLogoMark } from "@/components/DocPadLogoMark";
+import { sx } from "@/lib/supabaseAbort";
+import { supabase } from "@/lib/supabase";
 
 function ClipboardListIcon({ className }: { className?: string }) {
   return (
