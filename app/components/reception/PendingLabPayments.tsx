@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { practitionersOrFilterForAuthUid } from "@/app/lib/practitionerAuthLookup";
 import { cn } from "@/lib/utils";
 

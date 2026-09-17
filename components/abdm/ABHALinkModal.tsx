@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { useABHALinking, type ABHALinkPatient } from "@/hooks/useABHALinking";
 
 export type AbdmPatientForLink = {

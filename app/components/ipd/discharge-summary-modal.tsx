@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import VoiceDictationButton from "@/app/components/VoiceDictationButton";
 import SnomedSearch, { type SnomedConcept } from "@/app/components/SnomedSearch";
 import { SNOMED_ECL_CLINICAL_FINDING } from "@/app/lib/ipdSnomedEcl";

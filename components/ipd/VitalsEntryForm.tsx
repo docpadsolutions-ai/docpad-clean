@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { parseBloodPressureText } from "../../app/lib/ipdNursingVitalsRanges";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";

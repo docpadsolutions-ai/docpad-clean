@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ChevronDown, Minus, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { cn } from "../../../../lib/utils";
 import { formatClinicalDate, patientFromAdmission, preAdmissionFrom } from "../../../lib/ipdAdmissionDisplay";

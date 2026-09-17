@@ -2,7 +2,7 @@ import { createBrowserClient } from "@supabase/ssr";
 
 /**
  * Browser Supabase client (anon key). Used by `app/supabase.ts`.
- * Uses @supabase/ssr so the session is synced to cookies for middleware (createServerClient).
+ * Uses @supabase/ssr so the session is synced to cookies for proxy.ts and route handlers.
  */
 export function createBrowserSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

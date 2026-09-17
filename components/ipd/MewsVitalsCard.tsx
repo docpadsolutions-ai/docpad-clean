@@ -2,7 +2,7 @@
 
 import { format, parseISO } from "date-fns";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import {
   cellAccentForScore,
   chipClassesForScore,

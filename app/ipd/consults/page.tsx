@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { formatRequestedAgo, rpcGetMyPendingConsults, rpcRespondToConsult } from "@/app/lib/ipdConsults";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";

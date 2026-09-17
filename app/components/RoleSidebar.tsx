@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { ConciergeBell, Stethoscope } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useState, type ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { unwrapRpcArray } from "../lib/ipdConsults";
 import { DocPadLogoMark } from "./DocPadLogoMark";
 import { NotificationBell } from "./NotificationBell";

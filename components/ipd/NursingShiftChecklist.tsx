@@ -26,7 +26,7 @@ import {
   Syringe,
   X,
 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { MANUAL_TASK_CATEGORY_OPTIONS, type NursingTaskCategoryDb } from "./nursing/NursingTaskQueue";
 import { NursingTaskCompleteModal, type NursingTaskForCompletion } from "./nursing/NursingTaskCompleteModal";
 import TimeWheelPicker, { time12hTo24hForDb, time24hTo12hDisplay } from "@/app/components/TimeWheelPicker";

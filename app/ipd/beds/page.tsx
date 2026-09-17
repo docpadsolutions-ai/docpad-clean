@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { fetchAuthOrgId } from "@/app/lib/authOrg";
 import {
   fetchBedAvailability,

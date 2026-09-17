@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronRight, ClipboardCopy, Mic, ScanLine } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { IPD_DEFAULT_HOSPITAL_ID } from "@/app/lib/ipdConstants";
 import {
   type IpdPreAdmissionAssessmentInsert,

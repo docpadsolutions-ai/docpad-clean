@@ -5,7 +5,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { toast } from "sonner";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { practitionersOrFilterForAuthUid } from "@/app/lib/practitionerAuthLookup";
 
 dayjs.extend(relativeTime);

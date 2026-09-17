@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Check, Stethoscope } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { formatNotificationRelativeTime, useNotificationCounts } from "@/app/hooks/useNotifications";
 import { cn } from "@/lib/utils";
 

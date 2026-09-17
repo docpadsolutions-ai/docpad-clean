@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { IPD_ADMISSION_CONSENT_CATALOG } from "./ipdConsentCatalog";
 import { devBypassIpdConsents, IPD_DEFAULT_HOSPITAL_ID } from "../../lib/ipdConstants";
 import {

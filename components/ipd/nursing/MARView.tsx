@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Check, ChevronRight, Loader2, Minus, Pause, X } from "lucide-react";
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
 import { Label } from "../../ui/label";

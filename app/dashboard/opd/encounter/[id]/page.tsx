@@ -14,7 +14,7 @@ import {
   practitionersOrFilterForAuthUid,
 } from "../../../../lib/practitionerAuthLookup";
 import { parsePractitionerRoleColumn, type UserRole } from "../../../../lib/userRole";
-import { supabase } from "../../../../../lib/supabaseClient";
+import { supabase } from "@/app/supabase";
 import { createEncounterFromAppointment } from "../../../../lib/opdEncounterFromAppointment";
 import { DocPadLogoMark } from "../../../../components/DocPadLogoMark";
 import { PermissionSurface } from "../../../../components/PermissionGate";

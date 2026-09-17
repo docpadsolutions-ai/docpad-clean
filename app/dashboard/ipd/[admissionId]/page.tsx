@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, CheckCircle2, ClipboardList, FileText, Paperclip, Pill, Stethoscope, X } from "lucide-react";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import IpdDailyNotesWorkspace from "./IpdDailyNotesWorkspace";
 import {
   normalizeIpdAdmissionBundle,

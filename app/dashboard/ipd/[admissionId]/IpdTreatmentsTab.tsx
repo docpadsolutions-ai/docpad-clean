@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addDays, formatDistanceToNow, parseISO, isValid } from "date-fns";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, MoreVertical, Pill, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";

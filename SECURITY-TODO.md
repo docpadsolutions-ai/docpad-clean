@@ -26,11 +26,11 @@ After rotating, update **both** `.env.local` and the Vercel project env vars.
 Supabase → Authentication → Policies → enable "Leaked password protection"
 (checks new passwords against HaveIBeenPwned). One toggle; no API for it.
 
-## 4. Push the two commits
+## 4. Push the commits
 
 ```bash
 cd ~/docpad-clean
-git log --oneline -2     # 46c3d51 snapshot, a4ccdac security fixes
+git log --oneline -5     # snapshot, security fixes, audit trail, tests/CI
 git push origin main
 ```
 
@@ -38,7 +38,14 @@ The sandbox has no GitHub credentials, so this has to run on your Mac. The
 first commit is the months of uncommitted work — push it even if you want to
 review the second one first.
 
-## 5. Smoke-test while signed in (30 minutes, worth doing before anything else)
+## 5. Add one GitHub secret (optional, 2 minutes)
+
+`SUPABASE_DB_URL` (Supabase → Project Settings → Database → Connection string → URI,
+session pooler) in the repo's Actions secrets. That switches on the nightly
+`Database isolation tests` workflow, which asserts no hospital can see another's data.
+Without the secret that workflow skips itself; the typecheck/lint/build workflow runs either way.
+
+## 6. Smoke-test while signed in (30 minutes, worth doing before anything else)
 
 I could not reach Supabase from the sandbox, so these paths are verified by
 SQL and by unit-level checks only, not by clicking through the app:

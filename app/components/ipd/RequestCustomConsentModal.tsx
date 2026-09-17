@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { Button } from "../../../components/ui/button";
 
 const CARD_BG = "bg-white";

@@ -28,7 +28,7 @@ function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -118,7 +118,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   /**
-   * Public auth routes must be matched so middleware can skip RBAC (otherwise a broad matcher could block them).
+   * Public auth routes must be matched so the proxy can skip RBAC (otherwise a broad matcher could block them).
    * Protected app areas still run session + role checks below.
    */
   matcher: [

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Lock, Plus, X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { useDebouncedValue } from "@/app/hooks/useDebouncedValue";
 import {
   acknowledgeCriticalInvestigation,

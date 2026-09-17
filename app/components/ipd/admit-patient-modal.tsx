@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { duplicateActiveAdmissionMessage, parseAdmitPatientRpcResult } from "@/app/lib/ipdData";
 import {
   patientIdsWithSimilarNamePeer,

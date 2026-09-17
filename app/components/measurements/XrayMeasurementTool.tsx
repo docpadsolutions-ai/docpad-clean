@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { fetchXrayMeasurementsForEncounter, upsertXrayMeasurement } from "@/app/lib/xrayMeasurementRpc";
 import { XRAY_PRESETS, presetsForSpecialty, type XrayPreset } from "./xray-presets";
 import type {

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { fetchAuthOrgId } from "@/app/lib/authOrg";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { cn } from "@/lib/utils";
 
 type TestRow = {

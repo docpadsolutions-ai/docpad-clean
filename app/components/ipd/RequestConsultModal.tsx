@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, X } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/app/supabase";
 import { fetchClinicalDepartmentsForHospital } from "@/app/lib/clinicalDepartments";
 import { rpcGetDoctorsByDepartment, rpcRequestConsult } from "@/app/lib/ipdConsults";
 import VoiceDictationButton from "@/app/components/VoiceDictationButton";

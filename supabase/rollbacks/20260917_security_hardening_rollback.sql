@@ -90,3 +90,35 @@ end $$;
 -- create policy authenticated_upload_investigation_reports on storage.objects for insert to authenticated with check (bucket_id = 'investigation-reports');
 -- create policy wound_photos_read on storage.objects for select to public using (bucket_id = 'wound-photos' and auth.role() = 'authenticated');
 -- create policy wound_photos_upload on storage.objects for insert to public with check (bucket_id = 'wound-photos' and auth.role() = 'authenticated');
+
+-----------------------------------------------------------------------------------------------
+-- H. audit trail (20260917173916 / 20260917174035)
+-----------------------------------------------------------------------------------------------
+-- do $$ declare t record; begin
+--   for t in select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
+--            join pg_trigger tg on tg.tgrelid = c.oid and tg.tgname = 'zz_audit_row'
+--            where n.nspname='public' loop
+--     execute format('drop trigger if exists zz_audit_row on public.%I', t.relname);
+--   end loop; end $$;
+-- select cron.unschedule('audit-logs-retention');
+-- do $$ declare f record; def text; begin
+--   for f in select oid from pg_proc where prosrc like '%log_phi_read%' and proname <> 'log_phi_read' loop
+--     def := pg_get_functiondef(f.oid);
+--     def := regexp_replace(def, E'\\n  perform public\\.log_phi_read\\([^;]*\\);', '', 'g');
+--     def := regexp_replace(def, E'\\nselect public\\.log_phi_read\\([^;]*\\);', '', 'g');
+--     execute def;
+--   end loop; end $$;
+-- create policy audit_insert on public.audit_logs for insert to authenticated with check (hospital_id = auth_org());
+-- alter policy audit_select on public.audit_logs to authenticated using (hospital_id = auth_org());
+
+-----------------------------------------------------------------------------------------------
+-- I. cleanup migration (20260917174316) - templates, dropped column, dropped overloads
+-----------------------------------------------------------------------------------------------
+-- The dropped overloads and practitioners.security_answer are not restorable from here; recreate
+-- them from git history if they turn out to be needed.
+-- drop policy rx_templates_select on public.rx_templates; ... and recreate:
+-- create policy authenticated_select on public.rx_templates for select to authenticated using (true);
+-- create policy authenticated_insert on public.rx_templates for insert to authenticated with check (true);
+-- create policy authenticated_update on public.rx_templates for update to authenticated using (true) with check (true);
+-- create policy authenticated_delete on public.rx_templates for delete to authenticated using (true);
+-- alter policy authenticated_select on public.medication_proposals using (true);

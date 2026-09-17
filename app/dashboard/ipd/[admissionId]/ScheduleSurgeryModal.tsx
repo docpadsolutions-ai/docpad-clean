@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { rpcMarkSurgeryDay } from "../../../lib/ipdData";
 import {
   practitionerPrimaryLine,

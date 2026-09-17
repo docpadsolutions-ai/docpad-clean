@@ -19,7 +19,7 @@ import {
   YAxis,
 } from "recharts";
 import { toast } from "sonner";
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "@/app/supabase";
 import { cn } from "../../../lib/utils";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";

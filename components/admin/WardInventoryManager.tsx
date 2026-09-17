@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { fetchAuthOrgId } from "../../app/lib/authOrg";
 import { practitionersOrFilterForAuthUid } from "../../app/lib/practitionerAuthLookup";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase } from "@/app/supabase";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";

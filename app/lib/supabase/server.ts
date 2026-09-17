@@ -23,7 +23,7 @@ export async function createSupabaseServer(): Promise<SupabaseClient | null> {
         try {
           cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
         } catch {
-          // Called from a context where cookies are read-only; the session refresh is handled by middleware.
+          // Called from a context where cookies are read-only; the session refresh is handled by proxy.ts.
         }
       },
     },
