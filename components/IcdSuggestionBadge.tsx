@@ -38,7 +38,15 @@ const ERROR_TEXT: Record<string, string> = {
   parse_failed: "the AI returned an unreadable answer",
   incomplete_suggestion: "the AI could not settle on a code",
   unhandled: "the coding service hit an unexpected error",
+  answer_truncated: "the AI ran out of room before answering",
+  empty_answer: "the AI returned nothing",
 };
+
+/**
+ * Not a failure: the model looked at the candidates and declined, which is the
+ * right answer when nothing fits. Shown quietly rather than in red.
+ */
+const SOFT_CODES = new Set(["no_confident_match", "missing_clinical_note"]);
 
 function humanError(code: string): string {
   return ERROR_TEXT[code] ?? code;
@@ -48,6 +56,7 @@ export default function IcdSuggestionBadge({ clinicalNote, readOnly = false, onA
   const [suggestion, setSuggestion] = useState<Icd10Suggestion | null>(null);
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorIsSoft, setErrorIsSoft] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,6 +83,7 @@ export default function IcdSuggestionBadge({ clinicalNote, readOnly = false, onA
     debounceRef.current = setTimeout(() => {
       lastNoteRef.current = note;
       setError(null);
+      setErrorIsSoft(false);
       setIsPending(true);
 
       void (async () => {
@@ -97,13 +107,17 @@ export default function IcdSuggestionBadge({ clinicalNote, readOnly = false, onA
                 .catch(() => null)) as { error?: unknown } | null;
               code = body?.error != null ? String(body.error) : null;
             }
+            setErrorIsSoft(code != null && SOFT_CODES.has(code));
             throw new Error(humanError(code ?? (fnErr as Error).message));
           }
 
           const d = data as Record<string, unknown> | null;
           if (!d?.success) {
-            throw new Error(humanError(String(d?.error ?? "edge_error")));
+            const code = String(d?.error ?? "edge_error");
+            setErrorIsSoft(SOFT_CODES.has(code));
+            throw new Error(humanError(code));
           }
+          setErrorIsSoft(false);
 
           setSuggestion({
             code: String(d.code ?? ""),
@@ -170,9 +184,16 @@ export default function IcdSuggestionBadge({ clinicalNote, readOnly = false, onA
             <div className="h-3 w-3/4 animate-pulse rounded bg-blue-100/60" />
           </div>
         ) : error ? (
-          <p className="text-[11px] text-red-400">
-            Could not suggest a code — {error}. Try adding more clinical detail.
-          </p>
+          errorIsSoft ? (
+            <p className="text-[11px] text-slate-500">
+              No ICD-10 code confidently fits this note yet. Add the site, side or cause
+              and it will try again.
+            </p>
+          ) : (
+            <p className="text-[11px] text-red-400">
+              Could not suggest a code - {error}. Try adding more clinical detail.
+            </p>
+          )
         ) : suggestion ? (
           <div className="space-y-2">
             {/* Code + description row */}

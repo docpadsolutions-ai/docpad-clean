@@ -112,9 +112,13 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    // Hybrid retrieval: vector neighbours plus full-text matches on the description.
+    // Dense search alone returns burns and prosthetic-wear codes for "pain of knee
+    // region", and nothing sensible at all for a one-word diagnosis.
     const { data: candidates, error: rpcErr } = await supabase.rpc("search_icd10", {
       query_embedding: queryEmbedding,
-      match_count: 10,
+      match_count: 12,
+      p_query_text: clinical_note,
     });
 
     if (rpcErr || !Array.isArray(candidates) || candidates.length === 0) {
@@ -126,9 +130,16 @@ Deno.serve(async (req: Request) => {
     const prompt = `You are a medical billing expert. Given a clinical note and candidate ICD-10 codes, pick the single most specific BILLABLE code.
 
 Rules:
+- The code must be supported by the note. Never introduce a mechanism or cause the
+  note does not state: do not choose a burn, fracture, injury, poisoning, prosthesis,
+  post-procedural or "sequela" code unless the note actually says so. Candidates are
+  retrieved by similarity and routinely include codes like this that do not apply.
 - Prefer billable leaf codes (e.g. M17.11) over category codes (e.g. M17)
-- Laterality matters: if the note says "Right" pick Right, never Unspecified
+- Laterality: if the note says "Right" pick Right. If the note does not say a side,
+  pick the unspecified-side code rather than guessing one.
 - If multiple conditions are mentioned, pick the most clinically significant one
+- If no candidate genuinely fits the note, return an empty string for "code" and say
+  why in "reasoning". A wrong code is worse than no code.
 - Return ONLY valid JSON, no markdown, no explanation outside the JSON
 
 Clinical Note: "${clinical_note}"
@@ -215,7 +226,12 @@ Return JSON exactly like this:
       return json({ success: false, error: "parse_failed" }, 500);
     }
 
-    if (!suggestion.code || !suggestion.description) {
+    // The model is allowed to decline; that is a better answer than a code the note
+    // does not support, and the UI shows it quietly rather than as a failure.
+    if (!String(suggestion.code ?? "").trim()) {
+      return json({ success: false, error: "no_confident_match" }, 200);
+    }
+    if (!suggestion.description) {
       return json({ success: false, error: "incomplete_suggestion" }, 500);
     }
 
