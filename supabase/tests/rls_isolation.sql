@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(20);
+select plan(23);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -140,6 +140,36 @@ insert into tap select cmp_ok((select count(*)::int from audit_logs
 
 insert into tap select cmp_ok((select count(*) filter (where action='READ') from audit_logs)::int, '>',
   (select reads from t_audit_before)::int, 'opening a chart writes a READ entry');
+
+-- ----------------------------------------------------------------- audit log is append-only (SOW 2.1)
+insert into audit_logs (hospital_id, action, resource_type) values (null, 'TAP_TEST', 'tap');
+
+insert into tap select throws_ok(
+  'update audit_logs set action = ''TAMPERED'' where action = ''TAP_TEST''',
+  '42501', null, 'audit entries cannot be updated, even by the owner');
+
+insert into tap select throws_ok(
+  'delete from audit_logs where action = ''TAP_TEST''',
+  '42501', null, 'audit entries cannot be deleted, even by the owner');
+
+-- ----------------------------------------------------------------- prescribing safety (SOW 2.2)
+create temp table t_rx as
+select e.id as encounter_id, e.patient_id
+from opd_encounters e
+where e.hospital_id = (select a_hospital from t_ab) and e.patient_id is not null
+limit 1;
+
+insert into prescriptions (encounter_id, patient_id, medicine_name, active_ingredient_name,
+                           dosage, frequency, duration, status, created_at)
+select encounter_id, patient_id, 'TAP ACTIVE DRUG', 'Ciprofloxacin', '500mg', 'BD', '5 days', 'dispensed', now()
+from t_rx;
+
+insert into tap select cmp_ok(
+  json_array_length(
+    pg_temp.as_user((select a_user from t_ab),
+      format('select public.check_prescription_safety(%L, %L::jsonb)', (select patient_id from t_rx),
+             '[{"medicine_name":"TAP NEW BRAND","generic_name":"Ciprofloxacin"}]'))::json -> 'duplicates')::int,
+  '>', 0, 'prescribing the same generic again raises duplicate therapy');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';

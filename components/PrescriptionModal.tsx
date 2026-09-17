@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import { usePrescription } from "@/hooks/usePrescription";
+import {
+  findAllergyConflicts,
+  isHardStopSeverity,
+  usePrescriptionSafety,
+  type ActiveMedication,
+  type ReconciliationAction,
+} from "@/hooks/usePrescriptionSafety";
+import ActiveMedicationsPanel from "@/components/prescribing/ActiveMedicationsPanel";
+import PrescribingSafetyBanner from "@/components/prescribing/PrescribingSafetyBanner";
 import type { CatalogEntry } from "@/lib/medicineCatalog";
 import { formatAbdmMedicationLabel, medicineCatalog } from "@/lib/medicineCatalog";
 import {
@@ -614,8 +623,68 @@ export default function PrescriptionModal({
   const handlePrint    = useReactToPrint({ contentRef: printRef });
   const wasModalOpenRef = useRef(false);
 
-  /** Reserved for drug–drug interaction checks; wire to interaction data when available. */
-  const drugDrugInteractionWarnings: string[] = [];
+  /** SOW §2.2 — active medications, interaction check across active + new, duplicate therapy. */
+  const safetyMedicines = useMemo(
+    () =>
+      addedMedicines.map((line) => ({
+        medicine_name: formatAbdmMedicationLabel(line.catalog),
+        generic_name: (line.catalog.generic_name ?? line.catalog.active_ingredient ?? "").trim() || null,
+      })),
+    [addedMedicines],
+  );
+  const {
+    activeMedications,
+    interactions: ddiWarnings,
+    duplicates: duplicateTherapyWarnings,
+    loading: safetyLoading,
+  } = usePrescriptionSafety({
+    patientId,
+    encounterId,
+    medicines: safetyMedicines,
+    enabled: isOpen && rxView,
+  });
+  const allergyConflicts = useMemo(
+    () => findAllergyConflicts(safetyMedicines, allergies.map((a) => toDisplay(a)).filter(Boolean)),
+    [safetyMedicines, allergies],
+  );
+  /** Hard stops block finalisation; moderate and mild interactions are advisory only. */
+  const prescribingHardStop =
+    allergyConflicts.length > 0 || ddiWarnings.some((w) => isHardStopSeverity(w.severity));
+  const [reconciliationDecisions, setReconciliationDecisions] = useState<
+    Record<string, { action: ReconciliationAction; medicine_name: string; generic_name: string | null }>
+  >({});
+
+  const handleReconciliationDecision = useCallback(
+    (medication: ActiveMedication, action: ReconciliationAction) => {
+      setReconciliationDecisions((prev) => ({
+        ...prev,
+        [medication.prescription_id]: {
+          action,
+          medicine_name: medication.medicine_name,
+          generic_name: medication.generic_name,
+        },
+      }));
+    },
+    [],
+  );
+
+  const persistMedicationReconciliation = useCallback(
+    async (eid: string) => {
+      const items = Object.entries(reconciliationDecisions).map(([prescriptionId, decision]) => ({
+        prescription_id: prescriptionId,
+        medicine_name: decision.medicine_name,
+        generic_name: decision.generic_name,
+        action: decision.action,
+      }));
+      if (items.length === 0) return;
+      const { error } = await supabase.rpc("record_medication_reconciliation", {
+        p_encounter_id: eid,
+        p_items: items,
+      });
+      if (error) console.warn("record_medication_reconciliation:", error.message);
+    },
+    [reconciliationDecisions],
+  );
 
   type InlineDraftState = { line: PrescriptionLine; isNew: boolean; variant: "catalog" | "manual" };
   const [inlineDraft, setInlineDraft] = useState<InlineDraftState | null>(null);
@@ -1340,6 +1409,7 @@ export default function PrescriptionModal({
 
     const fuErr = await persistEncounterFollowUp(eid, followUpDate ?? null);
     if (fuErr) console.warn("Could not persist follow-up on encounter:", fuErr);
+    await persistMedicationReconciliation(eid);
 
     const invErr = await deductHospitalInventoryForPrescription(addedMedicines, sessionOrgId);
     if (invErr) console.error("hospital_inventory deduction:", invErr);
@@ -1424,6 +1494,7 @@ export default function PrescriptionModal({
       }
       const fuErr = await persistEncounterFollowUp(encounterId, followUpDate ?? null);
       if (fuErr) console.warn("Could not persist follow-up on encounter:", fuErr);
+      await persistMedicationReconciliation(encounterId);
       const invErr = await deductHospitalInventoryForPrescription(addedMedicines, sessionOrgId);
       if (invErr) console.error("hospital_inventory deduction:", invErr);
       if (userId) void persistMedicationHistoryAfterSave(userId);
@@ -1932,6 +2003,23 @@ export default function PrescriptionModal({
                 </div>
               ) : null}
 
+              <div className="mb-3 flex flex-col gap-2">
+                <ActiveMedicationsPanel
+                  medications={activeMedications}
+                  decisions={Object.fromEntries(
+                    Object.entries(reconciliationDecisions).map(([id, d]) => [id, d.action]),
+                  )}
+                  onDecision={handleReconciliationDecision}
+                  loading={safetyLoading}
+                  disabled={!rxEdit || isPrescriptionFinal}
+                />
+                <PrescribingSafetyBanner
+                  interactions={ddiWarnings}
+                  duplicates={duplicateTherapyWarnings}
+                  allergyConflicts={allergyConflicts}
+                />
+              </div>
+
               {addedMedicines.length === 0 && !inlineDraft ? (
                 <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-8 text-center">
                   <PillIcon className="mx-auto h-8 w-8 text-gray-300" />
@@ -2072,14 +2160,18 @@ export default function PrescriptionModal({
                 className="print:hidden"
               />
             ) : null}
-            {drugDrugInteractionWarnings.length > 0 ? (
+            {ddiWarnings.length > 0 ? (
               <AlertBanner
-                severity="high"
-                title="Potential drug–drug interactions"
+                severity={ddiWarnings.some((w) => isHardStopSeverity(w.severity)) ? "high" : "medium"}
+                title="Potential drug-drug interactions"
                 body={
                   <ul className="list-inside list-disc space-y-0.5">
-                    {drugDrugInteractionWarnings.map((w) => (
-                      <li key={w}>{w}</li>
+                    {ddiWarnings.map((w, i) => (
+                      <li key={`${w.drug_a}-${w.drug_b}-${i}`}>
+                        <span className="font-semibold capitalize">{w.severity}</span>: {w.drug_a} + {w.drug_b}
+                        {w.involves_active ? " (already taking)" : ""}
+                        {w.description ? ` — ${w.description}` : ""}
+                      </li>
                     ))}
                   </ul>
                 }
@@ -2564,6 +2656,7 @@ export default function PrescriptionModal({
                   disabled={
                     isSaving ||
                     isPrescriptionFinal ||
+                    prescribingHardStop ||
                     (whatsappNotificationsEnabled && isSendingWhatsApp) ||
                     addedMedicines.length === 0 ||
                     Boolean(inlineDraft)
@@ -2579,6 +2672,7 @@ export default function PrescriptionModal({
                   disabled={
                     isSaving ||
                     isPrescriptionFinal ||
+                    prescribingHardStop ||
                     (whatsappNotificationsEnabled && isSendingWhatsApp) ||
                     addedMedicines.length === 0 ||
                     Boolean(inlineDraft)
@@ -2595,6 +2689,7 @@ export default function PrescriptionModal({
                     disabled={
                       isSaving ||
                       isPrescriptionFinal ||
+                      prescribingHardStop ||
                       isSendingWhatsApp ||
                       addedMedicines.length === 0 ||
                       !patientPhone ||
