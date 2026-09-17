@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { recordPatientConsent, type ConsentPurpose } from "@/lib/dpdpa";
 
 export function generateDocpadId(): string {
   return `DCP-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -14,6 +15,8 @@ export type NewPatientFormValues = {
   aadhaarSha256Hex: string | null;
   abhaId: string;
   consentGiven: boolean;
+  /** Purposes the patient agreed to. 'treatment' is implied by consentGiven. */
+  consentPurposes?: ConsentPurpose[];
   addr1: string;
   addr2: string;
   city: string;
@@ -36,7 +39,9 @@ export type RegisteredPatientRow = {
 export async function registerNewPatient(
   values: NewPatientFormValues,
   orgId: string | null,
-): Promise<{ ok: true; patient: RegisteredPatientRow } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; patient: RegisteredPatientRow; warning?: string } | { ok: false; error: string }
+> {
   const first = values.firstName.trim();
   const last = values.lastName.trim();
   if (!first) return { ok: false, error: "First name is required." };
@@ -85,8 +90,21 @@ export async function registerNewPatient(
   const id = patientData?.id != null ? String(patientData.id) : "";
   if (!id) return { ok: false, error: "Patient was created but no id was returned." };
 
+  // DPDP Act: write down what was consented to, rather than only gating the form
+  // on a checkbox. A failure here must not lose the patient who is standing at
+  // the desk, so it comes back as a warning for the caller to surface.
+  const purposes: ConsentPurpose[] = Array.from(
+    new Set<ConsentPurpose>(["treatment", ...(values.consentPurposes ?? [])]),
+  );
+  const consentErr = await recordPatientConsent(id, purposes, {
+    method: "verbal",
+    givenByName: fullName,
+    givenByRelation: "self",
+  });
+
   return {
     ok: true,
+    warning: consentErr ? `Patient registered, but the consent record was not saved: ${consentErr}` : undefined,
     patient: {
       id,
       full_name: String(patientData?.full_name ?? fullName),

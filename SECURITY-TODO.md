@@ -122,3 +122,21 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
 It answers with how many bookings it would have messaged. Every real send is recorded in
 `appointment_reminders`, and the job skips anything already recorded, so a double-fired
 cron cannot message a patient twice.
+
+---
+
+## 9. Publish a grievance officer (DPDP Act s.13)
+
+The consent register, the grievance register and the correction workflow are live, but the
+hospital has no grievance officer on record yet, so the registration form tells staff so and
+the patient-facing contact line is blank. An admin fills it in once, under **Privacy & data
+rights** (`/data-rights`): name, phone, email, and how many years records are kept.
+
+Two things worth knowing:
+
+- Patients registered before today have no consent row. Nothing was stored at the time, so
+  back-filling one would be inventing evidence. Take consent at their next visit — the panel on
+  each patient's privacy page records it in a few clicks.
+- A correction can only change demographic fields (name, phone, date of birth, sex, blood group,
+  address, ABHA address). Clinical content is deliberately not correctable this way; an amendment
+  to a clinical record should be a new entry, not an overwrite.

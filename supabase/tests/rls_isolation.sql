@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(34);
+select plan(40);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -258,6 +258,57 @@ insert into tap select is(
                    ->> 'already_checked_in'$q$,
            (select encounter_id from t_fu))),
   'true', 'checking the same booking in twice does not open a second entry');
+
+-- ----------------------------------------------------------------- DPDP consent & data rights (SOW 2.3)
+create temp table t_dp as
+select id as patient_id from patients where hospital_id = (select a_hospital from t_ab) limit 1;
+
+insert into tap select isnt(
+  pg_temp.as_user_err((select b_user from t_ab),
+    format($q$select public.record_patient_consent(%L, array['treatment'])$q$,
+           (select patient_id from t_dp))),
+  'none', 'consent cannot be recorded against another hospital patient');
+
+select pg_temp.as_user((select a_user from t_ab),
+  format($q$select public.record_patient_consent(%L, array['treatment', 'billing_insurance'])::text$q$,
+         (select patient_id from t_dp)));
+
+insert into tap select is(
+  (select count(*)::int from patient_consents
+    where patient_id = (select patient_id from t_dp) and status = 'given'),
+  2, 'each consented purpose is recorded separately');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select json_array_length(public.get_patient_consent_register(%L) -> 'consents')::text$q$,
+           (select patient_id from t_dp))),
+  '2', 'the per-patient register returns what was recorded');
+
+select pg_temp.as_user((select a_user from t_ab),
+  format($q$select public.raise_data_principal_request(%L, 'correction', 'TAP correction')::text$q$,
+         (select patient_id from t_dp)));
+
+insert into tap select isnt(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$select public.apply_patient_correction(
+                     (select id from data_principal_requests where patient_id = %L limit 1),
+                     'aadhaar_hash', 'x')$q$,
+           (select patient_id from t_dp))),
+  'none', 'a correction cannot touch a field outside the allowed list');
+
+select pg_temp.as_user((select a_user from t_ab),
+  format($q$select public.apply_patient_correction(
+                   (select id from data_principal_requests where patient_id = %L limit 1),
+                   'city', 'TAP City')::text$q$,
+         (select patient_id from t_dp)));
+
+insert into tap select is(
+  (select city from patients where id = (select patient_id from t_dp)),
+  'TAP City', 'an approved correction is written through to the patient record');
+
+insert into tap select cmp_ok(
+  (select count(*)::int from audit_logs where resource_type = 'data_principal_requests'),
+  '>', 0, 'the request register is itself audited');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';

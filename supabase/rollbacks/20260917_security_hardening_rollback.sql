@@ -184,3 +184,31 @@ end $$;
 -- drop function if exists public.record_appointment_reminder(uuid, text, text, text, text, text);
 -- drop function if exists public.due_appointment_reminders(text, uuid);
 -- drop table if exists public.appointment_reminders;
+
+-----------------------------------------------------------------------------------------------
+-- M. DPDP consent register and data principal rights (20260917191430, 20260917191659)
+-----------------------------------------------------------------------------------------------
+-- Dropping these tables destroys the record of what patients consented to and of every request
+-- and complaint they made - that record is the compliance artefact, so keep it unless the whole
+-- feature is being removed.
+-- drop function if exists public.list_data_principal_requests(text, int);
+-- drop function if exists public.update_grievance_officer(text, text, text, text, text, int);
+-- drop function if exists public.get_grievance_officer(uuid);
+-- drop function if exists public.apply_patient_correction(uuid, text, text);
+-- drop function if exists public.review_data_principal_request(uuid, text, text);
+-- drop function if exists public.raise_data_principal_request(uuid, text, text, text, text, text, text, text);
+-- drop function if exists public.get_patient_consent_register(uuid);
+-- drop function if exists public.withdraw_patient_consent(uuid, text);
+-- drop function if exists public.record_patient_consent(uuid, text[], text, text, text);
+-- drop table if exists public.data_principal_requests;
+-- drop table if exists public.patient_consents;
+-- alter table public.hospitals drop column if exists grievance_officer_name,
+--   drop column if exists grievance_officer_email, drop column if exists grievance_officer_phone,
+--   drop column if exists privacy_notice_url, drop column if exists privacy_notice_version,
+--   drop column if exists data_retention_years;
+
+-----------------------------------------------------------------------------------------------
+-- N. pinned search_path on two helpers (20260917192250)
+-----------------------------------------------------------------------------------------------
+-- alter function public._duration_to_days(text) reset search_path;
+-- alter function public._uuid_or_null(text) reset search_path;

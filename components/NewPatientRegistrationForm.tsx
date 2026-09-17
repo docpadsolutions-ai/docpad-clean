@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { abhaSendOtp, abhaVerifyOtp } from "@/lib/abhaEnrollment";
 import {
   INDIAN_STATES,
@@ -8,6 +8,12 @@ import {
   registerNewPatient,
   type NewPatientFormValues,
 } from "@/lib/registerNewPatient";
+import {
+  CONSENT_PURPOSES,
+  getGrievanceOfficer,
+  type ConsentPurpose,
+  type GrievanceOfficer,
+} from "@/lib/dpdpa";
 import { hashAadhaar, normalizeAadhaarDigits } from "@/lib/patientIdentity";
 import { supabase } from "@/lib/supabase";
 
@@ -124,6 +130,7 @@ function buildValues(
   aadhaarSha256Hex: string | null,
   abhaId: string,
   consentGiven: boolean,
+  consentPurposes: ConsentPurpose[],
   addr1: string,
   addr2: string,
   city: string,
@@ -141,6 +148,7 @@ function buildValues(
     aadhaarSha256Hex,
     abhaId,
     consentGiven,
+    consentPurposes,
     addr1,
     addr2,
     city,
@@ -181,6 +189,8 @@ export function NewPatientRegistrationForm({
   const [gender, setGender] = useState("");
   const [phone, setPhone] = useState("");
   const [consentGiven, setConsentGiven] = useState(false);
+  const [consentPurposes, setConsentPurposes] = useState<ConsentPurpose[]>([]);
+  const [officer, setOfficer] = useState<GrievanceOfficer | null>(null);
   const [addr1, setAddr1] = useState("");
   const [addr2, setAddr2] = useState("");
   const [city, setCity] = useState("");
@@ -323,6 +333,7 @@ export function NewPatientRegistrationForm({
         aadhaarHashHex,
         abhaId,
         consentGiven,
+        consentPurposes,
         addr1,
         addr2,
         city,
@@ -339,8 +350,20 @@ export function NewPatientRegistrationForm({
       return;
     }
     setAadhaarRawEphemeral(null);
+    if (result.warning) setSubmitError(result.warning);
     onSuccess(result.patient);
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const o = await getGrievanceOfficer();
+      if (!cancelled) setOfficer(o);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stepLabel =
     regStep === "aadhaar_check" ? "1 — Aadhaar" : regStep === "abha_otp" ? "2 — ABHA OTP" : "3 — Patient details";
@@ -620,18 +643,67 @@ export function NewPatientRegistrationForm({
               </div>
             )}
 
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={consentGiven}
-                onChange={(e) => setConsentGiven(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-blue-600"
-              />
-              <span className="text-sm text-gray-700">
-                Patient has given consent to store and process their data in DocPad as per DPDP Act 2023.
-                <span className="ml-1 text-red-500">*</span>
-              </span>
-            </label>
+            <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+              <p className="text-sm font-semibold text-gray-900">
+                Consent under the DPDP Act 2023
+              </p>
+              <p className="mt-1 text-xs text-gray-600">
+                Read these out to the patient and tick what they agree to. Each one is recorded
+                separately and can be withdrawn later from their record.
+              </p>
+
+              <label className="mt-3 flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={consentGiven}
+                  onChange={(e) => setConsentGiven(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-blue-600"
+                />
+                <span className="text-sm text-gray-800">
+                  <span className="font-medium">{CONSENT_PURPOSES[0].label}</span>
+                  <span className="ml-1 text-red-500">*</span>
+                  <span className="block text-xs text-gray-600">{CONSENT_PURPOSES[0].description}</span>
+                </span>
+              </label>
+
+              {CONSENT_PURPOSES.slice(1).map((p) => (
+                <label key={p.key} className="mt-2.5 flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={consentPurposes.includes(p.key)}
+                    onChange={(e) =>
+                      setConsentPurposes((prev) =>
+                        e.target.checked ? [...prev, p.key] : prev.filter((k) => k !== p.key),
+                      )
+                    }
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-blue-600"
+                  />
+                  <span className="text-sm text-gray-800">
+                    <span className="font-medium">{p.label}</span>
+                    <span className="block text-xs text-gray-600">{p.description}</span>
+                  </span>
+                </label>
+              ))}
+
+              <div className="mt-3 border-t border-gray-200 pt-3 text-xs text-gray-600">
+                {officer?.name ? (
+                  <p>
+                    Questions or complaints about personal data go to{" "}
+                    <span className="font-medium text-gray-800">{officer.name}</span>
+                    {officer.phone ? `, ${officer.phone}` : ""}
+                    {officer.email ? `, ${officer.email}` : ""}.
+                    {officer.data_retention_years
+                      ? ` Records are kept for ${officer.data_retention_years} years.`
+                      : ""}
+                  </p>
+                ) : (
+                  <p className="text-amber-700">
+                    No grievance officer has been set for this hospital yet. The DPDP Act requires one
+                    to be published — an administrator can add it under Privacy &amp; data rights.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
