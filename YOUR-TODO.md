@@ -163,6 +163,29 @@ Still open from the Phase 1 SOW, all of them things I can do without you:
   run on every push, not just the isolation tests).
 - An OWASP-style review pass over the whole app.
 
+## 11. Finish the ICD-10 embeddings (one command, a few minutes)
+
+15,347 of the 73,790 codes were ingested without an embedding: all of chapters F
+(mental health), H (eye and ear), O (pregnancy), P (perinatal), Q (congenital), U, and
+V/W/X/Y (external causes). They are findable today only by wording, not by meaning, so
+"senile cataract" will not reach "age-related cataract".
+
+Run this in Terminal on your Mac, not in the Claude workspace, which has no internet:
+
+```bash
+cd ~/docpad-clean
+node scripts/backfill-icd10-embeddings.mjs --dry     # counts, embeds nothing
+node scripts/backfill-icd10-embeddings.mjs
+```
+
+It reads `.env.local` (all three values it needs are already there), has no
+dependencies, and is resumable: it only touches rows whose embedding is null, so if it
+stops or you interrupt it, just run it again. Roughly 300 calls to Google and a few
+minutes. Tell me when it finishes and I will re-check retrieval on the chapters that
+were missing.
+
+---
+
 ---
 
 ### Done today, for your own records
