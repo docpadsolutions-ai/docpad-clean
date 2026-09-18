@@ -137,6 +137,25 @@ async function writeEmbeddings(rows) {
 }
 
 // ---------------------------------------------------------------- gemini
+/**
+ * Which quota Google says we broke. The names end in PerMinute or PerDay, and the
+ * difference decides everything: a per-minute cap is something to pace around, a
+ * per-day cap means this cannot finish today at any pace.
+ */
+function quotaViolation(body) {
+  const details = body?.error?.details;
+  if (!Array.isArray(details)) return null;
+  for (const d of details) {
+    const violations = d?.violations;
+    if (!Array.isArray(violations)) continue;
+    for (const v of violations) {
+      const id = String(v?.quotaId ?? v?.quotaMetric ?? "");
+      if (id) return { id, value: v?.quotaValue ?? null };
+    }
+  }
+  return null;
+}
+
 /** Seconds Google asked us to wait, from the header or from error.details. */
 function retryAfterMs(res, body) {
   const header = res.headers.get("retry-after");
@@ -158,7 +177,7 @@ let streak = 0;
 
 function throttled(waited) {
   streak = 0;
-  gapMs = Math.min(Math.max(gapMs * 2, 1000, Math.round(waited / 4)), 20_000);
+  gapMs = Math.min(Math.max(gapMs * 2, 1000, Math.round(waited / 4)), 60_000);
 }
 
 function eased() {
@@ -220,11 +239,26 @@ async function embedBatch(texts) {
     }
 
     const asked = retryAfterMs(res, parsed);
+    const quota = res.status === 429 ? quotaViolation(parsed) : null;
+
+    // A daily cap is not something to wait out inside a loop.
+    if (quota && /PerDay/i.test(quota.id)) {
+      throw new Error(
+        `daily quota reached: ${quota.id}${quota.value ? ` (limit ${quota.value})` : ""}.\n` +
+          `  This will not finish today on the free tier. Either re-run after the quota\n` +
+          `  resets at midnight US Pacific, or enable billing on the Google Cloud project\n` +
+          `  behind this key - embedding the remaining codes is roughly 300k tokens, a\n` +
+          `  few cents at current embedding prices.`,
+      );
+    }
+
     const wait = Math.min(asked ?? 5000 * 2 ** (attempt - 1), MAX_BACKOFF_MS);
     if (res.status === 429) throttled(wait);
     process.stdout.write(
-      `\n  ${res.status === 429 ? "rate limited" : `server ${res.status}`}, waiting ${Math.round(wait / 1000)}s` +
-        `${asked ? " (Google asked)" : ""}, pacing at ${(gapMs / 1000).toFixed(1)}s/request\n`,
+      `\n  ${res.status === 429 ? "rate limited" : `server ${res.status}`}` +
+        `${quota ? ` on ${quota.id}${quota.value ? ` (limit ${quota.value})` : ""}` : ""}` +
+        `, waiting ${Math.round(wait / 1000)}s${asked ? " (Google asked)" : ""}` +
+        `, pacing at ${(gapMs / 1000).toFixed(1)}s/request\n`,
     );
     await sleep(wait);
   }
