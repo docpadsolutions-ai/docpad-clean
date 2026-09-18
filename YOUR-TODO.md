@@ -10,6 +10,36 @@ need from you before I can build them, 10 is optional.
 
 ---
 
+## Do these first — 18 Sep, end of session
+
+**A. Set the `SUPABASE_DB_URL` repository secret.** Two minutes, and it is now the
+highest-value thing on this list. There are 68 database assertions across two suites,
+including every clinical-safety rule built today, and without that secret CI skips all
+of them and the job passes green. A gate that cannot fail is not a gate. GitHub, repo
+Settings, Secrets and variables, Actions. The value is Supabase, Project Settings,
+Database, Connection string, URI, session pooler.
+
+**B. Seed the demo hospital.** On your Mac, because it needs the service-role key:
+
+```bash
+cd ~/docpad-clean
+node scripts/seed-demo-day.mjs --dry     # says what it would write, writes nothing
+node scripts/seed-demo-day.mjs
+```
+
+It creates one clearly-labelled demo hospital and touches nothing else. Sign-in details
+print at the end. `--reset` starts clean, `--destroy` removes it. This is what unblocks
+a staging environment, a demo, and the acceptance scenarios.
+
+**C. Decide on staging.** §5 requires acceptance testing to be performed on staging, so
+this blocks acceptance and not just deployment. I need you to create a second Supabase
+project and a Vercel preview target; I will wire the environment, run the seed into it
+and point CI at it. A free-tier project is enough for now.
+
+**D. Push.** 31 commits on `main` have never left your machine.
+
+---
+
 ## 1. Rotate two exposed keys
 
 | Key | Why | Where |
