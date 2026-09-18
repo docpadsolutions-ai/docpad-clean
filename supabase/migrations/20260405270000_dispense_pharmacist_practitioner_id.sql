@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405270000.
+
 -- p_pharmacist_id is practitioners.id where user_id = auth.uid() (not auth.users id).
 create or replace function public.dispense_prescription(
   p_prescription_id uuid,
@@ -77,6 +80,5 @@ begin
   end if;
 end;
 $$;
-
 comment on function public.dispense_prescription(uuid, integer, uuid, text) is
   'Mark prescription dispensed; p_pharmacist_id = practitioners.id where user_id = auth.uid() and hospital_id = auth_org().';

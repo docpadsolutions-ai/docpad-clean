@@ -1,15 +1,16 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260412180000.
+
 -- Row-level security for billing writes/reads scoped to the practitioner's hospital.
 -- Without INSERT (+ SELECT for RETURNING) policies, PostgREST inserts can fail or return empty errors in some clients.
 
 alter table public.invoices enable row level security;
 alter table public.charge_items enable row level security;
 alter table public.invoice_line_items enable row level security;
-
 -- invoices
 drop policy if exists "invoices_select_practitioner_hospital" on public.invoices;
 drop policy if exists "invoices_insert_practitioner_hospital" on public.invoices;
 drop policy if exists "invoices_update_practitioner_hospital" on public.invoices;
-
 create policy "invoices_select_practitioner_hospital"
 on public.invoices
 for select
@@ -22,7 +23,6 @@ using (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 create policy "invoices_insert_practitioner_hospital"
 on public.invoices
 for insert
@@ -35,7 +35,6 @@ with check (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 create policy "invoices_update_practitioner_hospital"
 on public.invoices
 for update
@@ -56,11 +55,9 @@ with check (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 -- charge_items
 drop policy if exists "charge_items_select_practitioner_hospital" on public.charge_items;
 drop policy if exists "charge_items_insert_practitioner_hospital" on public.charge_items;
-
 create policy "charge_items_select_practitioner_hospital"
 on public.charge_items
 for select
@@ -73,7 +70,6 @@ using (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 create policy "charge_items_insert_practitioner_hospital"
 on public.charge_items
 for insert
@@ -86,11 +82,9 @@ with check (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 -- invoice_line_items (no hospital_id — scope via parent invoice)
 drop policy if exists "invoice_line_items_select_practitioner_hospital" on public.invoice_line_items;
 drop policy if exists "invoice_line_items_insert_practitioner_hospital" on public.invoice_line_items;
-
 create policy "invoice_line_items_select_practitioner_hospital"
 on public.invoice_line_items
 for select
@@ -104,7 +98,6 @@ using (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 create policy "invoice_line_items_insert_practitioner_hospital"
 on public.invoice_line_items
 for insert

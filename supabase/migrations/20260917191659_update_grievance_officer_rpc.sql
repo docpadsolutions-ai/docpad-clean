@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917191659.
+
 -- Admin-only edit of the DPDP grievance officer and privacy notice settings.
 -- Kept apart from update_hospital_profile() so the privacy contact has its own
 -- audited entry point and a narrower permission.

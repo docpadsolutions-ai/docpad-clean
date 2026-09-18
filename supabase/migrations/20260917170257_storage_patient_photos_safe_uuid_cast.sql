@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917170257.
+
 -- Guard the filename -> uuid cast so a non-uuid object name can never raise inside a policy.
 create or replace function public.patient_hospital_id_from_object(p_name text)
 returns uuid language sql stable security definer set search_path = public

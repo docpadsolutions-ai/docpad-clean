@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917171115.
+
 -- check_patient_exists returned name + DocPad ID of a matching patient from ANY hospital.
 create or replace function public.check_patient_exists(p_aadhaar_hash text)
 returns table(existing_docpad_id text, existing_name text)

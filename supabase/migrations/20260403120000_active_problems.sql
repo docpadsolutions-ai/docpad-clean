@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260403120000.
+
 -- Active problem list synced from encounter diagnoses (Summary Sync).
 -- Unique (patient_id, condition_name) enables upsert deduplication across visits.
 
@@ -12,11 +15,8 @@ create table if not exists public.active_problems (
   updated_at timestamptz not null default now(),
   constraint active_problems_patient_condition_unique unique (patient_id, condition_name)
 );
-
 create index if not exists active_problems_patient_id_idx on public.active_problems (patient_id);
 create index if not exists active_problems_org_id_idx on public.active_problems (org_id);
-
 alter table public.active_problems enable row level security;
-
 -- Adjust policies to match your org; example: members of same org can read/write
 -- create policy "..." on public.active_problems for all using (...);

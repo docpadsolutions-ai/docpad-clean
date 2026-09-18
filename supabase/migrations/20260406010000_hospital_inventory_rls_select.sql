@@ -1,10 +1,11 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260406010000.
+
 -- Allow authenticated practitioners to SELECT formulary rows for their hospital.
 -- Without this (or with RLS enabled and no policy), PostgREST returns zero rows even when data exists.
 
 alter table public.hospital_inventory enable row level security;
-
 drop policy if exists "hospital_inventory_select_practitioner_hospital" on public.hospital_inventory;
-
 create policy "hospital_inventory_select_practitioner_hospital"
 on public.hospital_inventory
 for select
@@ -17,6 +18,5 @@ using (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 comment on policy "hospital_inventory_select_practitioner_hospital" on public.hospital_inventory is
   'Pharmacists/staff: read inventory where practitioners row matches session (user_id or id = auth.uid()) and same hospital_id.';

@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260918080340.
+
 -- The demonstrated failure mode in ICD-10 lookup is vocabulary, not ranking: the
 -- classification says "age-related cataract" and the doctor says "senile cataract";
 -- it says "haemorrhoids" spelled hemorrhoids and the patient says "piles"; it says

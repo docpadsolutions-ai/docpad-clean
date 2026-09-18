@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260408000000.
+
 -- Reception module: queue, OPD consultation billing, lab billing queue, fee master.
 -- Safe to run if objects already exist in your project (uses IF NOT EXISTS / OR REPLACE where possible).
 
@@ -20,13 +23,10 @@ create table if not exists public.reception_queue (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists reception_queue_hospital_created_idx
   on public.reception_queue (hospital_id, created_at desc);
-
 create index if not exists reception_queue_status_idx
   on public.reception_queue (queue_status);
-
 create table if not exists public.opd_bills (
   id uuid primary key default gen_random_uuid(),
   hospital_id uuid references public.organizations (id) on delete set null,
@@ -40,7 +40,6 @@ create table if not exists public.opd_bills (
   status text not null default 'paid',
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.consultation_fee_master (
   id uuid primary key default gen_random_uuid(),
   hospital_id uuid not null references public.organizations (id) on delete cascade,
@@ -49,7 +48,6 @@ create table if not exists public.consultation_fee_master (
   effective_from date not null default (current_date),
   unique (hospital_id, doctor_id)
 );
-
 create table if not exists public.investigation_bills (
   id uuid primary key default gen_random_uuid(),
   hospital_id uuid references public.organizations (id) on delete set null,
@@ -60,7 +58,6 @@ create table if not exists public.investigation_bills (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create or replace function public.generate_daily_token(p_hospital_id uuid)
 returns text
 language sql
@@ -71,10 +68,8 @@ as $$
   where hospital_id is not distinct from p_hospital_id
     and (created_at at time zone 'utc')::date = (timezone('utc', now()))::date;
 $$;
-
 comment on function public.generate_daily_token(uuid) is
   'Returns zero-padded numeric token for today per hospital (reception).';
-
 -- Today's queue for reception dashboard (UTC date; adjust TZ in DB if needed)
 create or replace view public.reception_today_queue as
 select
@@ -105,7 +100,6 @@ from public.reception_queue rq
 inner join public.patients p on p.id = rq.patient_id
 left join public.practitioners pr on pr.id = rq.doctor_id
 where (rq.created_at at time zone 'utc')::date = (timezone('utc', now()))::date;
-
 -- Pending lab / investigation bills for reception
 create or replace view public.reception_billing_queue as
 select
@@ -121,7 +115,6 @@ select
 from public.investigation_bills ib
 inner join public.patients p on p.id = ib.patient_id
 where ib.status in ('pending', 'billing_pending');
-
 -- Enable RLS in production and add org-scoped policies; omitted here to avoid conflicting with existing projects.
 
 grant select, insert, update, delete on public.reception_queue to authenticated, service_role;

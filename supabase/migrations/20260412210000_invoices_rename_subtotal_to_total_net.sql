@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260412210000.
+
 -- Align `invoices` with app: base list amount is `total_net` (was `subtotal` in older migration).
 
 do $$

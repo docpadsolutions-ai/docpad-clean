@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917170239.
+
 -- Storage objects are stored under "<hospital_id>/..." but read policies let ANY signed-in user
 -- (any hospital) read lab reports and wound photos. Scope them to the caller's hospital folder.
 
@@ -24,7 +27,6 @@ create policy wound_photos_insert on storage.objects for insert to authenticated
               and (storage.foldername(name))[1] = (select public.auth_hospital_id())::text);
 
 -- patient-photos: uploads/overwrites were allowed for any practitioner of any hospital.
--- (policy bodies replaced again by 20260917170257 with a safe uuid cast)
 drop policy if exists patient_photos_insert on storage.objects;
 drop policy if exists patient_photos_update on storage.objects;
 create policy patient_photos_insert on storage.objects for insert to authenticated

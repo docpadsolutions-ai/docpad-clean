@@ -4,6 +4,11 @@ name: Database isolation tests
 # visitors reach nothing but the two public RPCs, that staff cannot promote themselves, and
 # that the audit trail records edits and chart opens. It runs inside a rolled-back transaction.
 #
+# It also checks that supabase/migrations and the database agree about what has been
+# applied, in both directions. That check exists because nobody was watching: the folder
+# had drifted to 173 files, 93 never applied anywhere, against 375 applied migrations of
+# which 296 had no file at all, and nothing ever failed.
+#
 # Needs a repository secret SUPABASE_DB_URL (Supabase → Project Settings → Database →
 # Connection string → URI, session pooler). Without it the job is skipped, not failed.
 
@@ -40,6 +45,11 @@ jobs:
             echo "::error::RLS isolation tests failed"
             exit 1
           fi
+      - name: Migration drift
+        if: steps.secret.outputs.present == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node scripts/check-migration-drift.mjs
       - name: Skipped
         if: steps.secret.outputs.present != 'true'
         run: echo "SUPABASE_DB_URL secret not set - skipping database tests."

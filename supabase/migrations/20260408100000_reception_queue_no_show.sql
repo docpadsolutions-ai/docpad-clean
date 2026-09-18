@@ -1,24 +1,22 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260408100000.
+
 -- No-show tracking + explicit registration time on reception queue.
 
 alter table public.reception_queue
   add column if not exists no_show_marked_by uuid,
   add column if not exists no_show_marked_at timestamptz,
   add column if not exists registered_at timestamptz;
-
 update public.reception_queue
 set registered_at = coalesce(registered_at, created_at)
 where registered_at is null;
-
 alter table public.reception_queue
   alter column registered_at set default now();
-
 alter table public.reception_queue
   alter column registered_at set not null;
-
 comment on column public.reception_queue.no_show_marked_by is 'Supabase auth user id (auth.users) who marked no-show.';
 comment on column public.reception_queue.no_show_marked_at is 'When the row was marked no-show.';
 comment on column public.reception_queue.registered_at is 'When the patient was registered into the queue (eligibility for no-show timer).';
-
 -- Expose in today view for clients that need audit fields
 create or replace view public.reception_today_queue as
 select

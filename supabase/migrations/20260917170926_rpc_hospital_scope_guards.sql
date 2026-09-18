@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917170926.
+
 -- 127 SECURITY DEFINER RPCs took hospital/patient/admission/... ids from the caller and never checked
 -- that the record belongs to the caller's hospital (definer functions bypass RLS).
 -- Each now starts with _assert_hospital_scope() for every id parameter it accepts.

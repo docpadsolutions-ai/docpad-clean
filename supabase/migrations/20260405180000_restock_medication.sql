@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405180000.
+
 -- Audit trail for pharmacy restocks (optional reporting)
 create table if not exists public.hospital_inventory_restock (
   id uuid primary key default gen_random_uuid(),
@@ -11,12 +14,9 @@ create table if not exists public.hospital_inventory_restock (
   created_at timestamptz not null default now(),
   created_by uuid
 );
-
 create index if not exists hospital_inventory_restock_inv_idx
   on public.hospital_inventory_restock (hospital_inventory_id);
-
 comment on table public.hospital_inventory_restock is 'Pharmacy restock events (batch, supplier, invoice); stock updated via restock_medication().';
-
 -- Requires public.auth_org() (see app/lib/authOrg.ts)
 create or replace function public.restock_medication(
   p_hospital_inventory_id uuid,
@@ -77,7 +77,6 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.restock_medication(
   uuid,
   text,

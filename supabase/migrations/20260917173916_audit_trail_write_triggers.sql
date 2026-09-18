@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917173916.
+
 -- audit_logs existed but nothing ever wrote to it. Every change to patient, clinical, staff and
 -- money tables is now recorded with the full row before and after, who did it and when.
 

@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917182819.
+
 -- SOW 2.2: the patient's currently active medications, the interaction check run against that list
 -- (not only against the drugs inside the current prescription), duplicate-therapy detection, and a
 -- per-medication continue / stop / modify decision recorded against the encounter.

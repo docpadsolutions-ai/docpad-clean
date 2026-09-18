@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260412190000.
+
 -- Production / older local DBs used `billing_account_id`; align column name with app + `20260412140000` (account_id).
 
 do $$

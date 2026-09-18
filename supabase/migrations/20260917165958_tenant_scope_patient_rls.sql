@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917165958.
+
 -- Staff could read/update patients, prescriptions, vitals and inventory of OTHER hospitals:
 -- those policies only checked the role permission, never the hospital.
 

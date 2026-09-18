@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405300000.
+
 -- Medication JSON: dosage, quantity (display string); keep dispensed/total for client preview patch.
 create or replace function public.generate_prescription_receipt(prescription_id uuid)
 returns jsonb
@@ -118,6 +121,5 @@ begin
   );
 end;
 $$;
-
 comment on function public.generate_prescription_receipt(uuid) is
   'Receipt JSON: medication as object with name, dosage, frequency, duration, quantity (+ dispensed/total for UI).';

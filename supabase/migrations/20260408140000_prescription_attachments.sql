@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260408140000.
+
 -- Links completed lab OCR uploads to a prescription output (print / WhatsApp).
 
 create table if not exists public.prescription_attachments (
@@ -14,30 +17,23 @@ create table if not exists public.prescription_attachments (
   created_at timestamptz not null default now(),
   unique (encounter_id, ocr_upload_id)
 );
-
 create index if not exists prescription_attachments_encounter_id_idx
   on public.prescription_attachments (encounter_id);
-
 create index if not exists prescription_attachments_ocr_upload_id_idx
   on public.prescription_attachments (ocr_upload_id);
-
 comment on table public.prescription_attachments is
   'Lab reports attached to prescription output; lab lines come from lab_result_entries via ocr_upload_id.';
-
 alter table public.prescription_attachments enable row level security;
-
 create policy "prescription_attachments_authenticated_all"
   on public.prescription_attachments
   for all
   to authenticated
   using (true)
   with check (true);
-
 create policy "prescription_attachments_anon_select"
   on public.prescription_attachments
   for select
   to anon
   using (true);
-
 grant select, insert, update, delete on public.prescription_attachments to authenticated, service_role;
 grant select on public.prescription_attachments to anon;

@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917165444.
+
 -- Public, read-only view of ONE prescription for the WhatsApp link (/rx/<encounter uuid>).
 -- The unguessable encounter UUID acts as the share token. Returns only what the printout needs
 -- (no patient phone, address, ABHA, or other encounters).

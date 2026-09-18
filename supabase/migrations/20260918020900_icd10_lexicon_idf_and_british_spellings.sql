@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260918020900.
+
 -- Two weaknesses in the lexical half of ICD-10 retrieval, both of which matter more
 -- than usual here because 15,347 codes (all of chapters F, H, O, P, Q, U, V, W, X, Y)
 -- have no embedding yet and are reachable ONLY through this path.

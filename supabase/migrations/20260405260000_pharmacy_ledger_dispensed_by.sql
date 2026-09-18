@@ -1,8 +1,9 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405260000.
+
 -- Who dispensed (for ledger pharmacist_name); ledger view of dispensed lines per hospital.
 alter table public.prescriptions add column if not exists dispensed_by uuid;
-
 comment on column public.prescriptions.dispensed_by is 'practitioners.id of pharmacist who dispensed; set by dispense_prescription (p_pharmacist_id).';
-
 create or replace function public.dispense_prescription(
   p_prescription_id uuid,
   p_dispensed_quantity integer,
@@ -84,7 +85,6 @@ begin
   end if;
 end;
 $$;
-
 create or replace view public.pharmacy_dispensed_prescriptions
 with (security_invoker = true) as
 select
@@ -106,8 +106,6 @@ left join public.practitioners pr
   and (pr.id = p.dispensed_by or pr.user_id = p.dispensed_by)
 where p.status = 'dispensed'
   and p.dispensed_at is not null;
-
 comment on view public.pharmacy_dispensed_prescriptions is
   'Dispensed lines: dispensed_at::date, patient, drug, pharmacist; filter .eq(hospital_id, org).';
-
 grant select on public.pharmacy_dispensed_prescriptions to authenticated;

@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405290000.
+
 -- Receipt JSON: receipt_number, patient age/sex, pharmacist.registration placeholder.
 create or replace function public.generate_prescription_receipt(prescription_id uuid)
 returns jsonb
@@ -109,6 +112,5 @@ begin
   );
 end;
 $$;
-
 comment on function public.generate_prescription_receipt(uuid) is
   'Nested receipt JSON: receipt_number, patient (name, docpad_id, age_years, sex), medication, pharmacist (name, registration), hospital, dispensed_at.';

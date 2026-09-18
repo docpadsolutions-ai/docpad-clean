@@ -1,5 +1,8 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917174316.
+
 -- 1. Prescription templates had no owner or hospital: any signed-in user could edit or delete
---    every hospital's templates. Existing rows are assigned to Rameshwar Dass Memorial Hospital.
+--    every hospital's templates.
 alter table public.rx_templates
   add column if not exists hospital_id uuid references public.hospitals(id),
   add column if not exists created_by uuid;

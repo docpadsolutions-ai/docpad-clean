@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260411120000.
+
 -- Billing analytics RPCs (SECURITY DEFINER).
 -- Hospital scope: practitioners.hospital_id where practitioners.user_id = auth.uid().
 --
@@ -20,13 +23,10 @@ as $$
     else 'other'
   end;
 $$;
-
 comment on function public._billing_payment_bucket(text) is
   'Internal: map payments.payment_method to cash|upi|card|other for analytics.';
-
 revoke all on function public._billing_payment_bucket(text) from public;
 grant execute on function public._billing_payment_bucket(text) to service_role;
-
 -- PL/pgSQL bodies use $fn$ so migration runners that wrap SQL in $$ do not break.
 
 -- ---------------------------------------------------------------------------
@@ -90,10 +90,8 @@ begin
   order by a.pm;
 end;
 $fn$;
-
 comment on function public.get_daily_collection_summary(date) is
   'Per bucket totals for a UTC calendar day; total_amount = confirmed + voided; net_collected = confirmed only (= total_amount - voided_amount).';
-
 -- ---------------------------------------------------------------------------
 -- 2. get_collection_report
 -- ---------------------------------------------------------------------------
@@ -169,10 +167,8 @@ begin
   order by days.report_date;
 end;
 $fn$;
-
 comment on function public.get_collection_report(date, date) is
   'Daily net collected by bucket (confirmed payments); invoice_count = distinct invoices paid that day.';
-
 -- ---------------------------------------------------------------------------
 -- 3. get_outstanding_invoices
 -- ---------------------------------------------------------------------------
@@ -234,10 +230,8 @@ begin
   limit v_limit;
 end;
 $fn$;
-
 comment on function public.get_outstanding_invoices(integer) is
   'Open balances for hospital; days_overdue from current_date - due_date (UTC date).';
-
 -- ---------------------------------------------------------------------------
 -- 4. get_revenue_by_charge_type
 -- ---------------------------------------------------------------------------
@@ -339,10 +333,8 @@ begin
   order by b.charge_category;
 end;
 $fn$;
-
 comment on function public.get_revenue_by_charge_type(date, date) is
   'Revenue by charge_item_definitions.category via charge_items.definition_id; collected = confirmed payments pro-rata by line net_amount.';
-
 -- ---------------------------------------------------------------------------
 -- Grants
 -- ---------------------------------------------------------------------------
@@ -351,7 +343,6 @@ revoke all on function public.get_daily_collection_summary(date) from public;
 revoke all on function public.get_collection_report(date, date) from public;
 revoke all on function public.get_outstanding_invoices(integer) from public;
 revoke all on function public.get_revenue_by_charge_type(date, date) from public;
-
 grant execute on function public.get_daily_collection_summary(date) to authenticated, service_role;
 grant execute on function public.get_collection_report(date, date) to authenticated, service_role;
 grant execute on function public.get_outstanding_invoices(integer) to authenticated, service_role;

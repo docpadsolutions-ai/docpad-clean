@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917203401.
+
 -- ts_rank was the wrong ranking for the lexical half. Scoring by OR-query relevance
 -- let one rare word dominate: "Pain of knee region" surfaced lumbar disc degeneration
 -- and complex regional pain syndrome, because "region" is rarer than "knee". What

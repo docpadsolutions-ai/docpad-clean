@@ -1,8 +1,9 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405120000.
+
 -- Phase 1 pharmacy: queue by status; optional link to formulary row for joins in API
 alter table public.prescriptions add column if not exists status text not null default 'active';
-
 alter table public.prescriptions add column if not exists hospital_inventory_id uuid;
-
 do $$
 begin
   if exists (
@@ -17,8 +18,6 @@ begin
       foreign key (hospital_inventory_id) references public.hospital_inventory (id) on delete set null;
   end if;
 end $$;
-
 create index if not exists prescriptions_status_idx on public.prescriptions (status);
-
 comment on column public.prescriptions.status is 'Workflow e.g. active, ordered, dispensing, dispensed, cancelled — pharmacy dashboard lists ordered.';
 comment on column public.prescriptions.hospital_inventory_id is 'Optional FK to hospital_inventory for formulary/stock context; embed in Supabase select.';

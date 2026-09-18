@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260412200000.
+
 -- Align `invoices` FK column with app + `20260412140000` (`encounter_id` instead of `opd_encounter_id`).
 
 do $$

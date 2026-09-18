@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260918080453.
+
 -- A clinic's real diagnostic vocabulary is small: a couple of hundred codes will
 -- cover almost every OPD visit. Once a code has been used here for a given wording,
 -- that is far better evidence than any retrieval, and it is free to consult.
@@ -7,10 +10,6 @@
 -- write path of its own. Scoped to the caller's hospital; the doctor's own history is
 -- ranked above a colleague's but both count, because in a two-doctor clinic one
 -- doctor's history is most of the signal there is.
---
--- Superseded within the same session by 20260918080554, which adds explicit scope
--- arguments so the Edge Function (which runs as service_role, where auth_hospital_id()
--- is null) can use it. Kept so the history reads in order.
 create or replace function public.icd10_prior_for_note(
   p_query_text text,
   p_limit      integer default 5
@@ -74,3 +73,6 @@ $function$;
 
 revoke all on function public.icd10_prior_for_note(text, integer) from public, anon;
 grant execute on function public.icd10_prior_for_note(text, integer) to authenticated, service_role;
+
+comment on function public.icd10_prior_for_note(text, integer) is
+  'Codes this hospital has already used for wording like the note, the doctor''s own first. Read straight off finished encounters, so it needs no counter of its own and cannot drift from the record.';

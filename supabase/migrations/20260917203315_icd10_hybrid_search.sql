@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917203315.
+
 -- ICD-10 suggestion was proposing "Burn of unspecified degree of unspecified knee,
 -- sequela" for a note of "Pain of knee region". The model was not at fault: it can
 -- only choose from the candidates it is given, and retrieval was handing it burns

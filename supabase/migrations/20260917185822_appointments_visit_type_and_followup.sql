@@ -1,3 +1,9 @@
+-- NOTE: kept from the repo rather than restored from the database.
+-- This migration was corrected in place after it was first applied, with
+-- execute_sql rather than a new migration, so schema_migrations still holds the
+-- original. The live database has the corrected version; this file is what
+-- reproduces it. See scripts/restore-migration-files.mjs for the restore itself.
+
 -- ============================================================================
 -- SOW 2.5 — appointments, walk-ins and follow-up differentiation
 --

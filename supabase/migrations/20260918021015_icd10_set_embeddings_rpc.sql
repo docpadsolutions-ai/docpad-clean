@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260918021015.
+
 -- Batch writer for the embedding backfill. Without it the script would have to PATCH
 -- one row per code (15,347 round trips); this takes a page of rows at a time.
 -- service_role only: it is an ingest utility, not part of the application surface.

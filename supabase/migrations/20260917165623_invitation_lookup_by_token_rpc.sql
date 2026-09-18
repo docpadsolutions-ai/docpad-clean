@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917165623.
+
 -- Invitees are not signed in yet, so the join page cannot read `invitations` under RLS.
 -- This returns one pending, unexpired invitation for an exact token (uuid) and nothing else.
 create or replace function public.get_invitation_by_token(p_token text)

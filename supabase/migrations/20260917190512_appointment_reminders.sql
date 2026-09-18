@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917190512.
+
 -- SOW 2.5 — appointment and follow-up reminders.
 -- One row per (appointment, reminder kind) so a patient is never messaged twice
 -- for the same booking, and every send attempt leaves a record.

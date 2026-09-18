@@ -1,13 +1,12 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917191430.
+
 -- SOW 2.3 — DPDP Act 2023: consent record, grievance officer, data principal rights.
 --
 -- Consent was a checkbox on the registration form that gated the submit button and
 -- was then thrown away: nothing recorded what the patient agreed to, when, or to
 -- whom, and there was no grievance officer, no grievance register and no way to
 -- ask for a correction. This migration puts those on the record.
---
--- Note on history: patients registered before this migration have no consent row.
--- Nothing was stored at the time, so back-filling one would be inventing evidence.
--- Record consent for those patients on their next visit instead.
 
 -- ---------------------------------------------------------------- grievance officer
 alter table public.hospitals

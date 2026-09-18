@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917201217.
+
 -- The similar-prescriptions panel had three problems beyond the search_path break:
 --
 --  * the function returned no id, so the client had no stable key for a row;

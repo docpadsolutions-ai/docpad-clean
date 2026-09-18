@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917170511.
+
 -- Duplicate indexes
 drop index if exists public.idx_doctor_frequency;
 drop index if exists public.invoice_line_items_invoice_idx;

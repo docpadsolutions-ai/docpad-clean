@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260918074451.
+
 -- The first backfill attempt died on "canceling statement due to statement timeout".
 -- Measured cause, not guessed: updating 50 rows of icd10_library takes 13.7 seconds,
 -- of which 0.16s is finding the rows and the rest is HNSW index maintenance, about
@@ -9,8 +12,8 @@
 -- seconds on this instance, so ICD-10 suggestion would be dead for the hours the
 -- backfill takes rather than degraded.
 --
--- So embeddings land in an unindexed staging column first, where the same 50 rows
--- write in 155ms and search is untouched. A second migration merges the column into
+-- So embeddings land in an unindexed staging column first, where writes cost
+-- milliseconds and search is untouched. A second migration merges the column into
 -- `embedding` and rebuilds the index once, which is both faster than 15,347
 -- incremental inserts and produces a better-connected graph than the incremental
 -- build we currently have (the reason ef_search has to be 400).

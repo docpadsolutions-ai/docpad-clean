@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405280000.
+
 -- Receipt RPC returns nested JSON: patient, medication, pharmacist, hospital, dispensed_at.
 create or replace function public.generate_prescription_receipt(prescription_id uuid)
 returns jsonb
@@ -99,6 +102,5 @@ begin
   );
 end;
 $$;
-
 comment on function public.generate_prescription_receipt(uuid) is
   'Nested JSON: patient.name, medication.*, pharmacist.name, hospital.name, dispensed_at.';

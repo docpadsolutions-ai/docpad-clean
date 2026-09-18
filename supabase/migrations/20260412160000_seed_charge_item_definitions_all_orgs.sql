@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260412160000.
+
 -- Same catalog as 20260412150000_seed_charge_item_definitions.sql, but for every organization.
 -- The prior seed only targeted the first org by created_at; practitioners/patients often use a different org row → empty charge list.
 

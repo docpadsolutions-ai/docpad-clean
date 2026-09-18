@@ -1,6 +1,8 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405210000.
+
 -- Pass explicit hospital (tenant) instead of reading auth_org() inside the function
 drop function if exists public.pharmacy_dispensed_today_count();
-
 create or replace function public.pharmacy_dispensed_today_count(p_hospital_id uuid)
 returns integer
 language sql
@@ -18,7 +20,5 @@ as $$
     and p.dispensed_at is not null
     and p.dispensed_at::date = current_date;
 $$;
-
 grant execute on function public.pharmacy_dispensed_today_count(uuid) to authenticated;
-
 comment on function public.pharmacy_dispensed_today_count(uuid) is 'Daily dispensed line count for a hospital: dispensed_at::date = current_date.';

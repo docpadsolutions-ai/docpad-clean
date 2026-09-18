@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405250000.
+
 -- Atomic dispense: ordered Rx only, same hospital as auth_org(); p_pharmacist_id must be auth.uid().
 create or replace function public.dispense_prescription(
   p_prescription_id uuid,
@@ -79,8 +82,6 @@ begin
   end if;
 end;
 $$;
-
 grant execute on function public.dispense_prescription(uuid, integer, uuid, text) to authenticated;
-
 comment on function public.dispense_prescription(uuid, integer, uuid, text) is
   'Mark prescription dispensed; pharmacist_id must be auth.uid(); scoped to auth_org() encounter.';

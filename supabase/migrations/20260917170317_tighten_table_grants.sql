@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917170317.
+
 -- Signed-out visitors never read or write tables directly (public pages use narrow RPCs),
 -- so anon loses all table/view/sequence privileges in public. RLS stays as the second layer.
 revoke all on all tables in schema public from anon;

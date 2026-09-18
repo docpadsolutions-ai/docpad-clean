@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917200934.
+
 -- The security pass pinned `search_path = public` on every function (Supabase lint
 -- function_search_path_mutable). For the three functions that do vector search that
 -- was wrong: pgvector lives in the `extensions` schema, so pinning the path to

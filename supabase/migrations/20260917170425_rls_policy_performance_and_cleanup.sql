@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917170425.
+
 -- 1. JWT has no hospital_id claim (no custom access-token hook), so these policies never matched.
 alter policy hospital_auth_tokens on public.abdm_auth_tokens to authenticated
   using (hospital_id = (select auth_hospital_id())) with check (hospital_id = (select auth_hospital_id()));

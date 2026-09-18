@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260411100000.
+
 -- Charge item master: billable services/items per hospital (SNOMED or other code systems).
 -- hospital_id references public.organizations — DocPad uses organizations for hospital scope.
 
@@ -37,14 +40,10 @@ create table if not exists public.charge_item_definitions (
   updated_at timestamptz not null default now(),
   unique (hospital_id, code, code_system)
 );
-
 create index if not exists charge_item_definitions_hospital_category_idx
   on public.charge_item_definitions (hospital_id, category);
-
 create index if not exists charge_item_definitions_hospital_status_idx
   on public.charge_item_definitions (hospital_id, status);
-
 comment on table public.charge_item_definitions is
   'Hospital-scoped price list / charge master for billing (FHIR ChargeItemDefinition–style).';
-
 grant select, insert, update, delete on public.charge_item_definitions to authenticated, service_role;

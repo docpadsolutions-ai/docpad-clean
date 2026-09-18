@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917202347.
+
 -- A doctor with no prescribing history of their own got an empty panel with no
 -- explanation, which is indistinguishable from a broken feature. In a small
 -- clinic the useful corpus is the clinic's, so when the practitioner has no

@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260406020000.
+
 -- Unified pharmacy stock audit trail (NABH / reconciliation).
 create table if not exists public.stock_transactions (
   id uuid primary key default gen_random_uuid(),
@@ -12,20 +15,14 @@ create table if not exists public.stock_transactions (
   performed_by uuid references public.practitioners (id) on delete set null,
   created_at timestamptz not null default now()
 );
-
 create index if not exists stock_transactions_hospital_created_idx
   on public.stock_transactions (hospital_id, created_at desc);
-
 create index if not exists stock_transactions_inventory_idx
   on public.stock_transactions (inventory_item_id);
-
 comment on table public.stock_transactions is
   'Pharmacy stock movements: restock, dispense, return, adjustment, expired; join hospital_inventory + practitioners for reports.';
-
 alter table public.stock_transactions enable row level security;
-
 drop policy if exists "stock_transactions_select_practitioner_hospital" on public.stock_transactions;
-
 create policy "stock_transactions_select_practitioner_hospital"
 on public.stock_transactions
 for select
@@ -38,10 +35,8 @@ using (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 comment on policy "stock_transactions_select_practitioner_hospital" on public.stock_transactions is
   'Read audit rows for the same hospital as the session practitioner.';
-
 -- Log restocks into stock_transactions (signed quantity positive).
 create or replace function public.restock_medication(
   p_hospital_inventory_id uuid,

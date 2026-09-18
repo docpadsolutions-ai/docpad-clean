@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917174035.
+
 -- "Who opened this chart" logging. The RPCs a person calls to look at a patient now write a READ
 -- entry into audit_logs before returning.
 create or replace function public.log_phi_read(p_kind text, p_id uuid)
@@ -41,7 +44,6 @@ begin
     jsonb_build_object('patient_id', v_patient));
 end;
 $$;
--- NOTE: 20260917174918 revokes EXECUTE again from anon/authenticated; only definer RPCs call it.
 revoke all on function public.log_phi_read(text, uuid) from public;
 grant execute on function public.log_phi_read(text, uuid) to anon, authenticated, service_role;
 
@@ -110,7 +112,6 @@ end
 $$;
 
 -- The public prescription link: log the view too (no signed-in user, so action READ_PUBLIC_LINK).
--- Rewritten as plpgsql/VOLATILE because a STABLE function cannot write the audit row.
 create or replace function public.get_public_prescription(p_encounter_id uuid)
 returns jsonb
 language plpgsql

@@ -1,13 +1,13 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260406030000.
+
 -- Expiring batch lines from restock history; counts RPC + mark disposed (adjusts stock + audit row).
 
 alter table public.hospital_inventory_restock
   add column if not exists expired_disposed_at timestamptz;
-
 comment on column public.hospital_inventory_restock.expired_disposed_at is
   'Set when batch is marked expired/disposed via mark_expired_stock(); excluded from pharmacy_expiring_stock.';
-
 drop view if exists public.pharmacy_expiring_stock;
-
 create view public.pharmacy_expiring_stock as
 select
   r.id,
@@ -25,14 +25,10 @@ where r.expiry_date is not null
   and r.expired_disposed_at is null
   and r.expiry_date >= current_date
   and r.expiry_date <= current_date + 30;
-
 comment on view public.pharmacy_expiring_stock is
   'Batches expiring within 30 days (not yet disposed). days_left vs UTC date.';
-
 alter table public.hospital_inventory_restock enable row level security;
-
 drop policy if exists "hospital_inventory_restock_select_hospital" on public.hospital_inventory_restock;
-
 create policy "hospital_inventory_restock_select_hospital"
 on public.hospital_inventory_restock
 for select
@@ -50,10 +46,8 @@ using (
       )
   )
 );
-
 comment on policy "hospital_inventory_restock_select_hospital" on public.hospital_inventory_restock is
   'Pharmacy staff: read restock rows for inventory in their hospital.';
-
 -- JSON: { "critical": n, "warning": m } — critical ≤7 days, warning 8–30 days.
 create or replace function public.get_expiring_stock_counts(p_hospital_id uuid)
 returns jsonb
@@ -95,9 +89,7 @@ begin
   return jsonb_build_object('critical', coalesce(v_crit, 0), 'warning', coalesce(v_warn, 0));
 end;
 $$;
-
 grant execute on function public.get_expiring_stock_counts(uuid) to authenticated;
-
 -- Remove batch qty from on-hand stock, log expired transaction, hide from expiring view.
 create or replace function public.mark_expired_stock(p_restock_line_id uuid)
 returns void
@@ -180,13 +172,9 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.mark_expired_stock(uuid) to authenticated;
-
 comment on function public.get_expiring_stock_counts(uuid) is
   'Returns {"critical": ≤7d count, "warning": 8–30d count} for pharmacy_expiring_stock; session hospital access.';
-
 comment on function public.mark_expired_stock(uuid) is
   'Decrements on-hand stock by restock line qty, inserts stock_transactions expired, sets expired_disposed_at.';
-
 grant select on public.pharmacy_expiring_stock to authenticated;

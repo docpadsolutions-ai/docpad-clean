@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260408110000.
+
 -- Ensure investigation-reports accepts common raster inputs (client converts webp/heic/heif to JPEG before OCR when needed).
 UPDATE storage.buckets
 SET allowed_mime_types = (

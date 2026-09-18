@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917165715.
+
 -- SECURITY DEFINER functions bypass RLS. Signed-out (anon) callers must not reach them.
 -- Kept for anon: the two public RPCs, plus the helpers that RLS policies call
 -- (they return NULL/false for anon, but policies need EXECUTE to evaluate).

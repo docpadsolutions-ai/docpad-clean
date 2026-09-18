@@ -1,10 +1,11 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260412170000.
+
 -- charge_item_definitions: allow practitioners to read the price list for their hospital.
 -- If RLS was enabled without a policy (common in Supabase), PostgREST returns 200 + [] with no error.
 
 alter table public.charge_item_definitions enable row level security;
-
 drop policy if exists "charge_item_definitions_select_practitioner_hospital" on public.charge_item_definitions;
-
 create policy "charge_item_definitions_select_practitioner_hospital"
 on public.charge_item_definitions
 for select
@@ -17,6 +18,5 @@ using (
       and (pr.user_id = (select auth.uid()) or pr.id = (select auth.uid()))
   )
 );
-
 comment on policy "charge_item_definitions_select_practitioner_hospital" on public.charge_item_definitions is
   'Billing UI: read charge master rows for the same hospital_id as the signed-in practitioner.';

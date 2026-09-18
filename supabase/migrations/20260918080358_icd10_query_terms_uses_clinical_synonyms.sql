@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260918080358.
+
 -- Fold the vocabulary layer into query term extraction. A synonym phrase matches on
 -- whole-word boundaries (so "mi" does not fire inside "mild"), and its expansion is
 -- appended to the note rather than replacing anything: "senile cataract" ends up

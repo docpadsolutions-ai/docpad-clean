@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917182721.
+
 -- SOW 2.1: the audit table must be append-only, enforced by the database rather than by grants,
 -- so that a direct UPDATE or DELETE fails for every role including the table owner.
 -- The only exception is the retention job, which sets a session flag the trigger recognises.

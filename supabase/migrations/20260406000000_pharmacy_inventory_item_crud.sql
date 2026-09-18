@@ -1,15 +1,15 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260406000000.
+
 -- Extra catalog fields + soft-delete; CRUD RPCs for pharmacy inventory UI.
 alter table public.hospital_inventory add column if not exists strength text;
 alter table public.hospital_inventory add column if not exists manufacturer text;
 alter table public.hospital_inventory add column if not exists storage_conditions text;
 alter table public.hospital_inventory add column if not exists is_active boolean not null default true;
-
 alter table public.hospital_inventory add column if not exists dosage_form_name text;
-
 create index if not exists hospital_inventory_hospital_active_brand_idx
   on public.hospital_inventory (hospital_id, brand_name)
   where is_active = true;
-
 -- Add formulary line (stock starts at 0; use restock_medication to increase).
 create or replace function public.add_inventory_item(
   p_hospital_id uuid,
@@ -78,7 +78,6 @@ begin
   return v_id;
 end;
 $$;
-
 create or replace function public.update_inventory_item(
   p_item_id uuid,
   p_brand_name text,
@@ -130,7 +129,6 @@ begin
   end if;
 end;
 $$;
-
 create or replace function public.deactivate_inventory_item(p_item_id uuid)
 returns void
 language plpgsql
@@ -157,22 +155,16 @@ begin
   end if;
 end;
 $$;
-
 grant execute on function public.add_inventory_item(
   uuid, text, text, text, text, text, integer, text
 ) to authenticated;
-
 grant execute on function public.update_inventory_item(
   uuid, text, text, integer, text
 ) to authenticated;
-
 grant execute on function public.deactivate_inventory_item(uuid) to authenticated;
-
 comment on function public.add_inventory_item(uuid, text, text, text, text, text, integer, text) is
   'Insert hospital_inventory row (stock 0); p_hospital_id must equal auth_org().';
-
 comment on function public.update_inventory_item(uuid, text, text, integer, text) is
   'Update brand, generic, reorder_level, storage_conditions for active item in auth_org().';
-
 comment on function public.deactivate_inventory_item(uuid) is
   'Soft-delete formulary row (is_active false) for auth_org() hospital.';

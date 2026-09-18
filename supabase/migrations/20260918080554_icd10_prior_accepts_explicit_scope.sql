@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260918080554.
+
 -- The Edge Function calls with the service key, where auth_hospital_id() is null, so
 -- it has to be able to pass the scope it already established when it authenticated
 -- the caller. Staff sessions keep working without arguments.

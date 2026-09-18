@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260917170033.
+
 -- practitioners_update_own let any signed-in user change their own role, hospital or active flag
 -- directly through the API (e.g. user_role = 'admin'). Direct API updates may now only change
 -- profile fields; admin RPCs (SECURITY DEFINER, run as the owner) are unaffected.
@@ -32,6 +35,4 @@ create trigger practitioners_protect_privileged_columns
 
 -- Hide the plaintext security answer from colleagues (practitioners_select_hospital exposes whole rows).
 -- Nothing in the app reads this column.
--- NOTE: this is a no-op while `authenticated` holds table-level SELECT. The column is empty and unused;
--- dropping it is the real fix (not done here).
 revoke select (security_answer) on public.practitioners from anon, authenticated;

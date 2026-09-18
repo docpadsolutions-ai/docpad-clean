@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260412150000.
+
 -- Seed common hospital charge items for the first organization (typical dev / test hospital).
 -- Idempotent: skips rows that already exist for the same (hospital_id, code, code_system).
 --

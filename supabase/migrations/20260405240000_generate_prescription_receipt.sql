@@ -1,3 +1,6 @@
+-- Restored from supabase_migrations.schema_migrations.
+-- This is the SQL the database records as having actually run, on 20260405240000.
+
 -- Receipt payload for pharmacy print (patient, Rx line, pharmacist, hospital, time).
 create or replace function public.generate_prescription_receipt(prescription_id uuid)
 returns jsonb
@@ -93,8 +96,6 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.generate_prescription_receipt(uuid) to authenticated;
-
 comment on function public.generate_prescription_receipt(uuid) is
   'JSON receipt for one prescription line; scoped to auth_org() encounter hospital.';
