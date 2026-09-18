@@ -12,6 +12,11 @@ need from you before I can build them, 10 is optional.
 
 ## Do these first — 18 Sep, end of session
 
+**Step-by-step instructions for all of this are in `RUNBOOK.md`,** including the exact
+connection string, the percent-encoding trap that broke `pg_dump` last time, and how to
+prove the CI gate is actually running rather than trusting that it is. What follows is
+the summary.
+
 **A. Set the `SUPABASE_DB_URL` repository secret.** Two minutes, and it is now the
 highest-value thing on this list. There are 68 database assertions across two suites,
 including every clinical-safety rule built today, and without that secret CI skips all
