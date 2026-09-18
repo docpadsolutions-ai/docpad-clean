@@ -35,3 +35,6 @@ services/ecg-digitizer/*.png
 
 # Keep Python microservice source under version control
 !services/**/*.py
+
+# Raw schema dump used to build a baseline; regenerate with pg_dump when needed.
+supabase/_baseline_schema.sql
