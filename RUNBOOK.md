@@ -52,11 +52,20 @@ which job failed.
 
 ---
 
-## 2. Reset the database password
+## 2. Reset the database password — DECLINED 18 Sep 2026, not doing this for now
 
-**Why.** You pasted the old one into a chat window some days ago, so it should be
-considered public. You also need a working password for step 3, and resetting gives
-you a fresh one to copy in the same visit.
+You decided against rotating it for the moment. Recorded here rather than deleted so
+it is a decision on the record rather than something that quietly fell off a list.
+
+**Nothing downstream is blocked by this.** Step 3 works with your existing password;
+just use the one you already have instead of a new one.
+
+The standing reason to revisit it: the old password was pasted into a chat window, so
+it should be treated as known outside your control. The practical exposure is limited
+while the project is not serving real patients, which is the case today. It stops
+being limited the day it is.
+
+The original instructions, for when you do want them:
 
 1. Open `https://supabase.com/dashboard/project/hvjbzlwlqnntwxgufjkm`
 2. Left sidebar, bottom: **Project Settings** (the gear).
@@ -84,8 +93,8 @@ run until you fix it.
 
 ### 3a. Build the connection string
 
-The value is one line. Take this template and replace `PASSWORD` with the password
-from step 2:
+The value is one line. Take this template and replace `PASSWORD` with your current
+database password:
 
 ```
 postgresql://postgres.hvjbzlwlqnntwxgufjkm:PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
@@ -230,7 +239,13 @@ fields if the clinic wants different hours.
 
 ---
 
-## 6. Rotate the two exposed API keys
+## 6. Rotate the two exposed API keys — DECLINED 18 Sep 2026, not doing this for now
+
+Same decision as step 2, same reasoning, same standing caveat: the Gemini key shipped
+inside the browser bundle, so anyone who opened DocPad could read it, and it is billed
+to you. Worth watching the Google Cloud usage graph occasionally until you rotate it.
+
+The original instructions, for when you do want them:
 
 **Why.** The Gemini key shipped inside the browser bundle under
 `NEXT_PUBLIC_GEMINI_API_KEY`, so anyone who opened DocPad could read it. The

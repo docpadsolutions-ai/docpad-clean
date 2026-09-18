@@ -56,7 +56,11 @@ re-run the ICD-10 and voice-extraction checks against it.
 
 ---
 
-## 1. Rotate two exposed keys
+## 1. Rotate two exposed keys — deferred by you on 18 Sep 2026
+
+Not doing this for now, by your decision. Left in place because the exposure is
+real and the reason to revisit it is the day DocPad starts holding real patient
+records. Nothing else on this list is blocked by it.
 
 | Key | Why | Where |
 | --- | --- | --- |
