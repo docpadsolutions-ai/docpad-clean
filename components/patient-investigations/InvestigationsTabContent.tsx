@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLatestRef } from "@/hooks/useLatestRef";
 import {
   CartesianGrid,
   Line,
@@ -200,8 +201,7 @@ export default function InvestigationsTabContent({
   const [signingId, setSigningId] = useState<string | null>(null);
   const [ocrTargetInv, setOcrTargetInv] = useState<InvestigationRecord | null>(null);
   const [expandedCurrentId, setExpandedCurrentId] = useState<string | null>(null);
-  const expandedPanelRef = useRef<string | null>(null);
-  expandedPanelRef.current = expandedCurrentId;
+  const expandedPanelRef = useLatestRef<string | null>(expandedCurrentId);
   const [invNameFilter, setInvNameFilter] = useState("");
   const investigationsSearchRef = useRef<HTMLInputElement>(null);
   const [patientProfile, setPatientProfile] = useState<{

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useNow } from "@/hooks/useNow";
 import { generateAiSummary, loadCachedAiSummary } from "@/app/actions/generateAiSummary";
 
 interface Props {
@@ -25,6 +26,7 @@ function RefreshIcon({ className }: { className?: string }) {
 }
 
 export default function AiSummaryCard({ patientId }: Props) {
+  const now = useNow(60_000);
   const [summary, setSummary] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export default function AiSummaryCard({ patientId }: Props) {
   }
 
   function formatRelativeDate(iso: string): string {
-    const diff = Date.now() - new Date(iso).getTime();
+    const diff = now - new Date(iso).getTime();
     const mins = Math.floor(diff / 60_000);
     if (mins < 1) return "just now";
     if (mins < 60) return `${mins}m ago`;
@@ -105,7 +107,7 @@ export default function AiSummaryCard({ patientId }: Props) {
           <p className="text-[12.5px] leading-relaxed text-gray-700">{summary}</p>
         ) : (
           <p className="text-[11px] italic text-indigo-300">
-            No AI summary yet. Click "Generate AI Summary" to create a clinical catch-up from this patient's history.
+            No AI summary yet. Click &ldquo;Generate AI Summary&rdquo; to create a clinical catch-up from this patient&rsquo;s history.
           </p>
         )}
       </div>

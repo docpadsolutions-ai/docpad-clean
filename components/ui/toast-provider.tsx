@@ -141,17 +141,17 @@ function progressFill(severity: ToastSeverity): string {
 function ToastItemView({
   item,
   onDismiss,
-  tick,
+  now,
 }: {
   item: ToastRecord;
   onDismiss: (id: string) => void;
-  tick: number;
+  /** Supplied by the parent, which already runs the timer these bars need. */
+  now: number;
 }) {
   const showProgress = item.durationMs > 0 && item.expiresAt != null;
   const remainingPct = showProgress
-    ? Math.max(0, Math.min(100, ((item.expiresAt! - Date.now()) / item.durationMs) * 100))
+    ? Math.max(0, Math.min(100, ((item.expiresAt! - now) / item.durationMs) * 100))
     : 100;
-  void tick;
 
   const dismissBtnClass =
     item.severity === "critical"
@@ -210,11 +210,11 @@ function ToastViewport({
   toasts: ToastRecord[];
   onDismiss: (id: string) => void;
 }) {
-  const [tick, setTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const hasTimed = toasts.some((t) => t.durationMs > 0);
     if (!hasTimed) return;
-    const id = window.setInterval(() => setTick((n) => n + 1), 80);
+    const id = window.setInterval(() => setNow(Date.now()), 80);
     return () => clearInterval(id);
   }, [toasts]);
 
@@ -226,7 +226,7 @@ function ToastViewport({
       aria-label="Notifications"
     >
       {toasts.map((t) => (
-        <ToastItemView key={t.id} item={t} onDismiss={onDismiss} tick={tick} />
+        <ToastItemView key={t.id} item={t} onDismiss={onDismiss} now={now} />
       ))}
     </div>
   );

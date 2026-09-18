@@ -92,7 +92,7 @@ export function NotificationBell() {
     void refetchCounts();
     if (url) {
       if (url.startsWith("http://") || url.startsWith("https://")) {
-        window.location.href = url;
+        window.location.assign(url);
       } else {
         const path = url.startsWith("/") ? url : `/${url}`;
         router.push(path);

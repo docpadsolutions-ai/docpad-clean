@@ -157,7 +157,7 @@ export default function EncounterHistorySection({
   }, [rows, filterPreset]);
 
   const displayRows = useMemo(() => {
-    let list = [...dateFiltered];
+    const list = [...dateFiltered];
     list.sort((a, b) => rowTime(b) - rowTime(a));
     if (layoutMode === "chronological") {
       return list;

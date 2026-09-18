@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useNow } from "@/hooks/useNow";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -73,6 +74,7 @@ export default function PatientSummaryOpdTimeline({
   /** Scroll Encounter History to this encounter row */
   onSelectEncounterId?: (encounterId: string) => void;
 }) {
+  const now = useNow(60_000);
   const [rows, setRows] = useState<OpdEncRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +123,7 @@ export default function PatientSummaryOpdTimeline({
   }, [validRows]);
 
   const { rangeStart, rangeEnd, span } = useMemo(() => {
-    const endNow = Date.now();
+    const endNow = now;
     if (sortedAsc.length === 0) {
       return { rangeStart: endNow - 86400000, rangeEnd: endNow, span: 86400000 };
     }

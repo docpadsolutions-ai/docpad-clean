@@ -176,7 +176,7 @@ function EcgWaveformStrip({ samples, msPerPx, mvPerPx }: EcgWaveformStripProps) 
       ctx.stroke();
     }
 
-    let arr = samples;
+    const arr = samples;
     const finite = arr.filter((v) => Number.isFinite(v));
     if (finite.length < 2) return;
     let min = Math.min(...finite);

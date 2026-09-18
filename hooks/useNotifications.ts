@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLatestRef } from "@/hooks/useLatestRef";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { toast } from "sonner";
@@ -70,8 +71,7 @@ export function useNotifications(context: NotificationContext) {
   const [loading, setLoading] = useState(true);
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
   const notificationsChannelRef = useRef<RealtimeChannel | null>(null);
-  const contextRef = useRef(context);
-  contextRef.current = context;
+  const contextRef = useLatestRef(context);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,7 +232,9 @@ export function useNotificationCounts(): NotificationCounts & { refetch: () => P
     });
   }, []);
 
-  refetchRef.current = refetch;
+  useEffect(() => {
+    refetchRef.current = refetch;
+  }, [refetch]);
 
   useEffect(() => {
     void refetch();

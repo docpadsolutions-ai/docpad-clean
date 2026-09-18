@@ -48,7 +48,7 @@ export function DashboardNotificationsPanel({
     const url = n.action_url?.trim();
     if (url) {
       if (url.startsWith("http://") || url.startsWith("https://")) {
-        window.location.href = url;
+        window.location.assign(url);
       } else {
         router.push(url.startsWith("/") ? url : `/${url}`);
       }

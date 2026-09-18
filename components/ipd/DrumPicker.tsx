@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useLatestRef } from "@/hooks/useLatestRef";
 import { cn } from "@/lib/utils";
 
 const ITEM_H = 44;
@@ -72,10 +73,8 @@ export default function DrumPicker({
   );
 
   const syncingRef = useRef(false);
-  const onChangeRef = useRef(onChange);
-  const valueRef = useRef(value);
-  onChangeRef.current = onChange;
-  valueRef.current = value;
+  const onChangeRef = useLatestRef(onChange);
+  const valueRef = useLatestRef(value);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;

@@ -141,8 +141,18 @@ feature.
 
 ## Carried, not SOW
 
-31. 144 ESLint errors, of which roughly 24 in `react-hooks/purity`, `refs` and
-    `immutability` look like real render-time bugs rather than style.
+31. ESLint. **Partly done 18 Sep 2026.** The 34 genuine bugs are fixed: impure
+    `Date.now()` during render, refs written during render, assignment to
+    `window.location.href` from inside a component, and assorted trivia. Two shared
+    hooks came out of it, `useNow` and `useLatestRef`, and the first of those also
+    fixes a real defect nobody had noticed - relative labels like "3m ago" only
+    changed when something else happened to re-render, so they could sit wrong
+    indefinitely. 122 remain, all `set-state-in-effect`, `static-components` and one
+    `preserve-manual-memoization`, downgraded to warnings with the reasoning written
+    into `eslint.config.mjs`. They get fixed area by area as each area is touched.
+    Note that the count rose from 103 to 114 when the ref errors were fixed: the
+    React compiler stops analysing a component at its first error, so eleven had
+    been invisible behind the ones in front of them. Expect it to rise again.
 32. 14,397 remaining ICD-10 embeddings, blocked on the Gemini free-tier daily cap. A
     billing decision, and the same cap applies to the live app at about one embed request
     per prescription save.

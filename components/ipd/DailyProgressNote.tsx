@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLatestRef } from "@/hooks/useLatestRef";
 import { AlertTriangle, Check, Lock, Plus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -296,8 +297,7 @@ export default function DailyProgressNote({ admissionId, hospitalId, patientId }
   const [noteDate, setNoteDate] = useState<string>("");
   const [bundle, setBundle] = useState<ReturnType<typeof parseFullNoteBundle> | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
+  const draftRef = useLatestRef(draft);
   const [loadingTimeline, setLoadingTimeline] = useState(true);
   const [loadingRight, setLoadingRight] = useState(true);
   const [loadingNote, setLoadingNote] = useState(false);

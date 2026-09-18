@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLatestRef } from "@/hooks/useLatestRef";
 
 export type UseKeyboardNavOptions<T> = {
   /** Called when Escape clears selection (and optionally other UI). */
@@ -24,20 +25,15 @@ export function useKeyboardNav<T>(
   const { onClearSelection, searchInputRef, enabled = true, onActionKey } = options;
 
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const selectedIndexRef = useRef(selectedIndex);
-  selectedIndexRef.current = selectedIndex;
+  const selectedIndexRef = useLatestRef(selectedIndex);
 
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
+  const itemsRef = useLatestRef(items);
 
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
+  const onSelectRef = useLatestRef(onSelect);
 
-  const onClearRef = useRef(onClearSelection);
-  onClearRef.current = onClearSelection;
+  const onClearRef = useLatestRef(onClearSelection);
 
-  const onActionRef = useRef(onActionKey);
-  onActionRef.current = onActionKey;
+  const onActionRef = useLatestRef(onActionKey);
 
   const rowElements = useRef<(HTMLElement | null)[]>([]);
 

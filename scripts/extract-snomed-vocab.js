@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- plain CommonJS node script, not part of the app bundle */
 const fs = require("fs");
 const path = require("path");
 

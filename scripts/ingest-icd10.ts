@@ -47,7 +47,9 @@ async function ingest() {
   console.log("✅ SUCCESS: All 74,719 codes indexed!");
 }
 
-async function processBatch(batch: any[]) {
+type Icd10Row = { code: string; long_description: string; [k: string]: unknown };
+
+async function processBatch(batch: Icd10Row[]) {
   try {
     const texts = batch.map(b => `${b.code}: ${b.long_description}`);
     
@@ -65,7 +67,7 @@ async function processBatch(batch: any[]) {
       })
     });
 
-    const data: any = await res.json();
+    const data = (await res.json()) as { embeddings?: { values: number[] }[] };
     
     if (!data.embeddings) {
       console.error("❌ Gemini Error:", JSON.stringify(data, null, 2));
@@ -76,7 +78,7 @@ async function processBatch(batch: any[]) {
       code: item.code,
       is_billable: item.is_billable,
       long_description: item.long_description,
-      embedding: data.embeddings[i].values
+      embedding: data.embeddings?.[i]?.values
     }));
 
     const { error } = await supabase.from('icd10_library').upsert(toInsert, { onConflict: 'code' });

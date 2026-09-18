@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useNow } from "@/hooks/useNow";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchAuthOrgId } from "@/lib/authOrg";
@@ -102,6 +103,8 @@ export default function IPDPendingResultsPanel({
   onRefresh?: () => void;
   defaultOpen?: boolean;
 }) {
+  // A minute is the right granularity: these rows are labelled in days.
+  const now = useNow(60_000);
   const { toast } = useToast();
   const [open, setOpen] = useState(defaultOpen);
   const [resolvedHospitalId, setResolvedHospitalId] = useState<string | null>(null);
@@ -322,7 +325,7 @@ export default function IPDPendingResultsPanel({
                 renderRow={(row) => {
                   const exp = computeExpectedAtMs(row);
                   const overdueDays =
-                    exp != null && Date.now() > exp ? Math.max(1, Math.ceil((Date.now() - exp) / DAY_MS)) : null;
+                    exp != null && now > exp ? Math.max(1, Math.ceil((now - exp) / DAY_MS)) : null;
                   return (
                     <IpdResultRow
                       key={row.id}
@@ -346,7 +349,7 @@ export default function IPDPendingResultsPanel({
                 renderRow={(row) => {
                   const exp = computeExpectedAtMs(row);
                   const overdueDays =
-                    exp != null && Date.now() > exp ? Math.max(4, Math.ceil((Date.now() - exp) / DAY_MS)) : null;
+                    exp != null && now > exp ? Math.max(4, Math.ceil((now - exp) / DAY_MS)) : null;
                   return (
                     <IpdResultRow
                       key={row.id}
