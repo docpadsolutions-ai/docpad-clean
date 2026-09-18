@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReactToPrint } from "react-to-print";
 import { usePrescription } from "@/hooks/usePrescription";
 import {
-  findAllergyConflicts,
   isHardStopSeverity,
   usePrescriptionSafety,
   type ActiveMedication,
@@ -609,6 +608,7 @@ export default function PrescriptionModal({
     activeMedications,
     interactions: ddiWarnings,
     duplicates: duplicateTherapyWarnings,
+    allergyMatches,
     loading: safetyLoading,
   } = usePrescriptionSafety({
     patientId,
@@ -616,13 +616,17 @@ export default function PrescriptionModal({
     medicines: safetyMedicines,
     enabled: isOpen && rxView,
   });
-  const allergyConflicts = useMemo(
-    () => findAllergyConflicts(safetyMedicines, allergies.map((a) => toDisplay(a)).filter(Boolean)),
-    [safetyMedicines, allergies],
-  );
-  /** Hard stops block finalisation; moderate and mild interactions are advisory only. */
+  /**
+   * Hard stops block finalisation; moderate and mild interactions are advisory only.
+   *
+   * Which allergies block is decided in the database by `patient_allergy_matches`, the
+   * same function the write trigger consults, so the button state and the enforcement
+   * cannot drift apart. It used to be a substring match computed here, which made
+   * every allergy a hard stop (a recorded peanut allergy included) while missing
+   * amoxicillin on a penicillin record.
+   */
   const prescribingHardStop =
-    allergyConflicts.length > 0 || ddiWarnings.some((w) => isHardStopSeverity(w.severity));
+    allergyMatches.some((m) => m.blocking) || ddiWarnings.some((w) => isHardStopSeverity(w.severity));
   const [reconciliationDecisions, setReconciliationDecisions] = useState<
     Record<string, { action: ReconciliationAction; medicine_name: string; generic_name: string | null }>
   >({});
@@ -2013,7 +2017,7 @@ export default function PrescriptionModal({
                 <PrescribingSafetyBanner
                   interactions={ddiWarnings}
                   duplicates={duplicateTherapyWarnings}
-                  allergyConflicts={allergyConflicts}
+                  allergyMatches={allergyMatches}
                 />
               </div>
 

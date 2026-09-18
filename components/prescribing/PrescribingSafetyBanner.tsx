@@ -2,11 +2,16 @@
 
 import {
   isHardStopSeverity,
+  type AllergyMatch,
   type DuplicateWarning,
   type InteractionWarning,
 } from "@/hooks/usePrescriptionSafety";
 
-export type AllergyConflict = { medicine_name: string; allergy: string };
+/** How a cross-reactive match is explained to the prescriber. */
+function allergyLine(m: AllergyMatch): string {
+  if (m.match === "direct") return `matches a recorded allergy: ${m.allergen}`;
+  return `cross-reacts with a recorded allergy to ${m.allergen}`;
+}
 
 /**
  * SOW §2.2 and §3.2 — two alert tiers only. Severe or contraindicated interactions and allergy
@@ -15,31 +20,47 @@ export type AllergyConflict = { medicine_name: string; allergy: string };
 export default function PrescribingSafetyBanner({
   interactions,
   duplicates,
-  allergyConflicts,
+  allergyMatches,
 }: {
   interactions: InteractionWarning[];
   duplicates: DuplicateWarning[];
-  allergyConflicts: AllergyConflict[];
+  allergyMatches: AllergyMatch[];
 }) {
   const hardStops = interactions.filter((i) => isHardStopSeverity(i.severity));
   const advisories = interactions.filter((i) => !isHardStopSeverity(i.severity));
+  // The blocking decision is the database's, not this component's, so a cephalosporin
+  // after a penicillin allergy reads as a caution rather than a refusal.
+  const allergyBlocks = allergyMatches.filter((m) => m.blocking);
+  const allergyAdvisories = allergyMatches.filter((m) => !m.blocking);
 
-  if (hardStops.length === 0 && advisories.length === 0 && duplicates.length === 0 && allergyConflicts.length === 0) {
+  if (
+    hardStops.length === 0 &&
+    advisories.length === 0 &&
+    duplicates.length === 0 &&
+    allergyMatches.length === 0
+  ) {
     return null;
   }
 
   return (
     <div className="flex flex-col gap-2" aria-live="polite">
-      {(hardStops.length > 0 || allergyConflicts.length > 0) && (
+      {(hardStops.length > 0 || allergyBlocks.length > 0) && (
         <section className="rounded-xl border-2 border-red-300 bg-red-50 p-3" role="alert">
           <h3 className="text-xs font-bold uppercase tracking-wide text-red-800">
             Blocked — resolve before finalising
           </h3>
           <ul className="mt-1.5 flex flex-col gap-1.5">
-            {allergyConflicts.map((conflict) => (
-              <li key={`allergy-${conflict.medicine_name}-${conflict.allergy}`} className="text-xs text-red-900">
-                <span className="font-semibold">{conflict.medicine_name}</span> matches a recorded allergy:{" "}
-                <span className="font-semibold">{conflict.allergy}</span>
+            {allergyBlocks.map((m) => (
+              <li key={`allergy-${m.drug}-${m.allergen}`} className="text-xs text-red-900">
+                <span className="font-semibold capitalize">{m.drug}</span> {allergyLine(m)}
+                {m.severity !== "unknown" ? (
+                  <span className="ml-1 rounded bg-red-200 px-1 text-[10px] font-bold uppercase text-red-900">
+                    {m.severity}
+                  </span>
+                ) : (
+                  <span className="ml-1 text-[11px] text-red-700">(severity not recorded)</span>
+                )}
+                {m.note ? <span className="block text-[11px] text-red-700">{m.note}</span> : null}
               </li>
             ))}
             {hardStops.map((warning, index) => (
@@ -65,10 +86,16 @@ export default function PrescribingSafetyBanner({
         </section>
       )}
 
-      {(advisories.length > 0 || duplicates.length > 0) && (
+      {(advisories.length > 0 || duplicates.length > 0 || allergyAdvisories.length > 0) && (
         <section className="rounded-xl border border-amber-300 bg-amber-50 p-3">
           <h3 className="text-xs font-bold uppercase tracking-wide text-amber-900">Check before continuing</h3>
           <ul className="mt-1.5 flex flex-col gap-1">
+            {allergyAdvisories.map((m) => (
+              <li key={`allergy-adv-${m.drug}-${m.allergen}`} className="text-xs text-amber-900">
+                <span className="font-semibold capitalize">{m.drug}</span> {allergyLine(m)}
+                {m.note ? <span className="block text-[11px] text-amber-800">{m.note}</span> : null}
+              </li>
+            ))}
             {duplicates.map((dup, index) => (
               <li key={`dup-${dup.active_prescription_id}-${index}`} className="text-xs text-amber-900">
                 <span className="font-semibold">{dup.medicine_name}</span> repeats an active medication:{" "}

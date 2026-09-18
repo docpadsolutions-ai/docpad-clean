@@ -50,26 +50,28 @@ export function isHardStopSeverity(severity: string | null | undefined): boolean
   return s === "contraindicated" || s === "severe";
 }
 
-/** Name-match a prescribed drug against the allergies recorded on the patient. */
-export function findAllergyConflicts(
-  medicines: SafetyMedicineInput[],
-  allergies: string[],
-): { medicine_name: string; allergy: string }[] {
-  const cleanedAllergies = allergies.map((a) => a.trim().toLowerCase()).filter((a) => a.length >= 3);
-  if (cleanedAllergies.length === 0) return [];
-
-  const conflicts: { medicine_name: string; allergy: string }[] = [];
-  for (const med of medicines) {
-    const haystack = `${med.medicine_name ?? ""} ${med.generic_name ?? ""}`.toLowerCase();
-    for (const allergy of cleanedAllergies) {
-      if (haystack.includes(allergy)) {
-        conflicts.push({ medicine_name: med.medicine_name, allergy });
-        break;
-      }
-    }
-  }
-  return conflicts;
-}
+/**
+ * An allergy the prescribed drug touches, graded.
+ *
+ * This used to be a substring match computed here, which meant (a) every match was a
+ * hard stop, including "Peanuts", and (b) "penicillin" on file did not catch
+ * amoxicillin. Both are now decided by `patient_allergy_matches` in the database, in
+ * the same place the write is blocked, so the banner and the enforcement cannot
+ * disagree with each other.
+ */
+export type AllergyMatch = {
+  drug: string;
+  allergen: string;
+  category: "drug" | "food" | "environment" | "other" | "unknown" | string;
+  severity: "mild" | "moderate" | "severe" | "anaphylaxis" | "unknown" | string;
+  /** direct: the names overlap. same_group / related: curated cross-reactivity. */
+  match: "direct" | "same_group" | "related" | string;
+  /** Which curated group produced a cross-reactive match, if any. */
+  via: string | null;
+  note: string | null;
+  /** The hard stop. An ungraded drug allergy blocks; `related` never blocks. */
+  blocking: boolean;
+};
 
 type SafetyPayload = {
   active_medications: ActiveMedication[];
@@ -95,6 +97,7 @@ export function usePrescriptionSafety({
   const [activeMedications, setActiveMedications] = useState<ActiveMedication[]>([]);
   const [interactions, setInteractions] = useState<InteractionWarning[]>([]);
   const [duplicates, setDuplicates] = useState<DuplicateWarning[]>([]);
+  const [allergyMatches, setAllergyMatches] = useState<AllergyMatch[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
@@ -110,24 +113,34 @@ export function usePrescriptionSafety({
 
     const requestId = ++requestIdRef.current;
     setLoading(true);
-    const { data, error: rpcError } = await supabase.rpc("check_prescription_safety", {
-      p_patient_id: pid,
-      p_new_medicines: medicines,
-      p_exclude_encounter: encounterId?.trim() || null,
-    });
+    const [safety, allergy] = await Promise.all([
+      supabase.rpc("check_prescription_safety", {
+        p_patient_id: pid,
+        p_new_medicines: medicines,
+        p_exclude_encounter: encounterId?.trim() || null,
+      }),
+      supabase.rpc("patient_allergy_matches", {
+        p_patient_id: pid,
+        p_medicines: medicines,
+      }),
+    ]);
     if (requestId !== requestIdRef.current) return; // a newer request already answered
 
-    if (rpcError) {
-      setError(rpcError.message);
+    if (safety.error) {
+      setError(safety.error.message);
       setLoading(false);
       return;
     }
 
-    const payload = (data ?? {}) as Partial<SafetyPayload>;
+    const payload = (safety.data ?? {}) as Partial<SafetyPayload>;
     setActiveMedications(payload.active_medications ?? []);
     setInteractions(payload.interactions ?? []);
     setDuplicates(payload.duplicates ?? []);
-    setError(null);
+    // An allergy lookup that fails is reported but does not blank the rest of the
+    // panel. The database blocks the write either way, so the banner going quiet
+    // cannot turn into a prescription going through.
+    setAllergyMatches(allergy.error ? [] : ((allergy.data ?? []) as AllergyMatch[]));
+    setError(allergy.error ? allergy.error.message : null);
     setLoading(false);
     // medicines is represented by medicinesKey to keep the debounce stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,5 +154,5 @@ export function usePrescriptionSafety({
     return () => clearTimeout(timer);
   }, [enabled, run]);
 
-  return { activeMedications, interactions, duplicates, loading, error, refresh: run };
+  return { activeMedications, interactions, duplicates, allergyMatches, loading, error, refresh: run };
 }

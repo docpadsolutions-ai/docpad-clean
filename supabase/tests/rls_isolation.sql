@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(60);
+select plan(65);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -479,6 +479,46 @@ insert into tap select cmp_ok(
              '[{"medicine_name":"Penicillin V","generic_name":"penicillin"}]'::jsonb))::text$q$,
            (select patient_id from t_rx)))::int,
   '>', 0, 'the block list reports the allergy rather than returning empty');
+
+
+-- --------------------------------------------- allergy grading (SOW 3.2, Wave 1.3)
+-- The patient fixture from the hard-stop block above already carries a penicillin
+-- allergy. These assert the grading, not merely the match.
+insert into public.patient_allergies (hospital_id, patient_id, substance, category, severity)
+select hospital_id, patient_id, 'penicillin', 'drug', 'unknown' from t_rx
+on conflict do nothing;
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select (public.patient_allergy_matches(%L,
+             '[{"medicine_name":"Amoxicillin 500mg","generic_name":"amoxicillin"}]'::jsonb) -> 0 ->> 'blocking')$q$,
+           (select patient_id from t_rx))),
+  'true', 'a penicillin allergy blocks amoxicillin, which name matching alone never caught');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select (public.patient_allergy_matches(%L,
+             '[{"medicine_name":"Amoxicillin 500mg","generic_name":"amoxicillin"}]'::jsonb) -> 0 ->> 'match')$q$,
+           (select patient_id from t_rx))),
+  'same_group', 'and it is reported as a cross-reactive match rather than a direct one');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select (public.patient_allergy_matches(%L,
+             '[{"medicine_name":"Cefuroxime 500mg","generic_name":"cefuroxime"}]'::jsonb) -> 0 ->> 'blocking')$q$,
+           (select patient_id from t_rx))),
+  'false', 'a cephalosporin after a penicillin allergy advises rather than refuses');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select jsonb_array_length(public.patient_allergy_matches(%L,
+             '[{"medicine_name":"Azithromycin 500mg","generic_name":"azithromycin"}]'::jsonb))::text$q$,
+           (select patient_id from t_rx))),
+  '0', 'a penicillin allergy does not touch azithromycin, which drugs.drug_class would have blocked');
+
+insert into tap select cmp_ok(
+  (select count(*)::int from patient_allergies where category = 'drug'),
+  '>', 0, 'the legacy known_allergies text[] backfilled into structured rows with a category');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';
