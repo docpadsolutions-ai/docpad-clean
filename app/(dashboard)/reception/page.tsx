@@ -22,11 +22,17 @@ import { enqueueReceptionWalkIn } from "@/lib/receptionEnqueue";
 import type { RegisteredPatientRow } from "@/lib/registerNewPatient";
 import { supabase } from "@/lib/supabase";
 import { PatientAvatar } from "@/components/patient/patient-avatar";
+import BookingsSection from "@/components/appointments/BookingsSection";
 
 const AdmitPatientModal = dynamic(
   () => import("@/components/ipd/admit-patient-modal").then((m) => m.AdmitPatientModal),
   { ssr: false },
 );
+
+// Only opened from a button, so it does not need to be in the first paint.
+const BookAppointmentModal = dynamic(() => import("@/components/appointments/BookAppointmentModal"), {
+  ssr: false,
+});
 
 type ConsultationCharge = {
   id: string;
@@ -250,7 +256,10 @@ function ReceptionPageContent() {
   const [admitModalOpen, setAdmitModalOpen] = useState(false);
   const [admitBedPrefill, setAdmitBedPrefill] = useState<{ wardId: string; bedId: string } | null>(null);
 
-  const [receptionSection, setReceptionSection] = useState<"opd" | "pending" | "lab_payments">("opd");
+  const [receptionSection, setReceptionSection] = useState<"opd" | "bookings" | "pending" | "lab_payments">("opd");
+  const [bookModalOpen, setBookModalOpen] = useState(false);
+  // Bumped after a booking so the list below refetches without a shared store.
+  const [bookingsVersion, setBookingsVersion] = useState(0);
   const [pendingLabPaymentsCount, setPendingLabPaymentsCount] = useState(0);
   const [pendingRows, setPendingRows] = useState<PendingAdmissionRow[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
@@ -662,6 +671,9 @@ function ReceptionPageContent() {
             </Link>
             <CurrentUserBadge className="shrink-0" />
             <div className="flex flex-wrap gap-2">
+              <button type="button" className={btnSecondary} onClick={() => setBookModalOpen(true)}>
+                Book appointment
+              </button>
               <button type="button" className={btnPrimary} onClick={() => setNewPatientModalOpen(true)}>
                 + New patient
               </button>
@@ -682,6 +694,13 @@ function ReceptionPageContent() {
             onClick={() => setReceptionSection("opd")}
           >
             OPD queue
+          </button>
+          <button
+            type="button"
+            className={receptionSection === "bookings" ? btnPrimary : btnSecondary}
+            onClick={() => setReceptionSection("bookings")}
+          >
+            Bookings
           </button>
           <button
             type="button"
@@ -711,6 +730,16 @@ function ReceptionPageContent() {
           <div className={receptionSection === "lab_payments" ? "" : "hidden"} aria-hidden={receptionSection !== "lab_payments"}>
             <PendingLabPaymentsSection hospitalId={hospitalId} onPendingCountChange={setPendingLabPaymentsCount} />
           </div>
+        ) : null}
+
+        {receptionSection === "bookings" ? (
+          <BookingsSection
+            refreshToken={bookingsVersion}
+            onCheckedIn={(msg) => {
+              showToast(msg);
+              void loadQueue(hospitalId, { silent: true });
+            }}
+          />
         ) : null}
 
         {receptionSection === "opd" ? (
@@ -959,6 +988,18 @@ function ReceptionPageContent() {
         onClose={() => setNewPatientModalOpen(false)}
         orgId={hospitalId}
         onSuccess={onNewPatientRegistered}
+      />
+
+      <BookAppointmentModal
+        open={bookModalOpen}
+        onClose={() => setBookModalOpen(false)}
+        hospitalId={hospitalId}
+        practitioners={practitioners}
+        onBooked={(msg) => {
+          showToast(msg);
+          setBookingsVersion((n) => n + 1);
+          setReceptionSection("bookings");
+        }}
       />
 
       {hospitalId ? (

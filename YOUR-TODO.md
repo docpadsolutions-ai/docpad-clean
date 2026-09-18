@@ -2,7 +2,7 @@
 
 Everything I could do without credentials or a dashboard is applied to the code and
 to the Supabase project `Docpad` (hvjbzlwlqnntwxgufjkm), and committed. There are
-**10 commits on `main` that have never been pushed.** Ten items below need you.
+**23 commits on `main` that have never been pushed.** The items below need you.
 
 Rough order: 1 and 2 are security and should happen first, 3 is thirty minutes that
 de-risks everything else, 4 to 7 are five-minute settings, 8 and 9 are decisions I
@@ -201,10 +201,64 @@ returns H25.11 today with zero embeddings in chapter H.
 
 ---
 
-### Done today, for your own records
+### Where each SOW item actually stands, 18 Sep 2026
 
-The FHIR OP Consult Record on every encounter (SOW 4), the appointment and follow-up
-differentiation with WhatsApp reminders (2.5), and the DPDP consent register, grievance
-register and correction workflow (2.3). Yesterday's session covered the multi-tenant
-isolation fixes, the append-only audit trail (2.1) and prescribing safety (2.2). The
-database test suite is at 40 assertions and the production build is clean.
+Read this column carefully. "Mechanism built" and "clinically usable" are not the
+same claim, and I was reporting the first as though it were the second.
+
+**2.1 audit trail — done.** 83 tables carry `zz_audit_row`, the trigger is
+append-only, PHI reads are logged. Here the mechanism *is* the deliverable.
+
+**2.2 prescribing safety — NOT done.** `check_prescription_safety` works end to
+end: aceclofenac plus warfarin comes back `severe`, with management advice in
+English and Hindi. But `drug_interactions` holds 24 curated pairs. Warfarin plus
+aspirin returns clean. To a prescriber, silence reads as clearance, which makes a
+thin table worse than no checker at all. Nothing here should be called finished
+until the content question is settled, and that is the RxNorm-versus-SNOMED
+decision you have parked.
+
+**2.3 DPDPA — mechanism built, not in force.** Consent register, grievance
+register and the correction workflow all exist and are covered by the test suite.
+Live: zero consent rows, no grievance officer published. That is item 6 below,
+and it needs you rather than me.
+
+**2.5 appointments — the booking desk now exists.** Before today,
+`schedule_follow_up` was the only thing in the product that could create a future
+appointment, so a patient who telephoned could not be booked at all. That is why
+`booking_source` had never held anything but `walk_in` and why the reminder cron
+had never had a row to act on. Added: `book_appointment`,
+`reschedule_appointment`, `cancel_appointment`, `upcoming_appointments`, a
+Bookings tab on the reception page and a booking modal. Ten pgTAP assertions
+cover it, including that another hospital cannot book, move or cancel your
+patients.
+
+**4 FHIR — done.** An OP Consult document Bundle on every encounter.
+
+**ICD-10 — working, incomplete.** 58,543 of 73,790 codes embedded, 850 staged,
+14,397 waiting on the Gemini daily cap. The lexical and synonym layers carry the
+unembedded chapters, so nothing is broken; it is a quality ceiling, not an outage.
+
+**Tenancy — done.** No table in `public` is without RLS; the only
+anon-executable definer functions are the seven intended ones.
+
+### Fixed today
+
+A bug of mine from yesterday: `schedule_follow_up` writes `visit_type = 'follow_up'`,
+but the Expected-today panel tested for `'scheduled_follow_up'`, a value the table's
+check constraint does not even permit. Every follow-up you booked from an encounter
+was displaying to the doctor as "New visit".
+
+Also closed a Supabase advisor finding: `icd10_lexeme_df` is a materialized view, so
+RLS does not apply to it and PostgREST was serving the ICD-10 ranking internals to any
+signed-in user. Revoked.
+
+### Still open, and honestly labelled
+
+- 2.2 content. Blocked on your decision, not on me.
+- 2.7: brand and generic prescription search, the inline prescription writer, realtime
+  queue status for patients.
+- A seed-data framework so a fresh project comes up with a usable demo hospital.
+- The clinical-safety CI suite.
+- An OWASP-style review pass.
+- 144 ESLint errors. Around 24 of them (`react-hooks/purity`, `refs`, `immutability`)
+  look like real render-time bugs rather than style.

@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(40);
+select plan(50);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -309,6 +309,83 @@ insert into tap select is(
 insert into tap select cmp_ok(
   (select count(*)::int from audit_logs where resource_type = 'data_principal_requests'),
   '>', 0, 'the request register is itself audited');
+
+
+-- ----------------------------------------------------------------- booking desk (SOW 2.5)
+-- The desk-side half of appointments: taking a booking for a patient who is not
+-- in front of a doctor. Until book_appointment existed, schedule_follow_up was
+-- the only writer of a future appointment anywhere in the product.
+create temp table t_book as
+select pt.id as patient_id
+from patients pt
+where pt.hospital_id = (select a_hospital from t_ab)
+  and not exists (
+    select 1 from appointments ap
+     where ap.patient_id = pt.id
+       and ap.appointment_date = current_date + 21
+       and coalesce(ap.status, '') not in ('cancelled', 'completed', 'no_show'))
+limit 1;
+
+insert into tap select isnt(
+  pg_temp.as_user_err((select b_user from t_ab),
+    format($q$select public.book_appointment(%L, current_date + 21)$q$, (select patient_id from t_book))),
+  'none', 'the desk at another hospital cannot book this hospital''s patient');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select public.book_appointment(%L, current_date + 21, '10:30', null, 'review', 'tap booking') ->> 'created'$q$,
+           (select patient_id from t_book))),
+  'true', 'the desk can book a registered patient for a future date');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select public.book_appointment(%L, current_date + 21, '11:00') ->> 'created'$q$,
+           (select patient_id from t_book))),
+  'false', 'booking the same patient twice in one day updates that booking rather than duplicating it');
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$select public.book_appointment(%L, current_date - 1)$q$, (select patient_id from t_book))),
+  '22007', 'a date in the past is refused');
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$select public.book_appointment(%L, current_date + 22, null, null, 'not_a_visit_type')$q$,
+           (select patient_id from t_book))),
+  '22023', 'a visit type outside the allowed set is refused');
+
+insert into tap select is(
+  (select count(*)::int from appointments
+    where patient_id = (select patient_id from t_book)
+      and appointment_date = current_date + 21
+      and booking_source = 'booked'),
+  1, 'exactly one booked row exists for that patient and day');
+
+insert into tap select cmp_ok(
+  pg_temp.as_user((select a_user from t_ab),
+    $q$select json_array_length(public.upcoming_appointments(current_date, 30))::text$q$)::int,
+  '>', 0, 'the booking shows up in the desk forward view');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    $q$select (select count(*) from json_array_elements(public.upcoming_appointments(current_date, 120)) e
+                 join appointments a on a.id = (e->>'appointment_id')::uuid
+                where a.hospital_id <> auth_hospital_id())::text$q$),
+  '0', 'the forward view never carries another hospital''s bookings');
+
+insert into tap select isnt(
+  pg_temp.as_user_err((select b_user from t_ab),
+    format($q$select public.cancel_appointment(
+                     (select id from appointments where patient_id = %L
+                       and appointment_date = current_date + 21 limit 1))$q$,
+           (select patient_id from t_book))),
+  'none', 'another hospital cannot cancel this booking');
+
+-- Flagged by the Supabase security advisor: a materialized view is not covered by
+-- RLS, so PostgREST was serving the ICD-10 ranking internals to any signed-in user.
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab), 'select count(*) from icd10_lexeme_df'),
+  '42501', 'the ICD-10 ranking materialized view is not readable by a signed-in user');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';

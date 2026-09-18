@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import type { VisitType } from "@/lib/appointments";
 
 /**
  * The doctor's day: patients who are here (reception queue) and patients who
@@ -15,7 +16,7 @@ export type DayScheduleRow = {
   token_number: number | null;
   token_display: string | null;
   scheduled_time: string | null;
-  visit_type: "new" | "scheduled_follow_up" | "unscheduled_return" | null;
+  visit_type: VisitType | null;
   status: string | null;
   arrived: boolean;
 };

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Check, RotateCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { checkInAppointment, fetchDoctorDaySchedule, type DayScheduleRow } from "@/lib/daySchedule";
+import { VISIT_TYPE_LABEL } from "@/lib/appointments";
 
 /**
  * Patients who are booked for today but have not walked in yet.
@@ -105,7 +106,7 @@ export default function ExpectedTodayPanel({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-slate-900">{row.patient_name}</p>
                 <p className="text-xs text-slate-600">
-                  {row.visit_type === "scheduled_follow_up" ? "Follow-up" : "New visit"}
+                  {row.visit_type ? VISIT_TYPE_LABEL[row.visit_type] : "New visit"}
                   {row.scheduled_time ? ` · ${row.scheduled_time.slice(0, 5)}` : " · no time set"}
                 </p>
               </div>
