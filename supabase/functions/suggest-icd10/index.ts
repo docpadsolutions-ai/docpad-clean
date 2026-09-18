@@ -68,7 +68,8 @@ Deno.serve(async (req: Request) => {
     if (!geminiKey) return json({ success: false, error: "missing_gemini_key" }, 500);
     if (!supabaseUrl || !serviceKey) return json({ success: false, error: "missing_supabase_env" }, 500);
 
-    if (!(await authenticateCaller(req, supabaseUrl, serviceKey))) {
+    const caller = await authenticateCaller(req, supabaseUrl, serviceKey);
+    if (!caller) {
       return json({ success: false, error: "unauthorized" }, 401);
     }
 
@@ -126,6 +127,20 @@ Deno.serve(async (req: Request) => {
       return json({ success: false, error: "search_failed" }, 500);
     }
 
+    // Codes this clinic has already used for wording like this. In a small practice a
+    // couple of hundred codes cover almost every visit, so what was coded before is
+    // stronger evidence than any similarity score.
+    let prior: Record<string, unknown>[] = [];
+    if (caller.kind === "staff") {
+      const { data: priorRows } = await supabase.rpc("icd10_prior_for_note", {
+        p_query_text: clinical_note,
+        p_limit: 5,
+        p_hospital_id: caller.hospitalId,
+        p_practitioner_id: caller.practitionerId,
+      });
+      if (Array.isArray(priorRows)) prior = priorRows as Record<string, unknown>[];
+    }
+
     // 3. Ask Gemini Flash to pick the single best billable code
     const prompt = `You are a medical billing expert. Given a clinical note and candidate ICD-10 codes, pick the single most specific BILLABLE code.
 
@@ -146,6 +161,12 @@ Clinical Note: "${clinical_note}"
 
 Candidate ICD-10 codes:
 ${candidates.map((c: Record<string, unknown>) => `${c.code}: ${c.long_description} (Billable: ${c.is_billable})`).join("\n")}
+${prior.length === 0 ? "" : `
+Codes this clinic has already used for notes worded like this. Prefer one of these
+when it fits the note as well as any candidate above, because it is what the
+clinicians here have settled on:
+${prior.map((p: Record<string, unknown>) => `${p.code}: ${p.long_description} (used ${p.times_used}x${p.by_me ? ", by this doctor" : ""})`).join("\n")}
+`}
 
 Return JSON exactly like this:
 {"code":"M17.11","description":"Primary osteoarthritis, right knee","reasoning":"The note specifies right knee pain with crepitus, matching laterality-specific billable code M17.11 over unspecified M17.9"}`;
