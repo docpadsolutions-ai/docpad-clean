@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:db": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/rls_isolation.sql"
+    "test:db": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/rls_isolation.sql",
+    "test:safety": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/clinical_safety.sql",
+    "test:all": "npm run test:safety && npm run test:db && node scripts/check-migration-drift.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
