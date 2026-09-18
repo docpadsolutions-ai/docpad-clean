@@ -179,10 +179,23 @@ node scripts/backfill-icd10-embeddings.mjs
 ```
 
 It reads `.env.local` (all three values it needs are already there), has no
-dependencies, and is resumable: it only touches rows whose embedding is null, so if it
-stops or you interrupt it, just run it again. Roughly 300 calls to Google and a few
-minutes. Tell me when it finishes and I will re-check retrieval on the chapters that
-were missing.
+dependencies, and is resumable.
+
+**Blocked on the Gemini free tier.** Measured, not guessed: the quota is
+`EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier`, limit **1000 requests
+per day**, and `batchEmbedContents` counts every embedding in the batch as a request.
+850 are done; the remaining 14,397 would take about 15 days of running this once a
+day. Enabling billing on the Google Cloud project behind that key lifts the cap and
+the job finishes in minutes, for roughly 300k tokens of embedding - cents.
+
+Worth deciding on its own merits, not just for this job: the same 1000/day applies to
+the live app. Every prescription save, every similar-prescriptions lookup and every
+ICD suggestion spends one embed request, and the text-generation calls have their own,
+lower, daily cap. A clinic seeing fifty patients a day will hit these in ordinary use.
+
+Not blocking anything meanwhile: the chapters without embeddings are still reachable
+through the lexical and synonym layers. "Senile cataract of right eye" correctly
+returns H25.11 today with zero embeddings in chapter H.
 
 ---
 

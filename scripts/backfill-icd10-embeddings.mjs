@@ -303,6 +303,12 @@ async function main() {
         // Leave this batch unstaged so a later run picks it up again.
         hardFailures += 1;
         console.error(`\n  batch at ${slice[0]?.code} failed: ${e.message}`);
+        // A refused request still counts against the quota, so do not spend
+        // tomorrow's allowance discovering the same wall twice more.
+        if (/daily quota reached/.test(e.message)) {
+          console.error(`\n${fmt(done)} embedded this run. Re-run after the reset and it continues.`);
+          return;
+        }
         if (hardFailures >= 3) {
           console.error(
             `\nStopping after ${hardFailures} failed batches. ${fmt(done)} embedded so far;\n` +
