@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(50);
+select plan(55);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -386,6 +386,47 @@ insert into tap select isnt(
 insert into tap select is(
   pg_temp.as_user_err((select a_user from t_ab), 'select count(*) from icd10_lexeme_df'),
   '42501', 'the ICD-10 ranking materialized view is not readable by a signed-in user');
+
+
+-- ------------------------------------------------- finalise lock (Proposal v1.0 2.4)
+-- "explicit finalise action locking the encounter". The UI lock is `inert` plus
+-- disabled fields, none of which survives a direct PATCH, so these assert the lock
+-- where it actually has to hold.
+create temp table t_fin as
+select e.id as encounter_id
+from opd_encounters e
+where e.hospital_id = (select a_hospital from t_ab)
+  and coalesce(e.status, '') = 'completed'
+limit 1;
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$update opd_encounters set working_diagnosis = 'TAP TAMPER' where id = %L$q$,
+           (select encounter_id from t_fin))),
+  '42501', 'a finalised encounter refuses a change to the working diagnosis');
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$update opd_encounters set pulse = '999' where id = %L$q$,
+           (select encounter_id from t_fin))),
+  '42501', 'a finalised encounter refuses a change to recorded vitals');
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$update opd_encounters set status = 'in_progress' where id = %L$q$,
+           (select encounter_id from t_fin))),
+  '42501', 'a finalised encounter cannot be reopened, which would defeat the column lock');
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$update opd_encounters set follow_up_date = current_date + 30 where id = %L$q$,
+           (select encounter_id from t_fin))),
+  'none', 'administrative columns stay writable, so cancelling a follow-up still works');
+
+insert into tap select is(
+  (select working_diagnosis from opd_encounters where id = (select encounter_id from t_fin)),
+  (select working_diagnosis from opd_encounters where id = (select encounter_id from t_fin)),
+  'the clinical content of the finalised encounter is unchanged after the attempts above');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';
