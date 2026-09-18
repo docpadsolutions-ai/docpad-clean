@@ -11,6 +11,12 @@ name: Database safety tests
 #                        UI until 18 Sep 2026, so a browser-driven test would have
 #                        passed against a product that did not enforce any of them.
 #
+#   billing_arithmetic.sql  what an invoice comes to. Exists because the live data
+#                        proves nothing: every line ever written is quantity 1, no
+#                        discount, no tax. The first test that put a discount on a
+#                        line found that balance_due subtracted it twice, and that
+#                        column is what gets printed on the patient's invoice.
+#
 #   rls_isolation.sql    no hospital can see another hospital's data, signed-out
 #                        visitors reach nothing but the public RPCs, staff cannot
 #                        promote themselves, the audit trail records edits and chart
@@ -69,6 +75,18 @@ jobs:
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/clinical_safety.sql | tee clinical.out
           if grep -q "^not ok" clinical.out; then
             echo "::error::Clinical safety assertions failed - do not merge"
+            exit 1
+          fi
+
+      - name: Billing arithmetic suite
+        if: steps.secret.outputs.present == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -o pipefail
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/billing_arithmetic.sql | tee billing.out
+          if grep -q "^not ok" billing.out; then
+            echo "::error::Billing arithmetic assertions failed - an invoice does not add up"
             exit 1
           fi
 

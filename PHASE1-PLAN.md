@@ -38,7 +38,7 @@ normal way of discovering a gap, showing it to someone, confirms it as working.
    opening the prescription writer. Reopening and saving needs no confirmation, the
    pharmacy dispense screen has none, and encounter finalisation has none at all.
 
-## Wave 2 — The gate, and something to test against  (5 and 6 done; 7 needs the Client)
+## Wave 2 — The gate, and something to test against  ✅ complete except 7, which needs the Client
 
 Wave 1 is worthless if it can regress silently, and it cannot be demonstrated to anyone
 without data.

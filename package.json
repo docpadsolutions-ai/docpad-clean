@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit",
     "test:db": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/rls_isolation.sql",
     "test:safety": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/clinical_safety.sql",
-    "test:all": "npm run test:safety && npm run test:db && node scripts/check-migration-drift.mjs",
+    "test:all": "npm run test:safety && npm run test:billing && npm run test:db && node scripts/check-migration-drift.mjs",
     "seed:demo": "node scripts/seed-demo-day.mjs",
-    "seed:demo:reset": "node scripts/seed-demo-day.mjs --reset"
+    "seed:demo:reset": "node scripts/seed-demo-day.mjs --reset",
+    "test:billing": "psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f supabase/tests/billing_arithmetic.sql"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
