@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PatientAvatar } from "@/components/patient/patient-avatar";
+import { PatientActionConfirmPopover } from "@/components/patient/patient-action-confirm-popover";
 import { supabase } from "@/lib/supabase";
 
 type PatientEmbed = {
@@ -466,16 +467,27 @@ export function PrescriptionQueue({
                 <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-4 space-y-4">
                   {isEncounterGroup ? (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm">
-                      <button
-                        type="button"
-                        disabled={busyId === g.key}
-                        onClick={() => void handlePrintEncounterReceiptPreview(g)}
-                        className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      <PatientActionConfirmPopover
+                        patientId={pt?.id ?? ""}
+                        patientName={(pt?.full_name ?? "Unknown patient").trim() || "—"}
+                        docpadId={pt?.docpad_id ?? null}
+                        actionNoun="dispense"
+                        confirmLabel="Dispense"
+                        disabled={busyId === g.key || !pt?.id}
+                        onConfirm={() => handlePrintEncounterReceiptPreview(g)}
+                        side="top"
+                        align="start"
                       >
-                        {busyId === g.key
-                          ? "Loading…"
-                          : `Print receipt for this visit (${count} ${count === 1 ? "medication" : "medications"})`}
-                      </button>
+                        <button
+                          type="button"
+                          disabled={busyId === g.key}
+                          className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {busyId === g.key
+                            ? "Loading…"
+                            : `Print receipt for this visit (${count} ${count === 1 ? "medication" : "medications"})`}
+                        </button>
+                      </PatientActionConfirmPopover>
                       <p className="mt-2 text-[11px] leading-relaxed text-slate-600">
                         One receipt lists every medication for this visit. Preview prints all lines;{" "}
                         <span className="font-medium text-slate-700">Confirm &amp; Close</span> records each dispense.
@@ -559,14 +571,25 @@ export function PrescriptionQueue({
 
                           <div className="flex flex-wrap gap-2 pt-1">
                             {!isEncounterGroup ? (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void handlePrintReceiptPreview(line)}
-                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                              <PatientActionConfirmPopover
+                                patientId={pt?.id ?? ""}
+                                patientName={(pt?.full_name ?? "Unknown patient").trim() || "—"}
+                                docpadId={pt?.docpad_id ?? null}
+                                actionNoun="dispense"
+                                confirmLabel="Dispense"
+                                disabled={busy || !pt?.id}
+                                onConfirm={() => handlePrintReceiptPreview(line)}
+                                side="top"
+                                align="start"
                               >
-                                {busy ? "Loading…" : "Print receipt"}
-                              </button>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                  {busy ? "Loading…" : "Print receipt"}
+                                </button>
+                              </PatientActionConfirmPopover>
                             ) : null}
                             <button
                               type="button"

@@ -4355,24 +4355,54 @@ export default function EncounterPage() {
               >
                 Save as draft
               </button>
-              <button
-                type="button"
-                onClick={() => saveEncounter("completed", "close")}
-                disabled={isSaving || !canSaveEncounter}
-                title={!canSaveEncounter && !permLoading ? "You don’t have permission to save this encounter." : undefined}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5"
+              <PatientActionConfirmPopover
+                patientId={currentPatientId.trim()}
+                patientName={headerPatientDisplayName}
+                ageYears={patient?.age_years ?? null}
+                sex={patient?.sex ?? null}
+                docpadId={patient?.docpad_id ?? null}
+                actionNoun="encounter finalisation"
+                confirmLabel="Finalise"
+                disabled={isSaving || !canSaveEncounter || !currentPatientId.trim()}
+                onConfirm={async () => {
+                  await saveEncounter("completed", "close");
+                }}
+                side="top"
+                align="end"
               >
-                {isSaving ? "Saving…" : "Save & close"}
-              </button>
-              <button
-                type="button"
-                onClick={() => saveEncounter("completed", "next")}
-                disabled={isSaving || !canSaveEncounter}
-                title={!canSaveEncounter && !permLoading ? "You don’t have permission to save this encounter." : undefined}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5"
+                <button
+                  type="button"
+                  disabled={isSaving || !canSaveEncounter}
+                  title={!canSaveEncounter && !permLoading ? "You don’t have permission to save this encounter." : undefined}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5"
+                >
+                  {isSaving ? "Saving…" : "Save & close"}
+                </button>
+              </PatientActionConfirmPopover>
+              <PatientActionConfirmPopover
+                patientId={currentPatientId.trim()}
+                patientName={headerPatientDisplayName}
+                ageYears={patient?.age_years ?? null}
+                sex={patient?.sex ?? null}
+                docpadId={patient?.docpad_id ?? null}
+                actionNoun="encounter finalisation"
+                confirmLabel="Finalise"
+                disabled={isSaving || !canSaveEncounter || !currentPatientId.trim()}
+                onConfirm={async () => {
+                  await saveEncounter("completed", "next");
+                }}
+                side="top"
+                align="end"
               >
-                Save &amp; next patient
-              </button>
+                <button
+                  type="button"
+                  disabled={isSaving || !canSaveEncounter}
+                  title={!canSaveEncounter && !permLoading ? "You don’t have permission to save this encounter." : undefined}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5"
+                >
+                  Save &amp; next patient
+                </button>
+              </PatientActionConfirmPopover>
             </div>
               </>
             )}

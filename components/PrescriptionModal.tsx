@@ -10,6 +10,7 @@ import {
   type ReconciliationAction,
 } from "@/hooks/usePrescriptionSafety";
 import ActiveMedicationsPanel from "@/components/prescribing/ActiveMedicationsPanel";
+import { PatientActionConfirmPopover } from "@/components/patient/patient-action-confirm-popover";
 import PrescribingSafetyBanner from "@/components/prescribing/PrescribingSafetyBanner";
 import { saveEncounterFollowUp } from "@/lib/followUp";
 import type { CatalogEntry } from "@/lib/medicineCatalog";
@@ -2651,42 +2652,98 @@ export default function PrescriptionModal({
                 >
                   <ClockIcon className="h-4 w-4" /> Save Draft
                 </button>
-                <button
-                  type="button"
-                  onClick={handleFinalizePrescription}
-                  disabled={
-                    isSaving ||
-                    isPrescriptionFinal ||
-                    prescribingHardStop ||
-                    (whatsappNotificationsEnabled && isSendingWhatsApp) ||
-                    addedMedicines.length === 0 ||
-                    Boolean(inlineDraft)
-                  }
-                  className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                <PatientActionConfirmPopover
+                  patientId={patientId}
+                  patientName={patientName}
+                  ageYears={patientAge ?? null}
+                  sex={patientSex ?? null}
+                  docpadId={patientDisplayId}
+                  actionNoun="prescription"
+                  confirmLabel="Route to pharmacy"
+                  disabled={isSaving ||
+isPrescriptionFinal ||
+prescribingHardStop ||
+(whatsappNotificationsEnabled && isSendingWhatsApp) ||
+addedMedicines.length === 0 ||
+Boolean(inlineDraft)}
+                  onConfirm={handleFinalizePrescription}
+                  side="top"
+                  align="end"
                 >
-                  <PharmacyIcon className="h-4 w-4" />
-                  {isSaving ? "Finalizing…" : "Route to Pharmacy"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleFinalizePrescription}
-                  disabled={
-                    isSaving ||
-                    isPrescriptionFinal ||
-                    prescribingHardStop ||
-                    (whatsappNotificationsEnabled && isSendingWhatsApp) ||
-                    addedMedicines.length === 0 ||
-                    Boolean(inlineDraft)
-                  }
-                  className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <PrinterIcon className="h-4 w-4" />
-                  {isSaving ? "Finalizing…" : "Finalize Prescription"}
-                </button>
-                {whatsappNotificationsEnabled ? (
                   <button
                     type="button"
-                    onClick={handleWhatsAppSend}
+                    disabled={
+                    isSaving ||
+                    isPrescriptionFinal ||
+                    prescribingHardStop ||
+                    (whatsappNotificationsEnabled && isSendingWhatsApp) ||
+                    addedMedicines.length === 0 ||
+                    Boolean(inlineDraft)
+                    }
+                    className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <PharmacyIcon className="h-4 w-4" />
+                    {isSaving ? "Finalizing…" : "Route to Pharmacy"}
+                  </button>
+                </PatientActionConfirmPopover>
+                <PatientActionConfirmPopover
+                  patientId={patientId}
+                  patientName={patientName}
+                  ageYears={patientAge ?? null}
+                  sex={patientSex ?? null}
+                  docpadId={patientDisplayId}
+                  actionNoun="prescription"
+                  confirmLabel="Finalise prescription"
+                  disabled={isSaving ||
+isPrescriptionFinal ||
+prescribingHardStop ||
+(whatsappNotificationsEnabled && isSendingWhatsApp) ||
+addedMedicines.length === 0 ||
+Boolean(inlineDraft)}
+                  onConfirm={handleFinalizePrescription}
+                  side="top"
+                  align="end"
+                >
+                  <button
+                    type="button"
+                    disabled={
+                    isSaving ||
+                    isPrescriptionFinal ||
+                    prescribingHardStop ||
+                    (whatsappNotificationsEnabled && isSendingWhatsApp) ||
+                    addedMedicines.length === 0 ||
+                    Boolean(inlineDraft)
+                    }
+                    className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <PrinterIcon className="h-4 w-4" />
+                    {isSaving ? "Finalizing…" : "Finalize Prescription"}
+                  </button>
+                </PatientActionConfirmPopover>
+                {whatsappNotificationsEnabled ? (
+                  <PatientActionConfirmPopover
+                    patientId={patientId}
+                    patientName={patientName}
+                    ageYears={patientAge ?? null}
+                    sex={patientSex ?? null}
+                    docpadId={patientDisplayId}
+                    actionNoun="prescription message"
+                    confirmLabel="Send on WhatsApp"
+                    disabled={
+                      isSaving ||
+                      isPrescriptionFinal ||
+                      prescribingHardStop ||
+                      isSendingWhatsApp ||
+                      addedMedicines.length === 0 ||
+                      !patientPhone ||
+                      Boolean(inlineDraft)
+                    }
+                    onConfirm={handleWhatsAppSend}
+                    side="top"
+                    align="end"
+                  >
+                  <button
+                    type="button"
                     disabled={
                       isSaving ||
                       isPrescriptionFinal ||
@@ -2714,6 +2771,7 @@ export default function PrescriptionModal({
                       </>
                     )}
                   </button>
+                  </PatientActionConfirmPopover>
                 ) : null}
               </div>
             ) : dispEdit ? (
