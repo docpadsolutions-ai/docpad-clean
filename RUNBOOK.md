@@ -27,9 +27,20 @@ nothing.
 
 ```bash
 cd ~/docpad-clean
-git log --oneline -32        # read what you are about to push
+git log --oneline -33
 git push origin main
 ```
+
+Run those as three separate lines. Do not paste a line with a `#` comment on the end:
+your zsh is configured without `interactive_comments`, so it treats `#` as an argument
+rather than a comment and git answers `fatal: ambiguous argument '#'`. Harmless, but
+confusing the first time.
+
+**If the push is rejected with "the remote contains work that you do not have",** that
+has already happened once and is now resolved. A commit was made through the GitHub web
+interface on 5 September that your laptop never had. I rebased your 33 commits on top of
+it, so the history is linear and that commit is included. If it happens again, stop and
+tell me rather than forcing anything.
 
 **Expect CI to go red, on lint, for a reason that predates today.** `ci.yml` runs
 `eslint .` and there are 144 errors in the codebase, none of them from this week's

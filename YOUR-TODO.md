@@ -41,6 +41,17 @@ this blocks acceptance and not just deployment. I need you to create a second Su
 project and a Vercel preview target; I will wire the environment, run the seed into it
 and point CI at it. A free-tier project is enough for now.
 
+**E. Decide the Gemini model version.** Someone edited `VoiceDictationButton.tsx`
+through the GitHub web interface on 5 September to move it from `gemini-2.5-flash` to
+`gemini-3.6-flash`. It never took effect: the edit landed on `app/components/...`, a
+stale duplicate that a later refactor deleted, while the live file is `components/...`.
+So the app still runs 2.5 in nine places. 3.6 Flash is real and documented, and there is
+now a 3.8 Flash as well. I have deliberately not upgraded anything, because changing the
+model changes clinical extraction output, and `suggest-icd10` is specifically tuned
+around 2.5's thinking behaviour (`thinkingBudget: 0`, structured output, a 1024-token
+cap). Tell me which version you want and I will move all nine call sites together and
+re-run the ICD-10 and voice-extraction checks against it.
+
 **D. Push.** 31 commits on `main` have never left your machine.
 
 ---
