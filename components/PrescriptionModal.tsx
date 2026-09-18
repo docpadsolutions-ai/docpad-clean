@@ -1347,6 +1347,19 @@ export default function PrescriptionModal({
     [inlineDraft, removeLine],
   );
 
+  /**
+   * The database refuses a severe interaction or an allergy match at the write
+   * itself (trigger `aa_block_unsafe_prescription`), because the hard stop used to
+   * live only in a `disabled` attribute here and did not survive a direct write.
+   * Both are raised as 42501, so present them as a clinical block rather than as a
+   * save failure.
+   */
+  function safetyBlockText(err: { code?: string; message?: string; hint?: string } | null): string | null {
+    if (!err) return null;
+    if (err.code !== "42501" && !String(err.message ?? "").startsWith("Blocked:")) return null;
+    return [err.message, err.hint].filter(Boolean).join(" ");
+  }
+
   /** Persist lines + ancillary writes, then `finalize_prescription` (shared by Route to Pharmacy & Finalize). */
   async function handleFinalizePrescription() {
     if (inlineDraft) {
@@ -1374,9 +1387,11 @@ export default function PrescriptionModal({
     const { error } = await supabase.from(PRESCRIPTIONS_TABLE).insert(payload);
 
     if (error) {
+      const blocked = safetyBlockText(error);
       console.error("Prescription save failed:", error);
       setIsSaving(false);
-      toast.error({ title: error.message });
+      toast.error({ title: blocked ?? error.message });
+      if (blocked) setSaveError(blocked);
       return;
     }
 
@@ -1403,7 +1418,7 @@ export default function PrescriptionModal({
       return;
     }
 
-    const { error: rpcErr } = await supabase.rpc("finalize_prescription", {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc("finalize_prescription", {
       encounter_id: eid,
       patient_id: pid,
       hospital_id: hid,
@@ -1412,7 +1427,16 @@ export default function PrescriptionModal({
     setIsSaving(false);
 
     if (rpcErr) {
-      toast.error({ title: rpcErr.message });
+      toast.error({ title: safetyBlockText(rpcErr) ?? rpcErr.message });
+      return;
+    }
+
+    // finalize_prescription reports refusal in its return value, not by raising.
+    const result = rpcData as { success?: boolean; error?: string; message?: string } | null;
+    if (result && result.success === false) {
+      const msg = result.message ?? result.error ?? "The prescription could not be finalized.";
+      toast.error({ title: msg });
+      setSaveError(msg);
       return;
     }
 
@@ -1461,7 +1485,7 @@ export default function PrescriptionModal({
 
       const { error } = await supabase.from(PRESCRIPTIONS_TABLE).insert(payload);
       if (error) {
-        setSaveError(error.message);
+        setSaveError(safetyBlockText(error) ?? error.message);
         setIsSendingWhatsApp(false);
         return;
       }

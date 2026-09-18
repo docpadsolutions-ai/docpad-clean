@@ -7,7 +7,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(55);
+select plan(60);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -427,6 +427,58 @@ insert into tap select is(
   (select working_diagnosis from opd_encounters where id = (select encounter_id from t_fin)),
   (select working_diagnosis from opd_encounters where id = (select encounter_id from t_fin)),
   'the clinical content of the finalised encounter is unchanged after the attempts above');
+
+
+-- ------------------------------------------- prescribing hard stops (SOW 3.2, 2.2)
+-- "Hard stops for severe allergy and severe drug interaction are retained
+-- unchanged." Before this, the hard stop was a disabled attribute on three buttons
+-- and did not survive a direct write. These assert it where the row lands.
+create temp table t_rx as
+select p.id as patient_id, p.hospital_id
+from patients p
+where p.hospital_id = (select a_hospital from t_ab)
+limit 1;
+
+-- Fixture inside the test transaction; the whole suite rolls back.
+update patients set known_allergies = array['penicillin']
+ where id = (select patient_id from t_rx);
+
+insert into opd_encounters (id, hospital_id, patient_id, encounter_date, status)
+select '00000000-0000-4000-8000-0000000000a1'::uuid, hospital_id, patient_id, current_date, 'in_progress'
+  from t_rx;
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$insert into prescriptions (encounter_id, patient_id, medicine_name, active_ingredient_name, status)
+             values ('00000000-0000-4000-8000-0000000000a1', %L, 'Penicillin V 250mg', 'penicillin', 'ordered')$q$,
+           (select patient_id from t_rx))),
+  '42501', 'a medicine matching a recorded allergy is refused at the insert');
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$insert into prescriptions (encounter_id, patient_id, medicine_name, active_ingredient_name, status)
+             values ('00000000-0000-4000-8000-0000000000a1', %L, 'Aceclofenac 100mg', 'aceclofenac', 'ordered')$q$,
+           (select patient_id from t_rx))),
+  'none', 'a medicine with no interaction and no allergy still saves');
+
+insert into tap select is(
+  pg_temp.as_user_err((select a_user from t_ab),
+    format($q$insert into prescriptions (encounter_id, patient_id, medicine_name, active_ingredient_name, status)
+             values ('00000000-0000-4000-8000-0000000000a1', %L, 'Warfarin 5mg', 'warfarin', 'ordered')$q$,
+           (select patient_id from t_rx))),
+  '42501', 'the second half of a severe interacting pair is refused as it is added');
+
+insert into tap select is(
+  (select count(*)::int from prescriptions
+    where encounter_id = '00000000-0000-4000-8000-0000000000a1'),
+  1, 'only the safe medicine reached the table');
+
+insert into tap select cmp_ok(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select jsonb_array_length(public.prescription_safety_blocks(%L,
+             '[{"medicine_name":"Penicillin V","generic_name":"penicillin"}]'::jsonb))::text$q$,
+           (select patient_id from t_rx)))::int,
+  '>', 0, 'the block list reports the allergy rather than returning empty');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';
