@@ -13,6 +13,8 @@ export type NewPatientFormValues = {
   phone: string;
   /** Lowercase hex SHA-256 of normalized 12-digit Aadhaar — never raw Aadhaar. */
   aadhaarSha256Hex: string | null;
+  /** True when the patient had no Aadhaar and registration deliberately proceeded on mobile-only identity (Sep 2026). */
+  registeredWithoutAadhaar: boolean;
   abhaId: string;
   consentGiven: boolean;
   /** Purposes the patient agreed to. 'treatment' is implied by consentGiven. */
@@ -24,6 +26,8 @@ export type NewPatientFormValues = {
   pin: string;
   allergies: string[];
   conditions: string[];
+  /** Set when a duplicate (by Aadhaar or mobile) was shown to staff and they confirmed this is a different patient. */
+  duplicateOverrideOf: string | null;
 };
 
 export type RegisteredPatientRow = {
@@ -55,8 +59,14 @@ export async function registerNewPatient(
     return { ok: false, error: "Please confirm patient consent before registering." };
   }
 
-  const hash = values.aadhaarSha256Hex?.trim().toLowerCase() ?? "";
-  if (!/^[a-f0-9]{64}$/.test(hash)) {
+  const hashRaw = values.aadhaarSha256Hex?.trim().toLowerCase() ?? "";
+  let hash: string | null = null;
+  if (hashRaw) {
+    if (!/^[a-f0-9]{64}$/.test(hashRaw)) {
+      return { ok: false, error: "Identity verification is incomplete. Go back and confirm Aadhaar first." };
+    }
+    hash = hashRaw;
+  } else if (!values.registeredWithoutAadhaar) {
     return { ok: false, error: "Identity verification is incomplete. Go back and confirm Aadhaar first." };
   }
 
@@ -72,6 +82,7 @@ export async function registerNewPatient(
       sex: (values.gender || "unknown").toLowerCase(),
       phone: `+91${values.phone.replace(/\D/g, "")}`,
       aadhaar_hash: hash,
+      registered_despite_duplicate_of: values.duplicateOverrideOf || null,
       abha_id: values.abhaId.trim() || null,
       address_line1: values.addr1.trim() || null,
       address_line2: values.addr2.trim() || null,

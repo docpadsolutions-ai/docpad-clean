@@ -14,8 +14,12 @@ import {
   type ConsentPurpose,
   type GrievanceOfficer,
 } from "@/lib/dpdpa";
-import { hashAadhaar, normalizeAadhaarDigits } from "@/lib/patientIdentity";
-import { supabase } from "@/lib/supabase";
+import {
+  checkPatientExistsByAadhaarHash,
+  checkPatientExistsByPhone,
+  hashAadhaar,
+  normalizeAadhaarDigits,
+} from "@/lib/patientIdentity";
 
 const inputCls =
   "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 outline-none ring-blue-500/20 transition focus:border-blue-500 focus:ring-2";
@@ -114,6 +118,71 @@ function TagListInput({
   );
 }
 
+type DuplicateCandidate = {
+  id: string;
+  docpadId: string;
+  fullName: string;
+  ageYears: number | null;
+  matchedBy: "aadhaar" | "mobile";
+};
+
+/**
+ * Sep 2026: replaces the old hard stop. A possible duplicate is a decision for the
+ * person at the desk, not a dead end — they know whether the family member standing
+ * in front of them is the Ramesh Kumar already on file or a different one who shares
+ * his phone.
+ */
+function DuplicateReviewPanel({
+  candidate,
+  onSame,
+  onDifferent,
+  onCancel,
+}: {
+  candidate: DuplicateCandidate;
+  onSame: () => void;
+  onDifferent: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+    >
+      <p>
+        <span className="font-semibold">Possible existing patient</span> — matched by{" "}
+        {candidate.matchedBy === "aadhaar" ? "Aadhaar" : "mobile number"}:{" "}
+        <span className="font-semibold">{candidate.fullName || "Unnamed patient"}</span>
+        {candidate.ageYears != null ? `, ${candidate.ageYears}y` : ""}
+        {candidate.docpadId ? ` · ID: ${candidate.docpadId}` : ""}.
+      </p>
+      <p className="text-xs text-amber-800">Is this the same patient, or someone else?</p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onSame}
+          className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-amber-700"
+        >
+          Same patient — open their record
+        </button>
+        <button
+          type="button"
+          onClick={onDifferent}
+          className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+        >
+          Different patient — continue registering
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg px-4 py-2 text-xs font-medium text-amber-700 hover:underline"
+        >
+          Go back
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export type NewPatientRegistrationFormProps = {
   orgId: string | null;
   onSuccess: (patient: RegisteredPatientRow) => void;
@@ -128,6 +197,7 @@ function buildValues(
   gender: string,
   phone: string,
   aadhaarSha256Hex: string | null,
+  registeredWithoutAadhaar: boolean,
   abhaId: string,
   consentGiven: boolean,
   consentPurposes: ConsentPurpose[],
@@ -138,6 +208,7 @@ function buildValues(
   pin: string,
   allergies: string[],
   conditions: string[],
+  duplicateOverrideOf: string | null,
 ): NewPatientFormValues {
   return {
     firstName,
@@ -146,6 +217,7 @@ function buildValues(
     gender,
     phone,
     aadhaarSha256Hex,
+    registeredWithoutAadhaar,
     abhaId,
     consentGiven,
     consentPurposes,
@@ -156,6 +228,7 @@ function buildValues(
     pin,
     allergies,
     conditions,
+    duplicateOverrideOf,
   };
 }
 
@@ -182,6 +255,9 @@ export function NewPatientRegistrationForm({
   const [otpSentHint, setOtpSentHint] = useState(false);
 
   const [flowError, setFlowError] = useState<string | null>(null);
+  const [registeredWithoutAadhaar, setRegisteredWithoutAadhaar] = useState(false);
+  const [duplicateCandidate, setDuplicateCandidate] = useState<DuplicateCandidate | null>(null);
+  const [duplicateOverrideId, setDuplicateOverrideId] = useState<string | null>(null);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -203,6 +279,7 @@ export function NewPatientRegistrationForm({
 
   async function handleAadhaarVerify() {
     setFlowError(null);
+    setDuplicateCandidate(null);
     const raw = aadhaarInputRef.current?.value ?? "";
     const aadhaarStr = normalizeAadhaarDigits(raw);
     if (aadhaarStr.length !== 12) {
@@ -213,44 +290,10 @@ export function NewPatientRegistrationForm({
     setIdentityBusy(true);
     try {
       const hashedAadhaar = (await hashAadhaar(aadhaarStr)).trim().toLowerCase();
-      const { data, error } = await supabase.rpc("check_patient_exists", {
-        p_aadhaar_hash: hashedAadhaar,
-      });
-      if (error) {
-        setFlowError(error.message);
+      const dup = await checkPatientExistsByAadhaarHash(hashedAadhaar);
+      if (dup.error) {
+        setFlowError(dup.error.message);
         return;
-      }
-
-      if (data === true) {
-        setFlowError("Patient already registered.");
-        return;
-      }
-
-      const rows = Array.isArray(data) ? data : data != null && typeof data === "object" ? [data] : [];
-      if (rows.length > 0) {
-        const row0 = rows[0] as Record<string, unknown>;
-        const existing_name =
-          row0.existing_name != null ? String(row0.existing_name).trim() : "";
-        const existing_docpad_id =
-          row0.existing_docpad_id != null ? String(row0.existing_docpad_id).trim() : "";
-        const legacyName =
-          row0.patient_full_name != null ? String(row0.patient_full_name).trim() : "";
-        const legacyDocpad =
-          row0.patient_docpad_id != null ? String(row0.patient_docpad_id).trim() : "";
-        const matchedFlag =
-          row0.matched === true || row0.match === true || row0.exists === true || row0.found === true;
-        const duplicate =
-          matchedFlag ||
-          existing_name !== "" ||
-          existing_docpad_id !== "" ||
-          legacyName !== "" ||
-          legacyDocpad !== "";
-        if (duplicate) {
-          const nameForMessage = existing_name || legacyName;
-          const idForMessage = existing_docpad_id || legacyDocpad;
-          setFlowError(`Patient already registered as ${nameForMessage} with ID: ${idForMessage}`);
-          return;
-        }
       }
 
       setAadhaarRawEphemeral(aadhaarStr);
@@ -258,14 +301,67 @@ export function NewPatientRegistrationForm({
         aadhaarInputRef.current.value = "";
       }
       setAadhaarHashHex(hashedAadhaar);
+      setRegisteredWithoutAadhaar(false);
       setAbhaTxnId(null);
       setAbhaOtp("");
       setOtpSentHint(false);
+
+      if (dup.match) {
+        // A possible duplicate no longer dead-ends the desk — it is a decision, made
+        // right here, with a real "open their record" action if it really is them.
+        setDuplicateCandidate({
+          id: dup.id ?? "",
+          docpadId: dup.docpadId ?? "",
+          fullName: dup.fullName ?? "",
+          ageYears: dup.ageYears,
+          matchedBy: "aadhaar",
+        });
+        return;
+      }
+
       setRegStep("abha_otp");
     } catch (err) {
       setFlowError(err instanceof Error ? err.message : "Could not verify Aadhaar.");
     } finally {
       setIdentityBusy(false);
+    }
+  }
+
+  /** No Aadhaar in hand — go straight to demographics on mobile-only identity. ABHA linking is skipped. */
+  function handleSkipAadhaar() {
+    setFlowError(null);
+    setDuplicateCandidate(null);
+    setAadhaarHashHex(null);
+    setAadhaarRawEphemeral(null);
+    setRegisteredWithoutAadhaar(true);
+    setAbhaTxnId(null);
+    setAbhaOtp("");
+    setAbhaId("");
+    setOtpSentHint(false);
+    if (aadhaarInputRef.current) aadhaarInputRef.current.value = "";
+    setRegStep("demographics");
+  }
+
+  function handleDuplicateSame() {
+    if (!duplicateCandidate) return;
+    onSuccess({
+      id: duplicateCandidate.id,
+      full_name: duplicateCandidate.fullName || "Unnamed patient",
+      docpad_id: duplicateCandidate.docpadId,
+      age_years: duplicateCandidate.ageYears ?? 0,
+    });
+    setDuplicateCandidate(null);
+  }
+
+  function handleDuplicateDifferent() {
+    if (!duplicateCandidate) return;
+    const candidate = duplicateCandidate;
+    setDuplicateOverrideId(candidate.id);
+    setDuplicateCandidate(null);
+    if (candidate.matchedBy === "aadhaar") {
+      setRegStep("abha_otp");
+    } else {
+      void submitPatient(candidate.id);
     }
   }
 
@@ -317,12 +413,38 @@ export function NewPatientRegistrationForm({
   async function handleFinalSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitError(null);
-    if (!aadhaarHashHex) {
+    if (!aadhaarHashHex && !registeredWithoutAadhaar) {
       setSubmitError("Identity verification is missing. Please restart registration.");
       return;
     }
+    await submitPatient(duplicateOverrideId);
+  }
 
+  /**
+   * Split out from the submit handler so "different patient, continue" from the
+   * mobile-duplicate panel can retry the insert directly, rather than asking the desk
+   * to press Create patient a second time.
+   */
+  async function submitPatient(overrideId: string | null) {
+    setSubmitError(null);
     setIsSubmitting(true);
+
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length === 10) {
+      const dup = await checkPatientExistsByPhone(`+91${digits}`);
+      if (!dup.error && dup.match && dup.id && dup.id !== overrideId) {
+        setIsSubmitting(false);
+        setDuplicateCandidate({
+          id: dup.id,
+          docpadId: dup.docpadId ?? "",
+          fullName: dup.fullName ?? "",
+          ageYears: dup.ageYears,
+          matchedBy: "mobile",
+        });
+        return;
+      }
+    }
+
     const result = await registerNewPatient(
       buildValues(
         firstName,
@@ -331,6 +453,7 @@ export function NewPatientRegistrationForm({
         gender,
         phone,
         aadhaarHashHex,
+        registeredWithoutAadhaar,
         abhaId,
         consentGiven,
         consentPurposes,
@@ -341,6 +464,7 @@ export function NewPatientRegistrationForm({
         pin,
         allergies,
         conditions,
+        overrideId,
       ),
       orgId,
     );
@@ -435,6 +559,13 @@ export function NewPatientRegistrationForm({
             >
               {identityBusy ? "Checking…" : "Continue"}
             </button>
+            <button
+              type="button"
+              onClick={handleSkipAadhaar}
+              className="block text-xs font-medium text-gray-500 hover:text-gray-700 hover:underline"
+            >
+              Patient doesn&rsquo;t have their Aadhaar — register with mobile number only
+            </button>
           </div>
         </section>
       )}
@@ -499,16 +630,23 @@ export function NewPatientRegistrationForm({
         </div>
       )}
 
-      <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-900">
-        <span className="font-medium">Aadhaar verified.</span>{" "}
-        {abhaId ? (
-          <>
-            ABHA linked: <span className="font-mono font-semibold">{abhaId}</span>
-          </>
-        ) : (
-          "ABHA verification completed — you can add an ABHA ID later if needed."
-        )}
-      </div>
+      {registeredWithoutAadhaar ? (
+        <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+          <span className="font-medium text-gray-900">Registering without Aadhaar.</span>{" "}
+          No ABHA ID was linked. It can be added to this record later if the patient brings their Aadhaar.
+        </div>
+      ) : (
+        <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-900">
+          <span className="font-medium">Aadhaar verified.</span>{" "}
+          {abhaId ? (
+            <>
+              ABHA linked: <span className="font-mono font-semibold">{abhaId}</span>
+            </>
+          ) : (
+            "ABHA verification completed — you can add an ABHA ID later if needed."
+          )}
+        </div>
+      )}
 
       <div className="space-y-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
@@ -525,6 +663,9 @@ export function NewPatientRegistrationForm({
               setAbhaId("");
               setOtpSentHint(false);
               setFlowError(null);
+              setRegisteredWithoutAadhaar(false);
+              setDuplicateCandidate(null);
+              setDuplicateOverrideId(null);
               if (aadhaarInputRef.current) aadhaarInputRef.current.value = "";
             }}
           >
@@ -818,6 +959,16 @@ export function NewPatientRegistrationForm({
   if (variant === "modal") {
     return (
       <form onSubmit={regStep === "demographics" ? handleFinalSubmit : (e) => e.preventDefault()} className="pb-4">
+        {duplicateCandidate && (
+          <div className="mb-4">
+            <DuplicateReviewPanel
+              candidate={duplicateCandidate}
+              onSame={handleDuplicateSame}
+              onDifferent={handleDuplicateDifferent}
+              onCancel={() => setDuplicateCandidate(null)}
+            />
+          </div>
+        )}
         {regStep !== "demographics" ? identitySteps : demographicsBody}
         <div className="sticky bottom-0 z-10 -mx-5 mt-6 border-t border-gray-200 bg-white px-5 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
           <div className="flex flex-wrap items-center justify-end gap-3">
@@ -848,6 +999,16 @@ export function NewPatientRegistrationForm({
       onSubmit={regStep === "demographics" ? handleFinalSubmit : (e) => e.preventDefault()}
       className="mt-8"
     >
+      {duplicateCandidate && (
+        <div className="mx-auto mb-4 max-w-3xl">
+          <DuplicateReviewPanel
+            candidate={duplicateCandidate}
+            onSame={handleDuplicateSame}
+            onDifferent={handleDuplicateDifferent}
+            onCancel={() => setDuplicateCandidate(null)}
+          />
+        </div>
+      )}
       {regStep !== "demographics" ? identitySteps : demographicsBody}
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] sm:px-6">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">

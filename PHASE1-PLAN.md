@@ -48,7 +48,10 @@ without data.
    write, a finalised encounter rejects a clinical update, a prescription cannot be
    finalised past a hard stop. §2.1 of Proposal v1.0 names this as a blocking gate and
    §5 names it as an acceptance criterion; neither is satisfied by the current CI, which
-   runs typecheck, lint and build.
+   runs typecheck, lint and build. 26 assertions as of 19 Sep 2026 (was 22); all pass
+   live against Supabase. Still gated on the Client adding `SUPABASE_DB_URL` — see
+   `RUNBOOK.md` step 3 — without it CI skips the whole suite with a warning rather
+   than running it.
 6. **Seed-data framework producing a realistic OPD day.** Nothing else in the plan can
    be demonstrated, staged or acceptance-tested without it. It is also the answer to
    §11.2's question about whether it doubles as an audit dataset.
@@ -84,11 +87,27 @@ either absent or present on one screen out of nine.
 12. **Patient photo at registration.** The `patient_photos` table and the bucket exist
     and are read from. Nothing writes. Blocks 10 from being complete, since the banner
     specifies a photo.
-13. **Duplicate detection on a mobile hash.** The `mobile_hash` column is dead. Detection
-    runs on an Aadhaar hash instead, which is defensible but fails for any patient
-    without Aadhaar, and is not the clause.
-14. **Merge-review path.** Registration currently hard-stops on a duplicate with no
-    same-person / different-person / merge branch.
+13. **Duplicate detection on a mobile hash. Done 19 Sep 2026.** `mobile_hash` is now
+    computed server-side by a trigger on `patients.phone` (never asked of the
+    client — phone is already stored in the clear, so hashing it buys normalization,
+    not confidentiality) and backfilled for all existing patients.
+    `check_patient_exists_by_phone` mirrors the Aadhaar RPC's shape and hospital
+    scoping. This also removed a bug this surfaced while building it: registration
+    required a 12-digit Aadhaar before it would let anyone past step 1, so a patient
+    with no Aadhaar could not be registered at all. There is now a "register with
+    mobile number only" path that skips straight to demographics (and skips ABHA
+    linking, since that needs Aadhaar OTP).
+14. **Merge-review path. Done 19 Sep 2026.** A duplicate hit, by either Aadhaar or
+    mobile, no longer dead-ends the desk with an error string. It shows who it might
+    be (name, age, DocPad ID) and two real actions: "same patient" opens the existing
+    record instead of creating a second one, "different patient" continues
+    registering and records `patients.registered_despite_duplicate_of` so a chart
+    that later looks like a duplicate has a reason on file. `check_patient_exists`
+    was extended (id and age, not just name and ID string) so "same patient" has
+    something to act on. Caught and fixed while wiring this up: the clinical-safety
+    suite's own hard-stop fixture had gone stale against Wave 1.3's structured
+    `patient_allergies` table (see item 5's test count) — not a production bug, but
+    the gate itself was quietly testing the wrong thing for three of its assertions.
 15. **Encounter autosave to the database, with a visible saved state.** There is a
     continuous draft to `sessionStorage` and no server-side autosave at all, so a draft
     lives in one browser tab and nowhere else. The clause asks for both the autosave and

@@ -20,7 +20,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(22);
+select plan(26);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -112,6 +112,16 @@ limit 1;
 update patients set known_allergies = array['penicillin']
  where id = (select patient_id from t_rx);
 
+-- Wave 1.3 moved the hard-stop's own matching from this legacy free-text column onto
+-- the structured patient_allergies table (patient_allergy_matches falls back to
+-- known_allergies only when a patient has *no* structured rows at all). Real patients
+-- already have structured rows from that migration's backfill, so the fixture above
+-- alone no longer reaches the hard stop for an existing patient -- insert the
+-- structured row here too, before the hard-stop assertions run.
+insert into public.patient_allergies (hospital_id, patient_id, substance, category, severity)
+select hospital_id, patient_id, 'penicillin', 'drug', 'unknown' from t_rx
+on conflict do nothing;
+
 insert into opd_encounters (id, hospital_id, patient_id, encounter_date, status)
 select '00000000-0000-4000-8000-0000000000a1'::uuid, hospital_id, patient_id, current_date, 'in_progress'
   from t_rx;
@@ -151,12 +161,8 @@ insert into tap select cmp_ok(
 
 
 -- --------------------------------------------- allergy grading (SOW 3.2, Wave 1.3)
--- The patient fixture from the hard-stop block above already carries a penicillin
--- allergy. These assert the grading, not merely the match.
-insert into public.patient_allergies (hospital_id, patient_id, substance, category, severity)
-select hospital_id, patient_id, 'penicillin', 'drug', 'unknown' from t_rx
-on conflict do nothing;
-
+-- The structured row inserted above (moved earlier so the hard-stop block could see
+-- it) already carries the penicillin allergy these assert the grading of.
 insert into tap select is(
   pg_temp.as_user((select a_user from t_ab),
     format($q$select (public.patient_allergy_matches(%L,
@@ -247,6 +253,34 @@ insert into tap select isnt(
 insert into tap select matches(
   (select public.next_cr_number((select a_hospital from t_ab))),
   '[0-9]{6}$', 'a CR number ends in a six-digit running number');
+
+-- ------------------------------------- mobile duplicate detection (Wave 3.13/14)
+-- Until 19 Sep 2026 the only duplicate check was by Aadhaar hash, so a patient with
+-- no Aadhaar had no duplicate check run for them at all. This is the mobile-hash
+-- equivalent, hospital-scoped the same way the Aadhaar one is.
+insert into tap select is(
+  (select count(*)::int from patients where phone is not null and btrim(phone) <> '' and mobile_hash is null),
+  0, 'every patient with a phone number has a mobile hash');
+
+insert into tap select is(
+  pg_temp.as_user((select a_user from t_ab),
+    format($q$select (count(*) > 0)::text from check_patient_exists_by_phone(
+      (select phone from patients where hospital_id = %L and phone is not null limit 1))$q$,
+      (select a_hospital from t_ab))),
+  'true', 'the mobile duplicate check finds an existing patient by phone');
+
+insert into tap select is(
+  pg_temp.as_user((select b_user from t_ab),
+    format($q$select count(*)::text from check_patient_exists_by_phone(
+      (select phone from patients where hospital_id = %L and phone is not null limit 1))$q$,
+      (select a_hospital from t_ab))),
+  '0', 'the mobile duplicate check does not cross hospitals');
+
+insert into tap select isnt(
+  (select column_name from information_schema.columns
+    where table_schema = 'public' and table_name = 'patients'
+      and column_name = 'registered_despite_duplicate_of'),
+  null, 'patients carries an audit trail column for a confirmed non-duplicate registration');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';
