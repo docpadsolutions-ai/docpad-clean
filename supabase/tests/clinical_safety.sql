@@ -20,7 +20,7 @@
 -- user_id. Hospital A is the one with the most patients; hospital B is another.
 begin;
 
-select plan(18);
+select plan(22);
 create temp table tap(l text);
 
 create temp table t_actor as
@@ -220,6 +220,33 @@ insert into tap select is(
              '[{"medicine_name":"Cefuroxime 500mg","generic_name":"cefuroxime"}]'::jsonb))::text$q$,
            (select patient_id from t_rx))),
   '0', 'a related cross-reaction is an advisory and never enters the block list');
+
+
+-- ------------------------------------- patient identity (Proposal v1.0 2.3)
+-- "a persistent patient banner ... showing photo, name, age/sex, DocPad ID and CR
+-- number". The CR number did not exist anywhere in the schema until 19 Sep 2026.
+-- It is the number the patient is holding on a card and can read back, which is the
+-- only kind of identity check that is actually a check.
+insert into tap select is(
+  (select count(*)::int from patients where cr_number is null),
+  0, 'every patient has a CR number');
+
+insert into tap select is(
+  (select count(*)::int from (
+     select hospital_id, cr_number from patients
+      group by 1, 2 having count(*) > 1) d),
+  0, 'CR numbers do not repeat within a hospital');
+
+insert into tap select isnt(
+  (select public.next_cr_number((select a_hospital from t_ab))),
+  (select cr_number from patients
+    where hospital_id = (select a_hospital from t_ab)
+    order by cr_number desc limit 1),
+  'the next CR number is not one already issued');
+
+insert into tap select matches(
+  (select public.next_cr_number((select a_hospital from t_ab))),
+  '[0-9]{6}$', 'a CR number ends in a six-digit running number');
 
 -- ----------------------------------------------------------------- report
 select l from tap where l like 'not ok%';

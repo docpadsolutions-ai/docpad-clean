@@ -65,13 +65,22 @@ without data.
 Everything here is a patient-safety clause in §2.3 of Proposal v1.0 that is presently
 either absent or present on one screen out of nine.
 
-10. **Shared patient banner across all clinical screens.** `PatientEncounterBanner` is a
-    good component used on exactly one page. Lab, nursing, triage, both OPD
-    investigation views, the encounters list and IPD investigations show no patient
-    identity at all. This is the wrong-patient clause, and the audit baseline for
-    wrong-patient prevention was 27% against a target of ≥85%.
-11. **CR number.** It does not exist anywhere in the schema. Needs a column, a
-    generation rule, and a decision on what happens to the 37 existing patients.
+10. **Shared patient banner across all clinical screens. Done 19 Sep 2026** for the
+    screens the clause actually covers. `PatientIdentityBar` is the compact form, fed
+    by a `usePatientIdentity` hook, now on the OPD investigation ordering screen, the
+    OPD results view and the IPD investigations screen - the three single-patient
+    clinical screens that showed no patient identity at all. The audit also listed
+    lab, nursing, triage and the encounters list: triage and encounters turned out to
+    be a redirect and a stub, and lab and nursing are queues of many patients, where a
+    single-patient banner has nothing to show. Worth stating rather than quietly
+    counting them as done. Still open: unifying IPD's bespoke strip onto the same
+    component.
+11. **CR number. Done 19 Sep 2026.** Per-hospital running number, zero-padded to six,
+    allocated on insert under a per-hospital advisory lock, backfilled in registration
+    order so the oldest patient is 000001. `hospitals.cr_number_prefix` is there for
+    sites that want "GMC/000123"; it defaults to empty. Shown in preference to the
+    DocPad ID wherever identity is confirmed, because confirming against a number only
+    the system knows is not confirming.
 12. **Patient photo at registration.** The `patient_photos` table and the bucket exist
     and are read from. Nothing writes. Blocks 10 from being complete, since the banner
     specifies a photo.

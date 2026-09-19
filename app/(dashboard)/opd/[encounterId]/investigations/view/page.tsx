@@ -8,6 +8,7 @@ import {
   practitionerDisplayNameFromRow,
 } from "@/lib/practitionerAuthLookup";
 import { supabase } from "@/lib/supabase";
+import PatientIdentityBar from "@/components/patient/PatientIdentityBar";
 
 export default function InvestigationsViewPage() {
   const params = useParams();
@@ -92,6 +93,7 @@ export default function InvestigationsViewPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <PatientIdentityBar patientId={patientId} context="Investigations" />
       <div className="border-b border-gray-200 bg-white px-4 py-3">
         <Link
           href={`/dashboard/opd/encounter/${encounterId}?tab=investigations`}

@@ -85,6 +85,7 @@ type PatientData = {
   sex:         string | null;
   blood_group: string | null;
   docpad_id:   string | null;
+  cr_number:   string | null;
   phone:       string | null;
 };
 
@@ -182,6 +183,7 @@ function patientEmbedToData(p: PatientRowDb | Record<string, unknown> | null | u
     sex: n(r.sex),
     blood_group: n(r.blood_group),
     docpad_id: n(r.docpad_id),
+    cr_number: n(r.cr_number),
     phone: n(r.phone),
   };
 }
@@ -1668,7 +1670,7 @@ export default function EncounterPage() {
           setCurrentPatientId(pid);
           supabase
             .from("patients")
-            .select("full_name, age_years, sex, blood_group, docpad_id, phone, known_allergies, known_allergies_snomed")
+            .select("full_name, age_years, sex, blood_group, docpad_id, cr_number, phone, known_allergies, known_allergies_snomed")
             .eq("id", pid)
             .maybeSingle()
             .then(({ data: pat }: { data: PatientRowDb | null }) => {
@@ -2656,6 +2658,7 @@ export default function EncounterPage() {
               ageYears={patient?.age_years ?? null}
               sex={patient?.sex ?? null}
               docpadId={patient?.docpad_id ?? null}
+                        crNumber={patient?.cr_number ?? null}
               wardBed={null}
               bloodGroup={patient?.blood_group ?? null}
               phone={patient?.phone ?? null}
@@ -3898,6 +3901,7 @@ export default function EncounterPage() {
                         ageYears={patient?.age_years ?? null}
                         sex={patient?.sex ?? null}
                         docpadId={patient?.docpad_id ?? null}
+                        crNumber={patient?.cr_number ?? null}
                         actionNoun="prescription"
                         disabled={permLoading || !hasPermission("prescriptions", "view") || !currentPatientId.trim()}
                         beforeConfirm={silentSaveDraftIfNeeded}
@@ -3958,6 +3962,7 @@ export default function EncounterPage() {
                     ageYears={patient?.age_years ?? null}
                     sex={patient?.sex ?? null}
                     docpadId={patient?.docpad_id ?? null}
+                        crNumber={patient?.cr_number ?? null}
                     actionNoun="investigation order"
                     disabled={permLoading || !hasPermission("examination", "edit")}
                     beforeConfirm={silentSaveDraftIfNeeded}
@@ -4008,6 +4013,7 @@ export default function EncounterPage() {
                   ageYears={patient?.age_years ?? null}
                   sex={patient?.sex ?? null}
                   docpadId={patient?.docpad_id ?? null}
+                        crNumber={patient?.cr_number ?? null}
                   actionNoun="prescription"
                   disabled={permLoading || !hasPermission("prescriptions", "view") || !currentPatientId.trim()}
                   beforeConfirm={silentSaveDraftIfNeeded}
@@ -4361,6 +4367,7 @@ export default function EncounterPage() {
                 ageYears={patient?.age_years ?? null}
                 sex={patient?.sex ?? null}
                 docpadId={patient?.docpad_id ?? null}
+                        crNumber={patient?.cr_number ?? null}
                 actionNoun="encounter finalisation"
                 confirmLabel="Finalise"
                 disabled={isSaving || !canSaveEncounter || !currentPatientId.trim()}
@@ -4385,6 +4392,7 @@ export default function EncounterPage() {
                 ageYears={patient?.age_years ?? null}
                 sex={patient?.sex ?? null}
                 docpadId={patient?.docpad_id ?? null}
+                        crNumber={patient?.cr_number ?? null}
                 actionNoun="encounter finalisation"
                 confirmLabel="Finalise"
                 disabled={isSaving || !canSaveEncounter || !currentPatientId.trim()}

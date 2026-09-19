@@ -175,6 +175,8 @@ export type PatientEncounterBannerProps = {
   ageYears?: number | null;
   sex?: string | null;
   docpadId?: string | null;
+  /** Central Registration number: the identifier the patient holds. */
+  crNumber?: string | null;
   /** e.g. "Ward 3 · Bed 12" when admitted */
   wardBed?: string | null;
   bloodGroup?: string | null;
@@ -193,6 +195,7 @@ export function PatientEncounterBanner({
   ageYears,
   sex,
   docpadId,
+  crNumber,
   wardBed,
   bloodGroup,
   phone,
@@ -210,6 +213,7 @@ export function PatientEncounterBanner({
   if (sexLabel) parts.push(sexLabel);
   const wb = wardBed?.trim();
   if (wb) parts.push(wb);
+  if (crNumber?.trim()) parts.push(`CR ${crNumber.trim()}`);
   if (docpadId?.trim()) parts.push(`DocPad ID: ${docpadId.trim()}`);
 
   const metaLine = parts.join(" • ");

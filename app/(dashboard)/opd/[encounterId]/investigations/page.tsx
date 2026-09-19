@@ -8,6 +8,7 @@ import { practitionersOrFilterForAuthUid } from "@/lib/practitionerAuthLookup";
 import { clinicalIndicationFromEncounterDiagnosis } from "@/lib/buildEncounterClinicalSummary";
 import { mapCatalogCategoryToInvestigationTestCategory } from "@/lib/investigationTestCategory";
 import { supabase } from "@/lib/supabase";
+import PatientIdentityBar from "@/components/patient/PatientIdentityBar";
 import { PatientActionConfirmPopover } from "@/components/patient/patient-action-confirm-popover";
 
 type TestCatalogueRow = {
@@ -550,8 +551,9 @@ export default function InvestigationPlanPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6">
-      <div className="mx-auto max-w-7xl">
+    <div className="min-h-screen bg-slate-50">
+      <PatientIdentityBar patientId={patientId} context="Investigation plan" />
+      <div className="mx-auto max-w-7xl p-4 md:p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <Link

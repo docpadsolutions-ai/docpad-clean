@@ -12,6 +12,12 @@ export type PatientActionConfirmPopoverProps = {
   ageYears?: number | null;
   sex?: string | null;
   docpadId?: string | null;
+  /**
+   * The number the patient is holding. Shown in preference to the DocPad ID because
+   * confirming identity against an identifier only the system knows is not
+   * confirming identity.
+   */
+  crNumber?: string | null;
   /** For `aria-label` on Confirm (e.g. "prescription"). */
   actionNoun: string;
   onConfirm: () => void | Promise<void>;
@@ -36,6 +42,7 @@ export function PatientActionConfirmPopover({
   ageYears,
   sex,
   docpadId,
+  crNumber,
   actionNoun,
   onConfirm,
   children,
@@ -107,11 +114,18 @@ export function PatientActionConfirmPopover({
               {ageSexLine ? (
                 <p className="mt-0.5 text-sm text-[#6B7280] dark:text-[#6B7280]">{ageSexLine}</p>
               ) : null}
-              {docpadId?.trim() ? (
-                <span className="mt-2 inline-block rounded-full bg-[#F3F4F6] px-2 py-0.5 text-xs text-[#374151] dark:bg-[#F3F4F6] dark:text-[#374151]">
-                  {docpadId.trim()}
-                </span>
-              ) : null}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {crNumber?.trim() ? (
+                  <span className="inline-block rounded-full bg-[#111827] px-2 py-0.5 text-xs font-bold tabular-nums text-white">
+                    CR {crNumber.trim()}
+                  </span>
+                ) : null}
+                {docpadId?.trim() ? (
+                  <span className="inline-block rounded-full bg-[#F3F4F6] px-2 py-0.5 text-xs text-[#374151] dark:bg-[#F3F4F6] dark:text-[#374151]">
+                    {docpadId.trim()}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
           <div className="my-4 h-px bg-[#F3F4F6] dark:bg-[#F3F4F6]" aria-hidden />

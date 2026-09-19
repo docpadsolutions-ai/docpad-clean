@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import IPDPendingResultsPanel from "@/components/investigations/ipd-pending-results-panel";
 import { supabase } from "@/lib/supabase";
+import PatientIdentityBar from "@/components/patient/PatientIdentityBar";
 
 function s(v: unknown): string {
   if (v == null) return "";
@@ -90,6 +91,7 @@ export default function IpdAdmissionInvestigationsPage() {
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-white text-gray-900">
+      <PatientIdentityBar patientId={patientId} context={admissionLabel || "Inpatient"} />
       <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6">
         <header>
           <Link
