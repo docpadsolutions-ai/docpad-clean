@@ -29,7 +29,7 @@ The **demo path** is the scripted journey in `docs/architecture/TARGET-ARCHITECT
 
 ## 1. One-time setup
 
-None of these tools is installed on the dev machine yet. Run them from the Claude Code prompt with a `!` prefix so the output lands in the session.
+**Done on the dev machine 18 Oct** (Node 22, gh, Vercel CLI, `vercel link`, `.env.local`, `npm ci`, plus `brew install libpq` for `psql`). Kept for a new machine. The `!` prefix works only in the Claude Code terminal CLI, not the VS Code extension; there, run these in the VS Code terminal. `vercel link` asks questions, so non-interactively use `vercel link --yes --project docpad-clean --scope <team>`.
 
 ```bash
 brew install node@22 gh            # Node 22 matches CI
@@ -73,7 +73,7 @@ Work through these steps in order. Record every new finding in section 4 before 
 | ID | Symptom on Vercel | Cause | How to verify | Fix | Pri | Status |
 |---|---|---|---|---|---|---|
 | B-01 | Admin and server queries return empty results or permission errors, with no clear error | `lib/supabase/admin.ts:7` silently falls back to the **anon key** when `SUPABASE_SERVICE_ROLE_KEY` is missing | `vercel env ls` (Production and Preview); test a route that uses the admin client, e.g. `/api/whatsapp` | Set the key. Make `admin.ts` throw instead of falling back. | P0 | Not reproduced. The key is set in Production, Preview and Development (`vercel env ls`, 18 Oct). The silent fallback is still in the code, so keep the throw fix. |
-| B-02 | AI features fail: voice extraction, lab OCR, insurance OCR, ECG, discharge compile | `lib/supabase/server.ts:95` needs `GEMINI_API_KEY` and falls back to `NEXT_PUBLIC_GEMINI_API_KEY` | `vercel env ls`; call `/api/ai/generate` while signed in | Set `GEMINI_API_KEY` (server only). Delete `NEXT_PUBLIC_GEMINI_API_KEY` from Vercel and the code. Rotate the key, which has already been exposed. | P0 | Confirmed (env, 18 Oct). `GEMINI_API_KEY` is absent from every environment and `NEXT_PUBLIC_GEMINI_API_KEY` is present in all three. AI routes probably work through the fallback, but the key ships to the browser. |
+| B-02 | AI features fail: voice extraction, lab OCR, insurance OCR, ECG, discharge compile | `lib/supabase/server.ts:95` needs `GEMINI_API_KEY` and falls back to `NEXT_PUBLIC_GEMINI_API_KEY` | `vercel env ls`; call `/api/ai/generate` while signed in | Set `GEMINI_API_KEY` (server only). Delete `NEXT_PUBLIC_GEMINI_API_KEY` from Vercel and the code. Rotate the key, which has already been exposed. | P0 | Confirmed (env, 18 Oct). `GEMINI_API_KEY` is absent from every environment and `NEXT_PUBLIC_GEMINI_API_KEY` is present in all three, so the key ships to the browser. **The AI routes do not work through the fallback either:** the models they request are retired for this key (N-22). |
 | B-03 | AI routes return errors under load | Gemini quota or rate limits (HTTP 429); the ICD-10 backfill already hit this | Logs: 429 from `generativelanguage.googleapis.com` | Raise the quota. Add retry with backoff and a readable error in the UI. | P1 | Suspected |
 | B-04 | Appointment reminders never send | `app/api/reminders/appointments/route.ts:66-68` returns **503** when `CRON_SECRET` is unset | Vercel → Cron Jobs → run history; `vercel env ls` | Set `CRON_SECRET` in Production. Trigger once by hand and check that a WhatsApp message arrives. | P1 | Not reproduced at env level. `CRON_SECRET` is set in Production only, which is correct. Cron run history has not been checked yet. |
 
@@ -88,7 +88,7 @@ Work through these steps in order. Record every new finding in section 4 before 
 
 | ID | Symptom on Vercel | Cause | How to verify | Fix | Pri | Status |
 |---|---|---|---|---|---|---|
-| B-07 | Registering a patient with the ABHA option fails at OTP verify | `lib/abhaEnrollment.ts:63` calls RPC `abha_verify_otp`, which is **not defined** in any migration. OTP sending is mocked (`txnId "mock-123"`, line 29 commented out). | Register a patient and choose ABHA; look for PostgREST error `PGRST202` | **Demo:** hide the ABHA option on registration. **MVP:** real ABDM v3 enrolment (see architecture §17). | **P0** (demo step 1) | Suspected. Code re-checked 18 Oct: `abha_verify_otp` appears only in an exclusion list in `20260917170926_rpc_hospital_scope_guards.sql`; no migration creates it. Confirm in the live DB. |
+| B-07 | Registering a patient with the ABHA option fails at OTP verify | `lib/abhaEnrollment.ts:63` calls RPC `abha_verify_otp`, which is **not defined** in any migration. OTP sending is mocked (`txnId "mock-123"`, line 29 commented out). | Register a patient and choose ABHA; look for PostgREST error `PGRST202` | **Demo:** hide the ABHA option on registration. **MVP:** real ABDM v3 enrolment (see architecture §17). | **P0** (demo step 1) | Suspected. Code re-checked 18 Oct: `abha_verify_otp` appears only in an exclusion list in `20260917170926_rpc_hospital_scope_guards.sql`; no migration creates it. **Live DB check 18 Oct: `abha_verify_otp` does exist live**, so the cause above is wrong; OTP sending is still mocked. Not yet clicked through (the click-through used the mobile-only path). Hiding the option for the demo still stands. |
 | B-08 | ABHA linking and ABDM consent actions always fail with 401 | `hooks/useABHALinking.ts:114,168` and `components/abdm/ConsentApprovalModal.tsx:79` send the **anon key** as the bearer instead of the user's session token. `ABDM_GATEWAY_URL` is also unset, so calls would fail anyway. | Click "Link ABHA" on a patient summary; check the network tab | **Demo:** hide the ABHA link button and the consent bell. **MVP:** send the session token; rebuild on v3. | P1 | Suspected |
 | B-09 | A patient's ABHA field holds an Aadhaar or mobile number | `components/abdm/ABHALinkModal.tsx:104` writes `chosen` into `patients.abha_id`, and `chosen` can be the raw identifier the user typed. This also breaks the rule in `CLAUDE.md` that Aadhaar is never written to Postgres. | Read the code path. Query `patients` for `abha_id` values that are 10 or 12 digits long. | Write only an ABHA returned by the gateway. Clean any bad rows. | **P0** (data protection) | Suspected |
 | B-10 | ABDM consent bell stays empty; "processed" never sticks | Webhook rows in `abdm_webhook_inbox` have no `hospital_id`, so RLS hides them. There is no UPDATE policy. | Query `abdm_webhook_inbox` with the service role | Defer to the ABDM v3 rebuild | P2 | Suspected |
@@ -202,25 +202,25 @@ Sign in as each role and open each page. **OK** means the page loads with real d
 | Reception | `/reception` | ✓ | ✓ 3 walk-ins, tokens OPD-001…003 | — | |
 | Reception | `/reception/beds` | ✓ | | — | |
 | Reception | `/reception/billing/[patientId]` | ✓ | | — | |
-| Reception | registration form (new patient) | not tested (needs clicks) | | | B-07 |
+| Reception | registration form (new patient) | ✓ mobile-only path (§6b) | | `400 appointments … updated_at` | N-21, N-32. ABHA path not clicked (B-07) |
 | Doctor | `/dashboard/opd` | ✓ | ⚠ "2 Scheduled today" but "Expected today 4"; waiting room 0 although the queue has 3 | `TypeError: Failed to fetch` once | N-17 |
 | Doctor | `/dashboard/opd/encounter/[id]` | ✓ | ⚠ finalised encounter shows empty complaint and diagnosis; treating doctor "Pending" | `patient-photos/unknown.jpg` sign 400 | B-06 **confirmed**: second DocPad nav bar (Dashboard · Patients · Encounters · Analytics · Settings) under the shell header. N-18 |
-| Doctor | prescribe + allergy stop + finalise | not tested (needs clicks) | | | |
-| Doctor | voice dictation | not tested | | | B-02, B-03 |
+| Doctor | prescribe + allergy stop + finalise | ✓ 4 of 5 safety checks (§6b) | | | N-21, N-28, N-34, N-35 |
+| Doctor | voice dictation | ✗ extraction fails; live mic still needs a human (§6b) | | `400 Model not allowed.` | N-22 |
 | Doctor | `/dashboard/ipd`, an admission, discharge | ✓ list loads; no admissions seeded | | — | B-05 not tested |
 | Doctor | `/admin/analytics/clinical` | redirected to `/dashboard/opd` | | | correct gating |
 | Nurse | `/dashboard` (nursing home) | ⚠ onboarding "Customize your DocPad experience", IPD card "Coming Soon"; greets "Dr. Rekha Thomas" | | — | B-15 **confirmed** |
 | Nurse | `/nursing` | ✓ | ⚠ | `404 rpc/get_nursing_shift_tasks` | N-14 |
-| Pharmacist | `/dashboard/pharmacy`, inventory, audit | ✓ all three | | — | |
-| Lab | `/lab`, OCR upload | ✗ redirected to `/dashboard/opd` at walk time; ✓ lands on `/lab` since `de3a22c` | | | N-07, N-09 (both fixed). OCR upload not tested |
-| Billing | `/billing`, invoices, an invoice PDF | ✓ page loads (as reception and admin) | no invoices seeded | — | PDF not tested |
+| Pharmacist | `/dashboard/pharmacy`, inventory, audit | ✓ all three load | ✗ prescription queue always empty (§6b) | — | N-23 |
+| Lab | `/lab`, OCR upload | ✓ lands on `/lab` since `de3a22c`; collect works | ✗ OCR 502 (§6b) | `502 /api/ocr/process` | N-07, N-09 fixed; N-22, N-27 |
+| Billing | `/billing`, invoices, an invoice PDF | ✓ invoice issued (§6b) | ✗ PDF without hospital or patient; payment fails | `400 patients … gender`, `409 record_payment` | N-24, N-25, N-26 |
 | Billing | `/billing/insurance` | ✓ readable in light mode | ⚠ panels fail to load | `400 tpas`, `400 insurance_companies` | B-17 **not reproduced** in light mode. N-13 |
 | Admin | `/dashboard/admin` | ✓ | | — | |
 | Admin | `/admin/analytics/clinical` | ✓ page renders | ⚠ "Encounters counted: 0" although 2 completed encounters fall in the default range | — | B-14: not broken as a page; data empty |
 | Admin | `/admin/dashboard/investigation-panels` | ⚠ "Coming soon" | | — | B-15 |
 | Admin | `/nursing` | ✗ skeleton never resolves | | auth-token lock "stolen" errors | B-15 |
 | Admin | staff directory | ✓ | | `400 rpc/get_clinical_specialties_for_filter` | N-15 |
-| Public | `/rx/[id]` from a WhatsApp link | inconclusive | | — | tried the prescription row id; page says "Link Invalid or Expired". Needs a real link from a send. |
+| Public | `/rx/[id]` from a WhatsApp link | ✓ with the **encounter** id (§6b) | ✓ | — | The walk had tried a prescription id, which is the wrong key. N-37 |
 | Any | `/ipd` as a non-clinical role | ✗ opens for pharmacist and lab (`/ipd`, `/ipd/beds`) | | | B-16 **confirmed** |
 
 ### 6b. Click-through of the demo path (18 Oct 2026)
@@ -244,17 +244,26 @@ Driven with Playwright against production as the seeded demo accounts, clicking 
 
 ## 7. Next steps (as of 18 Oct 2026)
 
-In priority order. Demo is Fri 30 Oct.
+Demo is Fri 30 Oct.
 
-1. **Click-through test of the demo path.** **Done 18 Oct**, results in §6b, findings N-21 to N-38. Still needs a human: live voice dictation with a real microphone, and a WhatsApp send to a sandbox-joined phone. Re-run after the fixes below.
-1a. **Fixes the click-through found, for the demo path** (proposed, not applied):
-   - *Database (needs approval before applying):* N-23 pharmacist `encounters:read`; N-27 `tg_op = 'INSERT'`; N-21 make reception-entered drug allergies block.
-   - *Code (one PR):* N-22 replace `gemini-2.5-flash` and widen the `/api/ai/generate` allowlist (then redeploy the 2 edge functions); N-24 pass the practitioner id to `record_payment`; N-25 use `sex` / `address_line1` on the invoice and PDF and fix the rupee glyph; N-26 carry tax onto invoice lines; N-36 fix `get_staff_performance_summary` or show the activity log on its own; N-28 require chief complaint before finalising.
-2. **P0 code fixes for the demo** (one PR): B-06 (second nav bar on the encounter screen), B-15 (hide nurse home onboarding, investigation panels, admin `/nursing`), B-07 (hide the ABHA option at registration), N-10 (invite page hard-codes one hospital id).
-3. **P0 data protection, B-09.** Stop writing a typed Aadhaar or mobile number into `patients.abha_id`; query for 10- and 12-digit values and clean any found.
-4. **Owner tasks.** B-02: add `GEMINI_API_KEY` in Vercel, delete `NEXT_PUBLIC_GEMINI_API_KEY`, rotate the key. N-05: re-add secrets as Sensitive, Production and Preview only. W-01: turn on failure notifications for the DB safety job.
-5. **P1 before the MVP.** B-16 (`proxy.ts` deny by default), N-13 (insurance panels), N-14 (nursing tasks RPC), N-17 (OPD counters), B-05 (discharge summary), B-11 (`abdm-auth` token), B-12 (hide backup UI).
-6. **Decisions from the 19 Oct stakeholder meeting.** W-03 staging environment; W-02 and W-04 error tracking and log retention; N-20 GST financial-year invoice numbering.
+### Done (18 Oct)
+
+- Triage steps 1–6 run: build parity, deployments, CI, env vars (§5), logs, route walk (§6) and a click-through of the demo path (§6b).
+- **Deployed** (`de3a22c`): N-07 lab routing, N-11 badge errors, N-12 every role lands on its own home.
+- **Applied to the database:** N-08 (`20261018050000`), N-09 lab role (`20261018060000`), N-01 signed-out access closed (`20261018070000`), N-20 per-hospital invoice numbers (`20261018080000`) and the numbering lock (`20261018090000`, with `scripts/test-invoice-number-lock.mjs`).
+- N-02 four missing migration files restored; N-19 CI secret fixed by the owner. **DB safety job green** from 06:35 UTC; all suites pass (clinical 26/26, billing 13/13, tenancy 50/50, lock 2/2, drift 394/394).
+- Demo seed: one account per role (6), price list and pharmacy stock, working `--reset`.
+
+### Next, in priority order
+
+1. **Click-through fixes, database** (approval needed before applying): N-23 pharmacist `encounters:read`; N-27 `tg_op = 'INSERT'`; N-21 make reception-entered drug allergies block (needs a product decision: structured allergies at registration, blocking ungraded free text, or both).
+2. **Click-through fixes, code** (one PR): N-22 replace `gemini-2.5-flash` and widen the `/api/ai/generate` allowlist, then redeploy `generate-patient-summary` and `suggest-icd10`; N-24 practitioner id for `record_payment`; N-25 `sex` / `address_line1` on the invoice and PDF, plus the rupee glyph; N-26 tax onto invoice lines; N-28 require chief complaint before finalising; N-36 audit view.
+3. **Other demo P0s, code** (same or next PR): B-06 second nav bar; B-15 hide nurse onboarding home, investigation panels, admin `/nursing`; B-07 hide the ABHA option; N-10 invite page hard-codes one hospital id.
+4. **P0 data protection, B-09.** Stop writing a typed Aadhaar or mobile number into `patients.abha_id`; query for 10- and 12-digit values and clean any found.
+5. **Re-run the click-through (§6b)** after 1–3, then the human-only checks: live dictation with a real microphone, and a WhatsApp send to a sandbox-joined phone. Also dispense (blocked until N-23), which will test N-35.
+6. **Owner tasks.** B-02: add `GEMINI_API_KEY` in Vercel, delete `NEXT_PUBLIC_GEMINI_API_KEY`, rotate the key. N-05: re-add secrets as Sensitive, Production and Preview only. W-01: turn on failure notifications for the DB safety job. Set `NEXT_PUBLIC_APP_URL` to the production domain (WhatsApp links fall back to `docpad.in`).
+7. **P1 before the MVP.** B-16 (`proxy.ts` deny by default), N-13 insurance panels, N-14 nursing tasks RPC, N-29 encounter auth-lock race, N-30 vitals, N-32 walk-in appointment insert, N-34 Rx identity and summary, N-35 stock matching, N-38 missing functions, B-05 discharge summary, B-11 `abdm-auth` token, B-12 hide backup UI.
+8. **Decisions from the 19 Oct stakeholder meeting.** W-03 staging environment; W-02 and W-04 error tracking and log retention; N-20 GST financial-year invoice numbering.
 
 ---
 
