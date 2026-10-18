@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260415080528_fix_ipd_result_trigger_wrong_table_sql", "label": "20260415080528_fix_ipd_result_trigger_wrong_table.sql", "file_type": "code", "source_file": "supabase/migrations/20260415080528_fix_ipd_result_trigger_wrong_table.sql", "source_location": null}], "edges": []}

@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260409062854_reset_using_truncate_cascade_sql", "label": "20260409062854_reset_using_truncate_cascade.sql", "file_type": "code", "source_file": "supabase/migrations/20260409062854_reset_using_truncate_cascade.sql", "source_location": null}], "edges": []}

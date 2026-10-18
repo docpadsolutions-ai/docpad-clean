@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_archive_pre_restore_20260917170317_tighten_table_grants_sql", "label": "20260917170317_tighten_table_grants.sql", "file_type": "code", "source_file": "supabase/migrations/_archive_pre_restore/20260917170317_tighten_table_grants.sql", "source_location": null}], "edges": []}

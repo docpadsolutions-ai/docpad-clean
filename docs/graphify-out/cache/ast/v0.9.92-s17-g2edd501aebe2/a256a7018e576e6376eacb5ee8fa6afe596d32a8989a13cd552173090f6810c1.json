@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260917165715_revoke_anon_execute_security_definer_sql", "label": "20260917165715_revoke_anon_execute_security_definer.sql", "file_type": "code", "source_file": "supabase/migrations/20260917165715_revoke_anon_execute_security_definer.sql", "source_location": null}], "edges": []}

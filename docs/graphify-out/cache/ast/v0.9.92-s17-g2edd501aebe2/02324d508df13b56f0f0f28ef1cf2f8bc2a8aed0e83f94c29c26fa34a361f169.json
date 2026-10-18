@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_archive_pre_restore_20260917192250_pin_search_path_on_helper_functions_sql", "label": "20260917192250_pin_search_path_on_helper_functions.sql", "file_type": "code", "source_file": "supabase/migrations/_archive_pre_restore/20260917192250_pin_search_path_on_helper_functions.sql", "source_location": null}], "edges": []}

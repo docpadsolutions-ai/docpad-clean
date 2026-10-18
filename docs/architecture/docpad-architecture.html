@@ -1,0 +1,928 @@
+<title>DocPad Architecture Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single technical reading column (max 1120px), diagrams break out full-width with their own horizontal scroll */
+:root {
+  --bg: #f4f7f6; --surface: #ffffff; --fg: #142320; --muted: #586b67; --line: #c6d3d0;
+  --accent: #0a7a73; --accent-soft: #dff0ee; --warn: #b0521a; --warn-soft: #fbeadf;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1514; --surface: #162120; --fg: #e2ebe9; --muted: #95a8a4; --line: #2d3d3a;
+  --accent: #46c3b9; --accent-soft: #15302d; --warn: #e88c52; --warn-soft: #33221a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1514; --surface: #162120; --fg: #e2ebe9; --muted: #95a8a4; --line: #2d3d3a;
+  --accent: #46c3b9; --accent-soft: #15302d; --warn: #e88c52; --warn-soft: #33221a; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 80px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 600; margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.15rem; font-weight: 600; margin-top: 32px; }
+p, li { max-width: 72ch; }
+p { margin: 10px 0; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+code { background: var(--accent-soft); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; margin-top: 12px; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 22px; font-size: 14px; }
+nav.toc a { text-decoration: none; border-bottom: 1px solid var(--line); }
+nav.toc a:hover, nav.toc a:focus-visible { border-color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; margin-top: 28px; background: var(--line); border: 1px solid var(--line); }
+.stat { background: var(--surface); padding: 12px 14px; }
+.stat b { display: block; font: 600 1.5rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--muted); }
+
+figure { margin: 22px 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.scroll { overflow-x: auto; padding: 16px; }
+figcaption { padding: 10px 16px 14px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); }
+figcaption b { color: var(--fg); }
+svg.arch { display: block; width: 100%; min-width: 900px; height: auto; color: var(--fg); }
+pre.mermaid { margin: 0; min-width: 760px; background: transparent; text-align: center; }
+
+/* SVG parts styled from page tokens */
+.arch .ctr { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+.arch .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.arch .pg { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+.arch .bad { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.arch text { fill: var(--fg); font-family: var(--body); font-size: 12px; }
+.arch .t { font-weight: 600; font-size: 13.5px; }
+.arch .ct { font-family: var(--display); font-weight: 600; font-size: 16px; }
+.arch .s { fill: var(--muted); font-size: 11.5px; }
+.arch .m { font-family: var(--mono); font-size: 11.5px; }
+.arch .lbl { fill: var(--muted); font-size: 11px; }
+.arch .alb { fill: var(--accent); font-size: 11.5px; font-weight: 600; }
+.arch .wlb { fill: var(--warn); font-size: 11px; }
+.arch .e { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.arch .ea { stroke: var(--accent); stroke-width: 2.4; fill: none; }
+.arch .ew { stroke: var(--warn); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+.arch .hd { fill: var(--muted); } .arch .hda { fill: var(--accent); } .arch .hdw { fill: var(--warn); }
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.tbl { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+th { font: 600 12px/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+.pill { display: inline-block; font: 500 11px/1 var(--mono); padding: 4px 7px; border-radius: 99px; white-space: nowrap; }
+.ok { background: var(--accent-soft); color: var(--accent); }
+.no { background: var(--warn-soft); color: var(--warn); }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.two > * { min-width: 0; }
+pre.code { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; overflow-x: auto; font: 13px/1.55 var(--mono); margin: 14px 0; }
+.note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 14px; margin: 16px 0; font-size: 14px; }
+ul.defects { padding-left: 20px; }
+ul.defects li { margin: 8px 0; }
+@media (max-width: 560px) { h1 { font-size: 1.9rem; } h2 { font-size: 1.35rem; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">docpad-clean · commit cfeaa1e · mapped 17 Oct 2026</div>
+  <h1>DocPad Architecture Map</h1>
+  <p class="lede">End-to-end system architecture, data architecture and data model of the DocPad hospital platform (OPD, IPD, nursing, lab, pharmacy, billing, insurance, ABDM), reconstructed from the repository.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#system">1. System architecture</a>
+    <a href="#request">2. Request path</a>
+    <a href="#data">3. Data architecture</a>
+    <a href="#etl">4. Ingestion &amp; ETL</a>
+    <a href="#db">5. Database platform</a>
+    <a href="#tenancy">6. Tenancy &amp; RLS</a>
+    <a href="#model">7. Data model</a>
+    <a href="#gaps">8. Gaps found</a>
+  </nav>
+
+  <div class="stats">
+    <div class="stat"><b>1</b><span>Supabase Postgres 17 project, ap-south-1</span></div>
+    <div class="stat"><b>~125</b><span>tables + ~20 views</span></div>
+    <div class="stat"><b>301</b><span>SQL functions (~170 called by app)</span></div>
+    <div class="stat"><b>~90</b><span>triggers</span></div>
+    <div class="stat"><b>476</b><span>RLS policies</span></div>
+    <div class="stat"><b>385</b><span>migration files</span></div>
+    <div class="stat"><b>12</b><span>edge functions</span></div>
+    <div class="stat"><b>18</b><span>Next.js API routes</span></div>
+  </div>
+
+  <!-- 1 -->
+  <h2 id="system">1. System architecture</h2>
+  <p>DocPad is a Next.js 16 app on Vercel in front of one Supabase project. The browser does most of the work: client components query Postgres directly through <code>supabase-js</code>, and Row Level Security is the real security boundary. The Next.js server only handles things that need a secret: AI calls, WhatsApp, SNOMED lookups, FHIR export and backups. There is no staging environment, queue, cache tier or warehouse.</p>
+
+  <figure>
+    <div class="scroll">
+<svg class="arch" viewBox="0 0 1200 720" role="img" aria-label="Staff browsers talk to Supabase directly under RLS, and to Vercel for pages and secret-bound API routes; Vercel and Supabase edge functions call Gemini, AssemblyAI, Twilio, CSIRO, Resend and an unconfigured ABDM gateway.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="hd"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="hda"/></marker>
+    <marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="hdw"/></marker>
+  </defs>
+
+  <!-- Row 1: clients -->
+  <rect class="box" x="40" y="20" width="400" height="90" rx="6"/>
+  <text class="t" x="58" y="47">Hospital staff · browser</text>
+  <text class="s" x="58" y="69">doctor · nurse · pharmacist · reception · lab · admin</text>
+  <text class="s" x="58" y="89">React 19 client pages · supabase-js · drafts in sessionStorage</text>
+
+  <rect class="bad" x="480" y="20" width="200" height="90" rx="6"/>
+  <text class="t" x="496" y="47">ECG digitizer</text>
+  <text class="m" x="496" y="69">FastAPI POST /digitize</text>
+  <text class="wlb" x="496" y="89">localhost:8000 · not deployed</text>
+  <line class="ew" x1="440" y1="65" x2="478" y2="65" marker-end="url(#ahw)"/>
+
+  <rect class="box" x="760" y="20" width="400" height="90" rx="6"/>
+  <text class="t" x="778" y="47">Patient / public</text>
+  <text class="s" x="778" y="69">opens /rx/[id] → get_public_prescription (anon RPC)</text>
+  <text class="s" x="778" y="89">receives WhatsApp prescription + appointment reminders</text>
+
+  <!-- Direct browser → Supabase path (the key mechanism) -->
+  <path class="ea" d="M330 110 V146 H820 V176" marker-end="url(#aha)"/>
+  <text class="alb" x="345" y="139">supabase-js direct: select · insert · rpc · upload · subscribe  —  JWT, enforced by RLS</text>
+
+  <!-- browser → proxy -->
+  <path class="e" d="M110 110 V176" marker-end="url(#ah)"/>
+  <text class="lbl" x="118" y="160">HTTPS pages</text>
+
+  <!-- Row 2: Vercel -->
+  <rect class="ctr" x="40" y="180" width="480" height="340" rx="8"/>
+  <text class="ct" x="58" y="207">Vercel · Next.js 16 (App Router)</text>
+  <rect class="box" x="60" y="220" width="440" height="44" rx="4"/>
+  <text class="t" x="76" y="239">proxy.ts</text><text class="s" x="76" y="256">refresh session · auth.getUser · role → allowed path prefixes</text>
+  <rect class="box" x="60" y="276" width="440" height="44" rx="4"/>
+  <text class="t" x="76" y="295">Pages (84, 63 client-rendered)</text><text class="s" x="76" y="312">/dashboard/opd · /ipd · /reception · /nursing · /lab · /billing · /admin</text>
+  <rect class="box" x="60" y="332" width="440" height="44" rx="4"/>
+  <text class="t" x="76" y="351">API routes (18)</text><text class="s" x="76" y="368">AI proxy · OCR · ECG · voice · SNOMED · FHIR · WhatsApp · backups</text>
+  <rect class="box" x="60" y="388" width="440" height="44" rx="4"/>
+  <text class="t" x="76" y="407">Server actions (2)</text><text class="s" x="76" y="424">AI patient summary · prescription suggestions (embeddings)</text>
+  <rect class="box" x="60" y="444" width="440" height="44" rx="4"/>
+  <text class="t" x="76" y="463">Vercel cron (2)</text><text class="s" x="76" y="480">/api/reminders/appointments · 02:30 + 12:30 UTC</text>
+
+  <!-- Row 2: Supabase -->
+  <rect class="ctr" x="680" y="180" width="480" height="340" rx="8"/>
+  <text class="ct" x="698" y="207">Supabase · ref hvjbzlwlqnntwxgufjkm · ap-south-1</text>
+  <rect class="box" x="700" y="220" width="200" height="44" rx="4"/>
+  <text class="t" x="714" y="239">Auth</text><text class="s" x="714" y="256">email/password · JWT cookie</text>
+  <rect class="box" x="700" y="276" width="200" height="44" rx="4"/>
+  <text class="t" x="714" y="295">Realtime</text><text class="s" x="714" y="312">6 tables · ~14 subscribers</text>
+  <rect class="box" x="700" y="332" width="200" height="44" rx="4"/>
+  <text class="t" x="714" y="351">PostgREST + RPC</text><text class="s" x="714" y="368">~170 RPCs used by app</text>
+  <rect class="box" x="700" y="388" width="200" height="44" rx="4"/>
+  <text class="t" x="714" y="407">Edge functions (12)</text><text class="s" x="714" y="424">Deno · ABDM · AI · email</text>
+  <rect class="box" x="700" y="444" width="200" height="44" rx="4"/>
+  <text class="t" x="714" y="463">Storage (7 buckets)</text><text class="s" x="714" y="480">&lt;hospital_id&gt;/… paths</text>
+
+  <rect class="pg" x="930" y="220" width="210" height="268" rx="5"/>
+  <text class="t" x="946" y="244">Postgres 17</text>
+  <text class="s" x="946" y="268">~125 tables · ~20 views</text>
+  <text class="s" x="946" y="288">301 functions · ~90 triggers</text>
+  <text class="s" x="946" y="308">476 RLS policies</text>
+  <text class="s" x="946" y="328">pg_cron · pg_net</text>
+  <text class="s" x="946" y="348">pgvector · pg_trgm · pgTAP</text>
+  <text class="s" x="946" y="368">audit_logs (append-only)</text>
+  <line x1="946" y1="388" x2="1124" y2="388" stroke="var(--line)" stroke-width="1"/>
+  <text class="s" x="946" y="412">tenant key on every row</text>
+  <text class="m" x="946" y="432">hospital_id =</text>
+  <text class="m" x="946" y="450">(select auth_hospital_id())</text>
+
+  <line class="e" x1="900" y1="298" x2="928" y2="298" marker-end="url(#ah)"/>
+  <line class="e" x1="900" y1="354" x2="928" y2="354" marker-end="url(#ah)"/>
+  <line class="e" x1="900" y1="410" x2="928" y2="410" marker-end="url(#ah)"/>
+  <line class="e" x1="900" y1="466" x2="928" y2="466" marker-end="url(#ah)"/>
+
+  <!-- Vercel → Supabase -->
+  <line class="e" x1="500" y1="242" x2="698" y2="242" marker-end="url(#ah)"/>
+  <text class="lbl" x="530" y="235">session refresh, role</text>
+  <line class="e" x1="500" y1="354" x2="698" y2="354" marker-end="url(#ah)"/>
+  <text class="lbl" x="522" y="347">user JWT or service role</text>
+  <line class="e" x1="500" y1="410" x2="698" y2="410" marker-end="url(#ah)"/>
+  <text class="lbl" x="540" y="403">functions.invoke</text>
+  <path class="e" d="M928 476 C 760 540, 600 540, 500 470" marker-end="url(#ah)"/>
+  <text class="lbl" x="590" y="520">pg_net → /api/internal/database-backup</text>
+
+  <!-- Row 3: external services -->
+  <rect class="box" x="40" y="600" width="170" height="84" rx="6"/>
+  <text class="t" x="54" y="626">Twilio WhatsApp</text><text class="s" x="54" y="646">prescription message</text><text class="s" x="54" y="664">appointment reminders</text>
+  <rect class="box" x="230" y="600" width="170" height="84" rx="6"/>
+  <text class="t" x="244" y="626">AssemblyAI</text><text class="s" x="244" y="646">streaming token, batch</text><text class="s" x="244" y="664">audio → transcript</text>
+  <rect class="box" x="420" y="600" width="170" height="84" rx="6"/>
+  <text class="t" x="434" y="626">CSIRO Ontoserver</text><text class="s" x="434" y="646">SNOMED CT ECL</text><text class="s" x="434" y="664">$expand · validate</text>
+  <rect class="box" x="610" y="600" width="170" height="84" rx="6"/>
+  <text class="t" x="624" y="626">Google Gemini</text><text class="s" x="624" y="646">2.5-flash · embedding-001</text><text class="wlb" x="624" y="664">PHI text + images sent</text>
+  <rect class="box" x="800" y="600" width="170" height="84" rx="6"/>
+  <text class="t" x="814" y="626">Resend email</text><text class="s" x="814" y="646">daily stock-expiry digest</text><text class="s" x="814" y="664">to pharmacists</text>
+  <rect class="bad" x="990" y="600" width="170" height="84" rx="6"/>
+  <text class="t" x="1004" y="626">ABDM gateway</text><text class="s" x="1004" y="646">HIP/HIU M1–M3 skeleton</text><text class="wlb" x="1004" y="664">ABDM_GATEWAY_URL unset</text>
+
+  <line class="e" x1="125" y1="520" x2="125" y2="598" marker-end="url(#ah)"/>
+  <line class="e" x1="315" y1="520" x2="315" y2="598" marker-end="url(#ah)"/>
+  <line class="e" x1="505" y1="520" x2="505" y2="598" marker-end="url(#ah)"/>
+  <path class="e" d="M520 505 L655 598" marker-end="url(#ah)"/>
+  <text class="lbl" x="134" y="566">from API routes</text>
+  <path class="e" d="M720 520 L720 598" marker-end="url(#ah)"/>
+  <line class="e" x1="885" y1="520" x2="885" y2="598" marker-end="url(#ah)"/>
+  <line class="ew" x1="1075" y1="520" x2="1075" y2="598" marker-end="url(#ahw)"/>
+  <text class="lbl" x="893" y="566">from edge functions</text>
+  <line class="ew" x1="1060" y1="598" x2="1060" y2="522" marker-end="url(#ahw)"/>
+  <text class="wlb" x="1084" y="550">consent</text><text class="wlb" x="1084" y="564">webhooks</text>
+</svg>
+    </div>
+    <figcaption><b>The browser writes to the database directly.</b> The teal path carries most reads and writes: supabase-js with the user's JWT, checked by RLS. Vercel holds the secrets for third-party calls. Dashed orange marks parts that exist in code but do not run in production: the ECG digitizer has no deployment, and the ABDM gateway URL is not set.</figcaption>
+  </figure>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Layer</th><th>Technology</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Frontend</td><td>Next.js 16.2, React 19.2, TypeScript 5, Tailwind 4, Radix, recharts, react-hook-form + zod, zustand (draft store only). No react-query or SWR.</td><td><code>app/</code>, <code>components/</code>, <code>hooks/</code></td></tr>
+      <tr><td>Edge middleware</td><td>Supabase SSR cookie refresh, role-based route gating (<code>lib/dashboardRoleRouting.ts</code>)</td><td><code>proxy.ts</code></td></tr>
+      <tr><td>Server</td><td>18 route handlers, 2 server actions, all using <code>requireStaff()</code></td><td><code>app/api/</code>, <code>app/actions/</code></td></tr>
+      <tr><td>Database</td><td>Supabase Postgres 17, PostgREST, Realtime, Storage, Auth</td><td><code>supabase/migrations/</code></td></tr>
+      <tr><td>Serverless</td><td>12 Deno edge functions</td><td><code>supabase/functions/</code></td></tr>
+      <tr><td>Side service</td><td>Python FastAPI ECG digitizer</td><td><code>services/ecg-digitizer/</code></td></tr>
+      <tr><td>CI</td><td>GitHub Actions: tsc, eslint, build; nightly pgTAP suites (they run against production)</td><td><code>.github/workflows/</code></td></tr>
+      <tr><td>Observability</td><td><code>console.*</code> only, read through Vercel and Supabase logs. No Sentry or APM.</td><td>n/a</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 2 -->
+  <h2 id="request">2. Request path: finalizing a prescription</h2>
+  <p>This is a typical clinical write. Safety checks and the record lock live in Postgres triggers, not in the app. A request that skips the UI still hits them.</p>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant D as Doctor browser
+  participant R as PostgREST
+  participant DB as Postgres
+  participant W as /api/whatsapp
+  participant T as Twilio
+  participant P as Patient phone
+  D->>R: rpc check_prescription_safety
+  R->>DB: runs as user JWT, RLS applied
+  DB-->>D: allergy and interaction warnings
+  D->>R: rpc finalize_prescription
+  R->>DB: hospital_id = auth_hospital_id()
+  Note over DB: aa_block_unsafe_prescription, aa_lock_finalized_encounter, zz_audit_row
+  DB-->>D: finalized, encounter locked
+  D->>W: POST send prescription
+  W->>DB: service role reads phone, names, hospital
+  W->>T: WhatsApp message
+  T->>P: prescription text + /rx link
+</pre>
+    </div>
+    <figcaption><b>Clinical rules run inside the database.</b> The API route gets the recipient from the database, not from the request body. Only the medication and lab text come from the client.</figcaption>
+  </figure>
+
+  <!-- 3 -->
+  <h2 id="data">3. Data architecture: sources to destinations</h2>
+  <p>All data lands in one OLTP Postgres. No separate analytical store exists. Dashboards call about 30 <code>get_*</code> RPCs against live tables. "ETL" here means three things: one-off scripts that load reference data, trigger chains that derive rows inside the database, and AI calls that turn audio and images into structured rows.</p>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+flowchart LR
+  subgraph SRC[Sources]
+    F[Staff forms: OPD, IPD, nursing, billing, admin]
+    U[Uploads: lab reports, wounds, attachments, logos]
+    V[Voice dictation]
+    C[Insurance card and ECG photos]
+    REF[Reference files: ICD-10-CM, SNOMED RF2, drug TSV]
+    ONTO[CSIRO Ontoserver]
+    WH[ABDM consent webhooks]
+  end
+  subgraph ING[Ingestion and transform]
+    JS[supabase-js writes under RLS]
+    RPC[SECURITY DEFINER RPCs]
+    AAI[AssemblyAI transcript]
+    GEM[Gemini extraction and OCR to JSON]
+    EMB[Gemini embeddings 768-d]
+    SCR[Batch scripts: ingest-icd10, backfill embeddings]
+    SEED[Seed migrations: prices, charges, drug map, DDI]
+    TC[Lazy terminology cache]
+    INB[consent-request-notify]
+  end
+  subgraph PG[Postgres 17]
+    T[(~125 OLTP tables)]
+    TR{{~90 triggers}}
+    VEC[(pgvector: icd10_library, interaction embeddings)]
+    AUD[(audit_logs append-only)]
+    ST[(Storage buckets)]
+    CRON{{pg_cron: MAR overdue, audit prune}}
+  end
+  subgraph OUT[Destinations]
+    DASH[Dashboards: get_* RPCs + recharts]
+    RT[Realtime staff queues]
+    PDF[PDF and print: Rx, invoice, discharge]
+    WA[Twilio WhatsApp]
+    EM[Resend email]
+    FH[FHIR OPConsult bundle API]
+    CSV[CSV: stock audit, consent register]
+    RX[Public /rx page]
+    BK[Encrypted pg_dump backup]
+    AB[ABDM HI push]
+  end
+  F --> JS
+  F --> RPC
+  U --> ST
+  V --> AAI --> GEM
+  C --> GEM
+  GEM --> JS
+  REF --> SCR --> EMB --> VEC
+  REF --> SEED --> T
+  ONTO --> TC --> T
+  WH --> INB --> T
+  JS --> T
+  RPC --> T
+  T --> TR --> T
+  T --> AUD
+  CRON --> T
+  T --> DASH
+  T --> RT
+  T --> PDF
+  T --> WA
+  T --> EM
+  T --> FH
+  T --> CSV
+  T --> RX
+  T -.-> BK
+  T -.-> AB
+</pre>
+    </div>
+    <figcaption><b>One store, many derived writes.</b> Triggers write back into the same tables: billing lines, MAR slots, nursing tasks, MEWS scores, FHIR JSON columns and audit rows. Dotted outputs exist in code but do not work today: backups cannot be decrypted, and the ABDM gateway is not configured.</figcaption>
+  </figure>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Source</th><th>Entry point</th><th>Lands in</th></tr></thead>
+    <tbody>
+      <tr><td>OPD encounter / SOAP</td><td><code>app/dashboard/opd/encounter/[id]/page.tsx</code>. Draft stays in sessionStorage until saved.</td><td><code>opd_encounters</code>, <code>prescriptions</code>, <code>investigations</code></td></tr>
+      <tr><td>Voice dictation</td><td><code>VoiceDictationButton</code> → AssemblyAI → <code>/api/ai/generate</code> (Gemini)</td><td><code>transcriptions</code>, <code>clinical_extractions</code></td></tr>
+      <tr><td>Lab report photo/PDF</td><td><code>OCRUploadModal</code> → bucket → <code>/api/ocr/process</code></td><td><code>investigation_ocr_uploads</code>, <code>lab_result_entries</code></td></tr>
+      <tr><td>Insurance card</td><td><code>/api/insurance/ocr-card</code> + <code>lib/insuranceFuzzyMatch.ts</code></td><td><code>patient_insurance_coverage</code></td></tr>
+      <tr><td>Discharge draft</td><td><code>/api/ipd/compile-discharge-clinical</code> (Gemini)</td><td><code>ipd_discharge_summaries</code></td></tr>
+      <tr><td>Patient summary</td><td>server action → edge fn <code>generate-patient-summary</code></td><td><code>patient_summaries</code></td></tr>
+      <tr><td>SNOMED terms</td><td><code>/api/snomed/search</code>: cache RPC → ILIKE → Ontoserver fallback</td><td><code>snomed_cache</code>, <code>snomed_concept_cache</code></td></tr>
+      <tr><td>ABDM consent</td><td>edge fn <code>consent-request-notify</code> (shared secret)</td><td><code>abdm_webhook_inbox</code> (realtime)</td></tr>
+      <tr><td>Bulk import</td><td colspan="2">None. There is no CSV or Excel import anywhere in the app.</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 4 -->
+  <h2 id="etl">4. Ingestion &amp; ETL pipelines</h2>
+  <h3>Batch loaders (run by hand)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Script</th><th>Extract</th><th>Transform</th><th>Load</th></tr></thead>
+    <tbody>
+      <tr><td><code>scripts/ingest-icd10.ts</code></td><td>CMS ICD-10-CM order file (fixed-width, not in repo)</td><td>parse; Gemini embeddings in batches of 50</td><td>upsert <code>icd10_library</code> (73,790 codes)</td></tr>
+      <tr><td><code>scripts/backfill-icd10-embeddings.mjs</code></td><td>rows with no embedding</td><td>Gemini embed, resumable, backs off on rate limit</td><td><code>embedding_pending</code>, merged by migration. About 14,397 still missing.</td></tr>
+      <tr><td><code>scripts/extract-snomed-vocab.js</code></td><td>SNOMED International RF2 snapshot (local)</td><td>keyword filter</td><td><code>lib/snomed-general-vocabulary.json</code> (speech hints)</td></tr>
+      <tr><td><code>scripts/seed-demo-day.mjs</code></td><td>hard-coded fixtures</td><td>n/a</td><td>PostgREST + Auth admin: one demo hospital</td></tr>
+      <tr><td>Seed migrations</td><td>SQL literals</td><td>n/a</td><td>charge definitions, price master, <code>snomed_drug_map</code>, <code>drug_interactions</code> (24 pairs), clinical synonyms</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>In-database pipelines (trigger chains)</h3>
+  <p>Most transformation happens as side effects of inserts. The billing chain is the most important one: clinical events create charges, and charges roll up into invoice totals.</p>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+flowchart LR
+  subgraph CE[Clinical events]
+    RQ[reception_queue / opd_encounters]
+    INV[investigations, ipd_investigation_orders]
+    IT[ipd_treatments]
+    CU[consumable_usage_logs, nursing procedures]
+    OB[opd_bills]
+  end
+  RQ -- trg_auto_consultation_charge --> CI[charge_items]
+  INV -- trg_investigation_to_billing --> CI
+  IT -- trg_ipd_treatment_to_billing --> CI
+  CU -- trg_auto_bill_consumable --> CI
+  OB -- trg_opd_bill_to_invoice --> IV
+  CI --> LI[invoice_line_items]
+  LI -- aa_invoice_line_math --> LI
+  LI -- zz_recalc_invoice_from_line --> IV[invoices totals]
+  PY[payments] -- zz_recalc_invoice_from_payment --> IV
+  IV -- auto_create_patient_account --> AC[accounts]
+  IT -- trg_auto_create_mar --> MAR[ipd_mar slots]
+  DO[ipd_doctor_orders] -- trg_auto_nursing_task_from_order --> NT[nursing_tasks]
+  VI[ipd_vitals] -- trg_mews_autoscore --> VI
+  CR{{pg_cron every 30 min}} -- notify_overdue_mar_slots --> NO[notifications]
+  MAR -- trg_mar_clinical_notifications --> NO
+  NO -. realtime .-> UI[staff screens]
+</pre>
+    </div>
+    <figcaption><b>Charges are derived, not entered.</b> Staff record a clinical event, and triggers produce the charge item, the invoice line, the recalculated totals and the patient account. A parallel chain turns treatments and orders into MAR slots and nursing tasks.</figcaption>
+  </figure>
+
+  <h3>Scheduled jobs</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Job</th><th>Scheduler</th><th>Schedule</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td>Appointment reminders (day before, same day)</td><td>Vercel cron → <code>/api/reminders/appointments</code></td><td><code>30 12 * * *</code>, <code>30 2 * * *</code></td><td><span class="pill no">never sent: CRON_SECRET unset</span></td></tr>
+      <tr><td>MAR overdue notifications</td><td>pg_cron <code>notify_overdue_mar_slots()</code></td><td>every 30 min</td><td><span class="pill ok">live</span></td></tr>
+      <tr><td>Audit log retention</td><td>pg_cron <code>prune_audit_logs(24)</code></td><td><code>17 3 1 * *</code></td><td><span class="pill ok">live</span></td></tr>
+      <tr><td>Stock expiry email</td><td>pg_cron + pg_net → <code>send-expiry-alerts</code></td><td>daily 09:00</td><td><span class="pill no">example SQL only</span></td></tr>
+      <tr><td>ABDM consent expiry</td><td>pg_cron + pg_net → <code>abdm-consent-expiry</code></td><td><code>30 18 * * *</code></td><td><span class="pill no">example SQL only</span></td></tr>
+      <tr><td>Hospital backup</td><td>pg_net → <code>/api/internal/database-backup</code></td><td>per hospital schedule</td><td><span class="pill no">pg_dump not on Vercel</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 5 -->
+  <h2 id="db">5. Database platform</h2>
+  <div class="two">
+    <div>
+      <h3>Systems</h3>
+      <ul>
+        <li><b>Postgres 17</b> on Supabase: the only database. OLTP, analytics, vector search, scheduling and audit all run here.</li>
+        <li><b>Supabase Storage</b> (S3-backed) for files, scoped by <code>&lt;hospital_id&gt;/</code> path prefix.</li>
+        <li><b>Browser sessionStorage</b> holds unsaved encounter drafts (<code>lib/stores/encounterDraftStore.ts</code>).</li>
+        <li>No Redis, warehouse, Kafka or Snowflake. The local <code>~/.snowflake</code> and <code>~/.confluent</code> configs are not used by this repo.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Schemas &amp; extensions</h3>
+      <ul>
+        <li><code>public</code>: all app tables, views and RPCs. There are no custom app schemas.</li>
+        <li><code>auth</code>, <code>storage</code>, <code>cron</code>, <code>supabase_migrations</code>: platform-managed.</li>
+        <li><code>extensions</code>: <code>vector</code>, <code>pg_trgm</code>, <code>pgtap</code>, <code>digest</code>, <code>uuid_generate_v4</code>.</li>
+        <li><code>pg_cron</code>, <code>pg_net</code> for jobs and outbound HTTP.</li>
+        <li><code>identity_vault.aadhaar_mapping</code> is referenced by code but created in no migration.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Modelling conventions</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Concern</th><th>Pattern</th></tr></thead>
+    <tbody>
+      <tr><td>Keys</td><td>UUID primary keys. Human-readable numbers come from triggers and sequences: <code>cr_number</code>, <code>invoice_number</code>, <code>ipd_admission_number_seq</code>, <code>claim_seq</code>, <code>preauth_seq</code>.</td></tr>
+      <tr><td>Status fields</td><td>TEXT with CHECK constraints, some case-insensitive via <code>lower()</code>. Only one real enum exists: <code>nabh_check_type</code>.</td></tr>
+      <tr><td>Semi-structured</td><td>JSONB for assessments, checklists, payloads, <code>fhir_json</code> columns, <code>enabled_modules</code>, inventory <code>batches</code>.</td></tr>
+      <tr><td>Standards</td><td>FHIR-shaped billing (Account, ChargeItemDefinition, ChargeItem, Invoice). SNOMED CT and ICD-10 codes stored alongside free text. NRCES OPConsult bundle built in SQL.</td></tr>
+      <tr><td>Timestamps</td><td><code>updated_at</code> triggers on about 25 tables.</td></tr>
+      <tr><td>Deletion</td><td>No <code>deleted_at</code>. Masters use <code>is_active</code>. Finalized encounters are locked by trigger, and corrections may only change demographic fields.</td></tr>
+      <tr><td>Audit</td><td><code>zz_audit_row</code> on 83 tables writes old and new JSONB to <code>audit_logs</code>. <code>log_phi_read()</code> records reads inside RPCs.</td></tr>
+      <tr><td>Migrations</td><td>385 files, rebuilt from <code>schema_migrations</code>. 322 are from April 2026, 13 from August, 50 from September. The oldest core tables have no DDL in the repo.</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 6 -->
+  <h2 id="tenancy">6. Multi-tenancy &amp; RLS</h2>
+  <p>The database uses a single shared schema with row-level tenancy. The caller's hospital is resolved from <code>practitioners</code>, and almost every table carries <code>hospital_id</code>. Child tables without that column are scoped through their parent.</p>
+  <div class="two">
+<pre class="code">-- resolve tenant (STABLE SECURITY DEFINER)
+auth.uid()
+  → practitioners.user_id
+  → practitioners.hospital_id
+  = auth_hospital_id()
+
+-- standard policy
+USING (hospital_id = (select auth_hospital_id()))
+
+-- child table, scoped via parent
+USING (encounter_id IN (
+  select id from opd_encounters
+  where hospital_id = auth_hospital_id()))</pre>
+    <div>
+      <ul>
+        <li><b>Patients</b> additionally need <code>has_permission(auth.uid(), 'patients', 'read')</code>.</li>
+        <li><b>Admin-only</b> reads use <code>_caller_is_hospital_staff_admin(hospital_id)</code>.</li>
+        <li><b>Anonymous access</b> is limited to 7 SECURITY DEFINER RPCs, such as <code>get_public_prescription</code> and <code>get_invitation_by_token</code>.</li>
+        <li><b>Global reference tables</b> have no tenant column: <code>icd10_library</code>, <code>snomed_*</code>, <code>drug_interactions</code>, <code>insurance_companies</code>, <code>tpas</code>, <code>ipd_consent_types</code>.</li>
+        <li><b>Two tenant tables:</b> <code>hospitals</code> and <code>organizations</code> share UUIDs, and older FKs point at <code>organizations</code>. Two tables use <code>org_id</code> instead of <code>hospital_id</code>.</li>
+        <li><b>Tests:</b> <code>supabase/tests/rls_isolation.sql</code> runs 50 pgTAP assertions.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 7 -->
+  <h2 id="model">7. Data model</h2>
+  <p>The graph has three hubs. <code>hospitals</code> is the tenant root. <code>patients</code> is the clinical hub. <code>practitioners</code> is the staff hub, with about 87 inbound foreign keys. The diagrams below show the key columns of each domain, not every column.</p>
+  <div class="note">The repo has no DDL for the oldest core tables (<code>patients</code>, <code>practitioners</code>, <code>hospitals</code>, <code>appointments</code>, <code>opd_encounters</code>, <code>prescriptions</code>, <code>investigations</code>, <code>payments</code>). Their columns were reconstructed from ALTERs, RPC bodies, triggers and app inserts. Generate <code>database.types.ts</code> or a baseline dump to confirm them.</div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Domain</th><th>Main tables</th></tr></thead>
+    <tbody>
+      <tr><td>Tenancy &amp; config</td><td>hospitals, organizations, departments, services, department_budgets, nabh_compliance_checks</td></tr>
+      <tr><td>Staff &amp; access</td><td>practitioners, invitations, role_permissions, ward_staff_assignments, staff_shifts, staff_attendance</td></tr>
+      <tr><td>Patient &amp; consent</td><td>patients, patient_photos, patient_allergies, allergen_groups, active_problems, patient_summaries, patient_consents, data_principal_requests</td></tr>
+      <tr><td>ABDM</td><td>abha_sessions, hip_link_requests, abdm_consent_requests, abdm_patient_consents, hi_data_transfers, abdm_subscriptions, abdm_auth_tokens, abdm_webhook_inbox</td></tr>
+      <tr><td>OPD</td><td>appointments, appointment_reminders, reception_queue, opd_encounters, opd_bills, consultation_fee_master, opd_templates, rx_templates</td></tr>
+      <tr><td>Clinical &amp; AI</td><td>prescriptions, medication_reconciliation, drug_interactions, snomed_drug_map, icd10_library, snomed_cache, transcriptions, clinical_extractions, doctor_interaction_embeddings, clinical_attachments, xray_measurements</td></tr>
+      <tr><td>IPD &amp; nursing</td><td>ipd_wards, ipd_beds, ipd_admissions, ipd_progress_notes, ipd_treatments, ipd_doctor_orders, ipd_mar, ipd_vitals, ipd_io_records, ipd_discharge_summaries, nursing_tasks, ipd_shift_handovers, ipd_wound_assessments, ot_surgeries, pac_requests</td></tr>
+      <tr><td>Lab</td><td>investigations, investigation_results, lab_result_entries, investigation_ocr_uploads, test_catalogue, investigation_price_master, investigation_bills</td></tr>
+      <tr><td>Pharmacy</td><td>drugs, hospital_inventory, stock_transactions, pharmacy_vendors, vendors, ward_inventory, consumable_usage_logs</td></tr>
+      <tr><td>Billing &amp; insurance</td><td>charge_item_definitions, charge_items, invoices, invoice_line_items, payments, accounts, patient_billing_accounts, patient_wallet, ipd_daily_charges, procedure_estimates, insurance_companies, tpas, patient_insurance_coverage, insurance_preauths, insurance_claims</td></tr>
+      <tr><td>Audit &amp; ops</td><td>audit_logs, billing_audit_log, notifications, backup_logs</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Tenancy, people &amp; consent</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+erDiagram
+  hospitals ||--o{ practitioners : employs
+  hospitals ||--o{ departments : has
+  hospitals ||--o{ patients : registers
+  hospitals ||--|| organizations : "same uuid"
+  practitioners }o--|| departments : primary
+  patients ||--o{ patient_allergies : has
+  patients ||--o{ patient_consents : gives
+  patients ||--o{ data_principal_requests : raises
+  hospitals ||--o{ audit_logs : records
+  hospitals {
+    uuid id PK
+    text name
+    text hfr_id
+    text cr_number_prefix
+    int data_retention_years
+    jsonb enabled_modules
+  }
+  practitioners {
+    uuid id PK
+    uuid user_id FK "auth.users"
+    uuid hospital_id FK
+    text role
+    text registration_no
+    text hpr_id
+    bool is_active
+  }
+  departments {
+    uuid id PK
+    uuid hospital_id FK
+    text type "clinical, diagnostic, admin, support"
+    numeric consultation_fee
+  }
+  patients {
+    uuid id PK
+    uuid hospital_id FK
+    text cr_number "trigger"
+    text full_name
+    date date_of_birth
+    text phone
+    text mobile_hash "sha-256"
+    text aadhaar_hash
+    text abha_id
+  }
+  patient_allergies {
+    uuid id PK
+    uuid patient_id FK
+    text substance_snomed
+    text severity "mild to anaphylaxis"
+  }
+  patient_consents {
+    uuid id PK
+    uuid patient_id FK
+    text purpose "treatment, billing, sharing, reminders, research"
+    text status "given, withdrawn"
+  }
+  data_principal_requests {
+    uuid id PK
+    text request_type "access, correction, erasure, grievance"
+    timestamptz sla_due_at "+30 days"
+  }
+  audit_logs {
+    uuid id PK
+    uuid practitioner_id
+    text action
+    text resource_type
+    jsonb old_values
+    jsonb new_values
+  }
+</pre>
+  </div><figcaption><b>Staff identity is a practitioners row, not an auth user.</b> <code>practitioners.hospital_id</code> sets the tenant for every RLS check.</figcaption></figure>
+
+  <h3>OPD &amp; lab</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+erDiagram
+  patients ||--o{ appointments : books
+  practitioners ||--o{ appointments : sees
+  appointments ||--o| opd_encounters : "becomes"
+  patients ||--o{ reception_queue : queued
+  reception_queue ||--o| opd_bills : billed
+  opd_encounters ||--o{ prescriptions : orders
+  opd_encounters ||--o{ investigations : orders
+  opd_encounters ||--o{ medication_reconciliation : reconciles
+  opd_encounters ||--o{ clinical_attachments : attaches
+  investigations ||--o{ lab_result_entries : results
+  investigation_ocr_uploads ||--o{ lab_result_entries : "OCR source"
+  appointments ||--o{ appointment_reminders : sends
+  appointments {
+    uuid id PK
+    uuid patient_id FK
+    uuid doctor_id FK
+    uuid encounter_id FK
+    date appointment_date
+    text status "scheduled to no_show"
+    text booking_source "walk_in, booked, follow_up_auto"
+  }
+  opd_encounters {
+    uuid id PK
+    uuid hospital_id FK
+    uuid patient_id FK
+    uuid appointment_id FK
+    text chief_complaint
+    text diagnosis_snomed
+    text diagnosis_icd
+    timestamptz prescription_finalized_at "locks row"
+  }
+  prescriptions {
+    uuid id PK
+    uuid encounter_id FK
+    text medicine_name
+    text dosage
+    text frequency
+    text instructions_hi
+    uuid hospital_inventory_id FK
+    timestamptz dispensed_at
+  }
+  investigations {
+    uuid id PK
+    uuid encounter_id FK
+    text status "draft to cancelled"
+    text result_severity
+  }
+  lab_result_entries {
+    uuid id PK
+    text entry_method "manual, ocr"
+    uuid ocr_upload_id FK
+  }
+  reception_queue {
+    uuid id PK
+    uuid hospital_id FK "organizations"
+    int token
+    text queue_status
+    text bill_status
+  }
+</pre>
+  </div><figcaption><b>Appointment and encounter link both ways.</b> Each holds a foreign key to the other. A finalized encounter is read-only, enforced by <code>aa_lock_finalized_encounter</code>.</figcaption></figure>
+
+  <h3>IPD, nursing &amp; OT</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+erDiagram
+  ipd_wards ||--o{ ipd_beds : contains
+  ipd_beds ||--o{ ipd_admissions : occupies
+  opd_encounters ||--o{ ipd_admissions : "admitted from"
+  ipd_admissions ||--o{ ipd_progress_notes : "one per day"
+  ipd_admissions ||--o{ ipd_treatments : prescribes
+  ipd_treatments ||--o{ ipd_mar : "MAR slots"
+  ipd_admissions ||--o{ ipd_doctor_orders : orders
+  ipd_doctor_orders ||--o{ nursing_tasks : generates
+  ipd_admissions ||--o{ ipd_vitals : charts
+  ipd_admissions ||--o| ipd_discharge_summaries : closes
+  ipd_admissions ||--o| ot_surgeries : schedules
+  ipd_admissions }o--o| insurance_preauths : covered
+  ipd_admissions {
+    uuid id PK
+    uuid patient_id FK
+    uuid bed_id FK
+    uuid admitting_doctor_id FK
+    uuid preauth_id FK
+    text admission_number "sequence"
+    text status "planned to finished"
+    jsonb fhir_json
+  }
+  ipd_beds {
+    uuid id PK
+    uuid ward_id FK
+    text bed_number
+    text status "available, occupied, reserved, maintenance"
+  }
+  ipd_progress_notes {
+    uuid id PK
+    uuid admission_id FK
+    date note_date "unique per admission"
+    text status "draft, signed, amended"
+  }
+  ipd_treatments {
+    uuid id PK
+    uuid admission_id FK
+    text treatment_kind
+    uuid charge_item_id FK
+  }
+  ipd_mar {
+    uuid id PK
+    uuid treatment_id FK
+    timestamptz scheduled_at
+    text status "pending, given, held, refused"
+  }
+  nursing_tasks {
+    uuid id PK
+    uuid source_doctor_order_id FK
+    text shift
+    text status
+  }
+  ipd_vitals {
+    uuid id PK
+    uuid admission_id FK
+    int mews_score "trigger"
+  }
+</pre>
+  </div><figcaption><b>The admission is the IPD hub.</b> Treatments create MAR slots, doctor orders create nursing tasks, and vitals get a MEWS score, all by trigger.</figcaption></figure>
+
+  <h3>Billing &amp; insurance</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+erDiagram
+  charge_item_definitions ||--o{ charge_items : prices
+  charge_items ||--o{ invoice_line_items : "billed as"
+  invoices ||--o{ invoice_line_items : contains
+  invoices ||--o{ payments : settles
+  accounts ||--o{ invoices : groups
+  patients ||--o{ accounts : owns
+  patients ||--o{ patient_insurance_coverage : holds
+  patient_insurance_coverage ||--o{ insurance_preauths : requests
+  insurance_preauths ||--o{ insurance_claims : becomes
+  insurance_claims }o--|| invoices : claims
+  insurance_companies ||--o{ patient_insurance_coverage : insures
+  patients ||--o| patient_wallet : prepays
+  charge_item_definitions {
+    uuid id PK
+    uuid hospital_id FK
+    text code
+    text code_system "SNOMED default"
+    numeric base_price
+    text tax_type "gst"
+    jsonb applicability_rules
+  }
+  charge_items {
+    uuid id PK
+    uuid definition_id FK
+    numeric unit_price_snapshot
+    text source_type "encounter, medication_dispense, procedure, manual"
+  }
+  invoices {
+    uuid id PK
+    uuid account_id FK
+    uuid encounter_id FK
+    text invoice_number "trigger"
+    text status "draft, issued, balanced, voided"
+    numeric total_gross
+    numeric balance_due
+    jsonb fhir_json
+  }
+  invoice_line_items {
+    uuid id PK
+    uuid invoice_id FK
+    uuid charge_item_id FK
+    numeric net_amount "trigger math"
+  }
+  payments {
+    uuid id PK
+    uuid invoice_id FK "nullable"
+    numeric amount
+    text payment_method
+  }
+  insurance_preauths {
+    uuid id PK
+    text preauth_number "preauth_seq"
+    text status "draft to cancelled"
+  }
+  insurance_claims {
+    uuid id PK
+    text claim_type "cashless, reimbursement"
+    text status "draft to settled"
+  }
+</pre>
+  </div><figcaption><b>Billing follows FHIR resources.</b> Definition, then ChargeItem, then Invoice line. Unit price is copied onto the charge item at creation, so later price changes do not rewrite history.</figcaption></figure>
+
+  <h3>Pharmacy, terminology &amp; AI</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+erDiagram
+  drugs ||--o{ hospital_inventory : stocked
+  hospital_inventory ||--o{ stock_transactions : moves
+  pharmacy_vendors ||--o{ hospital_inventory : supplies
+  hospital_inventory ||--o{ prescriptions : dispenses
+  snomed_drug_map }o--o{ drugs : codes
+  practitioners ||--o{ doctor_interaction_embeddings : learns
+  hospital_inventory {
+    uuid id PK
+    uuid hospital_id FK
+    text generic_name
+    text batch_number
+    date expiry_date
+    int stock_quantity
+    bool is_high_risk
+    bool is_lasa
+    jsonb batches
+  }
+  stock_transactions {
+    uuid id PK
+    text transaction_type "restock, dispense, return, adjustment, expired"
+  }
+  drug_interactions {
+    text drug_a_generic
+    text drug_b_generic
+    text severity "mild to contraindicated"
+  }
+  icd10_library {
+    text code PK
+    text long_description
+    bool is_billable
+    vector embedding "768-d"
+  }
+  snomed_concept_cache {
+    text concept_id PK
+    tsvector search_vector
+  }
+  doctor_interaction_embeddings {
+    uuid id PK
+    uuid practitioner_id FK
+    text content_text
+    vector embedding "768-d ivfflat"
+  }
+</pre>
+  </div><figcaption><b>Reference data is global, stock is per hospital.</b> <code>search_icd10</code> combines vector and lexical search over <code>icd10_library</code>. <code>match_interactions</code> finds similar past prescribing per doctor.</figcaption></figure>
+
+  <h3>Storage buckets</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Bucket</th><th>Access</th><th>Contents</th><th>Linked table</th></tr></thead>
+    <tbody>
+      <tr><td><code>clinical-attachments</code></td><td>private, 10 MB</td><td>images, PDFs on encounters and admissions</td><td>clinical_attachments</td></tr>
+      <tr><td><code>investigation-reports</code></td><td>private</td><td>lab reports, OCR source files</td><td>investigation_ocr_uploads</td></tr>
+      <tr><td><code>wound-photos</code></td><td>private, 10 MB</td><td>wound images</td><td>ipd_wound_photos</td></tr>
+      <tr><td><code>patient-photos</code></td><td>private</td><td>patient photos (no upload UI yet)</td><td>patient_photos</td></tr>
+      <tr><td><code>hospital-assets</code></td><td><span class="pill no">public</span></td><td>logo, letterhead</td><td>hospitals</td></tr>
+      <tr><td><code>consent-templates</code></td><td><span class="pill no">public URLs</span></td><td>consent template files</td><td>ipd_consent_types</td></tr>
+      <tr><td><code>hospital-backups</code></td><td>private</td><td>encrypted schema dumps</td><td>backup_logs</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 8 -->
+  <h2 id="gaps">8. Gaps found while mapping</h2>
+  <p>These are architectural findings from reading the code. None of them was tested at runtime.</p>
+  <ul class="defects">
+    <li><b>Backups cannot be restored.</b> <code>lib/backup/runHospitalBackup.ts</code> throws away the random AES key and stores only its hash. It also needs <code>pg_dump</code>, which Vercel does not provide.</li>
+    <li><b>Missing edge function.</b> <code>components/ipd/discharge-summary-modal.tsx:830</code> invokes <code>generate-discharge-summary</code>, and no such function exists.</li>
+    <li><b>No confirmation gate on AI output.</b> <code>clinical_extractions.doctor_confirmed</code> is never set to true.</li>
+    <li><b>ABDM does not run.</b> The gateway URL is unset, <code>abha-enrol</code> is a mock, and <code>lib/abdm/fhir-builder.ts</code> is never called.</li>
+    <li><b>Reminders never sent.</b> <code>CRON_SECRET</code> is not configured in Vercel.</li>
+    <li><b>Route RBAC gap.</b> <code>proxy.ts</code> does not match <code>/ipd</code>, so the legacy IPD tree relies on RLS alone.</li>
+    <li><b>Silent key fallback.</b> <code>lib/supabase/admin.ts</code> falls back to the anon key when the service role key is missing.</li>
+    <li><b>Secrets.</b> The Gemini key was shipped in the browser bundle, and rotating it was declined (RUNBOOK §6). PHI goes to Gemini and AssemblyAI.</li>
+    <li><b>No staging.</b> CI pgTAP suites run against production, and every step reports green when the DB secret is missing.</li>
+    <li><b>Schema drift risk.</b> Core-table DDL is missing from the repo. <code>hospitals</code> and <code>organizations</code> both act as the tenant table.</li>
+    <li><b>Unenforced retention.</b> <code>hospitals.data_retention_years</code> (default 7) is not enforced by anything. Phone numbers are stored in plain text.</li>
+  </ul>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  if (!window.mermaid) return;
+  var cs = getComputedStyle(document.documentElement);
+  function t(name) { return cs.getPropertyValue(name).trim(); }
+  var dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+    (document.documentElement.getAttribute('data-theme') !== 'light' &&
+     window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme: 'base',
+    darkMode: dark,
+    fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+    flowchart: { htmlLabels: true, curve: 'basis', useMaxWidth: false },
+    er: { useMaxWidth: false },
+    sequence: { useMaxWidth: false, mirrorActors: false },
+    themeVariables: {
+      background: t('--surface'),
+      mainBkg: t('--accent-soft'),
+      primaryColor: t('--accent-soft'),
+      primaryTextColor: t('--fg'),
+      primaryBorderColor: t('--accent'),
+      secondaryColor: t('--bg'),
+      tertiaryColor: t('--surface'),
+      nodeBorder: t('--accent'),
+      lineColor: t('--muted'),
+      textColor: t('--fg'),
+      clusterBkg: t('--bg'),
+      clusterBorder: t('--line'),
+      titleColor: t('--fg'),
+      edgeLabelBackground: t('--surface'),
+      actorBkg: t('--accent-soft'),
+      actorBorder: t('--accent'),
+      actorTextColor: t('--fg'),
+      actorLineColor: t('--line'),
+      signalColor: t('--fg'),
+      signalTextColor: t('--fg'),
+      labelBoxBkgColor: t('--accent-soft'),
+      labelTextColor: t('--fg'),
+      noteBkgColor: t('--warn-soft'),
+      noteBorderColor: t('--warn'),
+      noteTextColor: t('--fg'),
+      sequenceNumberColor: t('--surface'),
+      attributeBackgroundColorOdd: t('--surface'),
+      attributeBackgroundColorEven: t('--bg'),
+      fontSize: '14px'
+    }
+  });
+  mermaid.run({ querySelector: 'pre.mermaid' }).catch(function (e) { console.error(e); });
+})();
+</script>
