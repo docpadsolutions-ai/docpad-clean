@@ -91,34 +91,11 @@ export function CurrentUserBadge({
       }
       const uid = user.id;
 
-      const profRes = await supabase
-        .from("profiles")
-        .select("full_name, display_name, role")
-        .eq("id", uid)
-        .maybeSingle();
-
-      if (!cancelled && !profRes.error && profRes.data) {
-        const r = profRes.data as Record<string, unknown>;
-        const displayName =
-          str(r.display_name) ||
-          str(r.full_name) ||
-          str(user.user_metadata?.full_name) ||
-          user.email?.split("@")[0] ||
-          "User";
-        const meta = user.user_metadata as { role?: unknown; app_role?: unknown } | undefined;
-        const rawRole = firstNonEmpty(r.role, meta?.role, meta?.app_role);
-        const roleLabel = rawRole
-          ? formatPractitionerRoleDisplay(rawRole)
-          : formatPractitionerRoleDisplay(
-              str((user.user_metadata as { app_role?: unknown })?.app_role) || "staff",
-            );
-        setState({ status: "ready", displayName, roleLabel });
-        return;
-      }
-
+      // practitioners is the only staff profile source. There is no `profiles` table and
+      // no `sub_role` column; asking for either failed on every page (BREAKAGE-TRIAGE N-11).
       const { data: pr, error: prErr } = await supabase
         .from("practitioners")
-        .select("full_name, first_name, last_name, role, user_role, sub_role")
+        .select("full_name, first_name, last_name, role, user_role")
         .or(practitionersOrFilterForAuthUid(uid))
         .maybeSingle();
 

@@ -136,8 +136,11 @@ export default function LoginPage() {
     }
 
     // Temporary: skip role fetch (RLS blocks practitioners on browser client on Vercel).
+    // Go to /dashboard rather than /opd: proxy.ts redirects /dashboard to each role's
+    // home, whereas /opd landed every role that may open /dashboard/opd on the doctor
+    // screen (BREAKAGE-TRIAGE N-12).
     await supabase.auth.getSession();
-    router.push("/opd");
+    router.push("/dashboard");
   }
 
   return (

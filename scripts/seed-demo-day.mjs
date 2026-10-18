@@ -18,8 +18,8 @@
  * outside that hospital, so it is safe to run against a project that also holds real
  * data - though you should not want to.
  *
- * It needs the service-role key, because creating the two sign-in accounts goes
- * through the Auth admin API. Run it from your own machine, not from a sandbox: the
+ * It needs the service-role key, because creating the sign-in accounts (one per role)
+ * goes through the Auth admin API. Run it from your own machine, not from a sandbox: the
  * key should not travel further than it has to.
  *
  * No dependencies. Reads .env.local for NEXT_PUBLIC_SUPABASE_URL and
@@ -34,6 +34,10 @@ const DEMO_PASSWORD = "DocPadDemo!2026";
 
 const DOCTOR_EMAIL = "demo.doctor@docpad.invalid";
 const RECEPTION_EMAIL = "demo.reception@docpad.invalid";
+const NURSE_EMAIL = "demo.nurse@docpad.invalid";
+const PHARMACIST_EMAIL = "demo.pharmacist@docpad.invalid";
+const LAB_EMAIL = "demo.lab@docpad.invalid";
+const ADMIN_EMAIL = "demo.admin@docpad.invalid";
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes("--dry");
@@ -138,6 +142,51 @@ const PRACTITIONERS = [
     registration_no: null,
     email: RECEPTION_EMAIL,
   },
+  // One account per remaining role, so a route walk can sign in as each. The role
+  // strings are the ones the admin invite screen writes (app/admin/page.tsx), so the
+  // proxy routes these accounts exactly as it would route real staff.
+  {
+    id: id(103),
+    full_name: "Rekha Thomas",
+    role: "nurse",
+    specialty: null,
+    primary_specialty: null,
+    qualification: "BSc Nursing",
+    registration_no: null,
+    email: NURSE_EMAIL,
+  },
+  {
+    id: id(104),
+    full_name: "Imran Qureshi",
+    role: "pharmacist",
+    specialty: null,
+    primary_specialty: null,
+    qualification: "B.Pharm",
+    registration_no: null,
+    email: PHARMACIST_EMAIL,
+  },
+  // Needs 20261018060000_allow_lab_technician_role.sql: before it, the role checks
+  // on practitioners refused 'lab_technician' (BREAKAGE-TRIAGE N-09).
+  {
+    id: id(105),
+    full_name: "Deepa Kulkarni",
+    role: "lab_technician",
+    specialty: null,
+    primary_specialty: null,
+    qualification: "DMLT",
+    registration_no: null,
+    email: LAB_EMAIL,
+  },
+  {
+    id: id(106),
+    full_name: "Rohan Bhatia",
+    role: "admin",
+    specialty: null,
+    primary_specialty: null,
+    qualification: null,
+    registration_no: null,
+    email: ADMIN_EMAIL,
+  },
 ];
 
 /**
@@ -198,6 +247,14 @@ async function destroy() {
   }
   await del("hospitals", `id=eq.${DEMO_HOSPITAL_ID}`);
   process.stdout.write("  cleared hospitals\n");
+  // The organizations row usually stays: append-only audit_logs rows reference it,
+  // and a re-seed reuses it.
+  try {
+    await del("organizations", `id=eq.${DEMO_HOSPITAL_ID}`);
+    process.stdout.write("  cleared organizations\n");
+  } catch {
+    process.stdout.write("  kept organizations (referenced by audit_logs)\n");
+  }
 }
 
 // ---------------------------------------------------------------- auth users
@@ -221,6 +278,11 @@ async function ensureAuthUser(email) {
 // ---------------------------------------------------------------- the day
 
 async function seed() {
+  // Every hospital has an organizations row with the same id (provision_hospital
+  // creates it). The audit trigger writes org_id = hospital_id, and
+  // audit_logs.org_id references organizations, so without this row the first
+  // audited insert fails with audit_logs_org_id_fkey.
+  await upsert("organizations", [{ id: DEMO_HOSPITAL_ID, name: DEMO_HOSPITAL_NAME }]);
   await upsert("hospitals", [
     {
       id: DEMO_HOSPITAL_ID,
@@ -242,8 +304,14 @@ async function seed() {
       id: p.id,
       hospital_id: DEMO_HOSPITAL_ID,
       user_id: userIds[p.email],
+      // Set explicitly: when email is blank, the practitioners_sync_email_from_auth
+      // trigger reads auth.users, which the live database refuses here (42501).
+      email: p.email,
       full_name: p.full_name,
+      // The proxy reads user_role first and falls back to role; set both, as every
+      // existing practitioner row does.
       role: p.role,
+      user_role: p.role,
       specialty: p.specialty,
       primary_specialty: p.primary_specialty,
       qualification: p.qualification,
@@ -426,7 +494,10 @@ async function main() {
 
   if (DRY) {
     console.log("Dry run. Would write, all under the demo hospital and nowhere else:");
-    console.log(`  1 hospital, 2 practitioners with sign-in accounts`);
+    console.log(
+      `  1 hospital, ${PRACTITIONERS.length} practitioners with sign-in accounts ` +
+        `(${PRACTITIONERS.map((p) => p.role).join(", ")})`,
+    );
     const drugAllergies = PATIENTS.filter((p) => p.allergies.some((a) => /penicillin|sulpha|sulfa/i.test(a))).length;
     const otherAllergies = PATIENTS.filter((p) => p.allergies.length).length - drugAllergies;
     console.log(
@@ -454,11 +525,10 @@ async function main() {
   await seed();
 
   console.log(`
-Done. Sign in at /auth with either account:
+Done. Sign in at /auth with any of these accounts:
 
-  doctor      ${DOCTOR_EMAIL}
-  reception   ${RECEPTION_EMAIL}
-  password    ${DEMO_PASSWORD}
+${PRACTITIONERS.map((p) => `  ${p.role.padEnd(16)}${p.email}`).join("\n")}
+  ${"password".padEnd(16)}${DEMO_PASSWORD}  (same for all)
 
 Worth trying, because each one exercises a rule that used to exist only in the UI:
 

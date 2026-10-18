@@ -82,7 +82,7 @@ Work through these steps in order. Record every new finding in section 4 before 
 | ID | Symptom on Vercel | Cause | How to verify | Fix | Pri | Status |
 |---|---|---|---|---|---|---|
 | B-05 | Generating a discharge summary fails | `components/ipd/discharge-summary-modal.tsx:830` invokes edge function `generate-discharge-summary`, which **does not exist** in `supabase/functions/` | Open an IPD admission → discharge → generate; check the console | Call the existing `/api/ipd/compile-discharge-clinical` route instead | P1 | Suspected. Code re-checked 18 Oct: the call is still at line 830 and there is still no such function. |
-| B-06 | Encounter workspace shows two DocPad headers and competing navigation | Nested app chrome in `app/dashboard/opd/encounter/[id]/page.tsx` (known gap 7 in `CLAUDE.md`) | Open any OPD encounter | Remove the inner header; rely on the sidebar shell | **P0** (demo step 2) | Suspected |
+| B-06 | Encounter workspace shows two DocPad headers and competing navigation | Nested app chrome in `app/dashboard/opd/encounter/[id]/page.tsx` (known gap 7 in `CLAUDE.md`) | Open any OPD encounter | Remove the inner header; rely on the sidebar shell | **P0** (demo step 2) | Confirmed (route walk, 18 Oct): second DocPad nav bar under the shell header. |
 
 ### Registration and ABHA
 
@@ -100,10 +100,10 @@ Work through these steps in order. Record every new finding in section 4 before 
 |---|---|---|---|---|---|---|
 | B-12 | "Run backup" fails | `lib/backup/runHospitalBackup.ts:33,50` spawns `pg_dump`, which is not available on Vercel. The encryption key is also discarded, so backups could never be restored. | Admin → system security → run backup; logs show `spawn pg_dump ENOENT` | Hide the backup UI. Enable Supabase PITR instead (MVP item). | P1 | Suspected |
 | B-13 | ECG digitisation fails or is blocked as mixed content | `components/investigations/ECGViewer.tsx:14` defaults to `http://127.0.0.1:8000`, so a browser on Vercel calls its own localhost. The service is not deployed. | Open an ECG investigation; check the console | Hide the digitiser unless `NEXT_PUBLIC_ECG_DIGITIZER_URL` is set | P2 | Suspected |
-| B-14 | `/admin/analytics/clinical` is broken | Known gap in `CLAUDE.md` | Open the page as admin | **Demo:** hide the nav item. Fix later. | P1 | Suspected |
-| B-15 | Many routes never get past a spinner, or show "Coming soon" | About a third of mapped routes are stubs (`CLAUDE.md` known gap 6). "Coming soon" appears in: `app/dashboard/page.tsx`, `app/dashboard/opd/encounter/[id]/page.tsx`, `app/admin/dashboard/investigation-panels/page.tsx`, `components/ipd/PreAdmissionAssessmentPage.tsx`, `components/investigations/OCRUploadModal.tsx`, `components/pharmacy/PharmacyInventory.tsx`, `components/pharmacy/DrugTableRow.tsx` | Route walk (section 6) | **Demo:** hide via `enabled_modules` / `navConfig.ts`. **MVP:** finish or remove. | **P0** (demo) | Suspected |
-| B-16 | The same screen exists at several URLs; `/ipd/*` has no role gating | Duplicate route trees (`app/opd`, `app/dashboard/opd`, `app/ipd`, `app/dashboard/ipd`, `app/pharmacy`, `app/dashboard/pharmacy`). `proxy.ts` does not match `/ipd`, `/rx` or `/join`. | Open `/ipd` as a pharmacist | Pick one canonical tree; make `proxy.ts` deny by default | P1 | Suspected. Code re-checked 18 Oct: the `proxy.ts` matcher also omits `/patients`, `/data-rights` and `/register`. |
-| B-17 | `/billing/insurance` shows dark text on a dark background in light mode | Hard-coded surface colours: 31 dark-colour classes in `app/billing/insurance/page.tsx` (`CLAUDE.md` conventions) | Open the page in light mode | Replace them with theme tokens | P2 | Suspected |
+| B-14 | `/admin/analytics/clinical` is broken | Known gap in `CLAUDE.md` | Open the page as admin | **Demo:** hide the nav item. Fix later. | P1 | Not reproduced as a broken page (route walk, 18 Oct): it renders, but counts 0 encounters although 2 completed ones fall in its default range. |
+| B-15 | Many routes never get past a spinner, or show "Coming soon" | About a third of mapped routes are stubs (`CLAUDE.md` known gap 6). "Coming soon" appears in: `app/dashboard/page.tsx`, `app/dashboard/opd/encounter/[id]/page.tsx`, `app/admin/dashboard/investigation-panels/page.tsx`, `components/ipd/PreAdmissionAssessmentPage.tsx`, `components/investigations/OCRUploadModal.tsx`, `components/pharmacy/PharmacyInventory.tsx`, `components/pharmacy/DrugTableRow.tsx` | Route walk (section 6) | **Demo:** hide via `enabled_modules` / `navConfig.ts`. **MVP:** finish or remove. | **P0** (demo) | Confirmed (route walk, 18 Oct): nurse home is an onboarding screen with IPD "Coming Soon"; investigation panels "Coming soon"; `/nursing` as admin never leaves its skeleton. |
+| B-16 | The same screen exists at several URLs; `/ipd/*` has no role gating | Duplicate route trees (`app/opd`, `app/dashboard/opd`, `app/ipd`, `app/dashboard/ipd`, `app/pharmacy`, `app/dashboard/pharmacy`). `proxy.ts` does not match `/ipd`, `/rx` or `/join`. | Open `/ipd` as a pharmacist | Pick one canonical tree; make `proxy.ts` deny by default | P1 | Suspected. Code re-checked 18 Oct: the `proxy.ts` matcher also omits `/patients`, `/data-rights` and `/register`. Confirmed (route walk, 18 Oct): pharmacist and lab both open `/ipd` and `/ipd/beds`. |
+| B-17 | `/billing/insurance` shows dark text on a dark background in light mode | Hard-coded surface colours: 31 dark-colour classes in `app/billing/insurance/page.tsx` (`CLAUDE.md` conventions) | Open the page in light mode | Replace them with theme tokens | P2 | Not reproduced (route walk, 18 Oct): readable in light mode. Dark mode not checked. |
 
 ### Not breakages, but they hide breakages
 
@@ -125,6 +125,18 @@ Work through these steps in order. Record every new finding in section 4 before 
 | N-03 | Deployment `docpad-clean-po99vbc6f` | `Error: The \`CRON_SECRET\` environment variable contains leading or trailing whitespace, which is not allowed in HTTP header values.` | build | 2026-09-20 | B-04 | P2 | Fixed (the next deployment, also 20 Sep, built; all later ones are Ready) |
 | N-04 | Dependencies | `27 vulnerabilities (1 low, 8 moderate, 16 high, 2 critical)` | `npm ci` | 2026-10-18 | — | P1 (until reviewed) | Confirmed. Run `npm audit` and check whether the critical ones are reachable. |
 | N-05 | Vercel env | All secrets (`SUPABASE_SERVICE_ROLE_KEY`, `TWILIO_AUTH_TOKEN`, API keys) are type `Config`, not Sensitive, and are also in Development, so `vercel env pull` writes them to every laptop | `vercel env ls` | 2026-10-18 | B-01, B-02 | P1 (security) | Confirmed. When rotating keys, re-add them as Sensitive, for Production and Preview only. |
+| N-07 | Sign-in as a lab technician | Lab staff land on the doctor home (`/dashboard/opd`), not `/lab`. The admin invite screen stores `lab_technician` (`app/admin/page.tsx:17`), but `lib/dashboardRoleRouting.ts` matches `/\blab\b/`, and `_` counts as a word character, so `lab_technician` never matches. | code (`node -e` regex test) | 2026-10-18 | — | **P0** (demo step 6, Lab OCR) | Fixed in code on 18 Oct (`lib/dashboardRoleRouting.ts`: `/(^|[^a-z])lab([^a-z]|$)/i`); **not deployed yet**, so production still routes lab staff to `/dashboard/opd` until it ships. |
+| N-08 | Any direct insert into `practitioners` (API, scripts) | `permission denied for table users` (42501). The live-only trigger `sync_email_on_insert` / `sync_practitioner_email()` read `auth.users` as the calling role. The repo's version (`practitioners_sync_email_from_auth`, `20260406060000`) does not exist in the DB. | seed script | 2026-10-18 | N-02 | P1 | Fixed: `20261018050000_sync_practitioner_email_security_definer.sql`, applied by hand in the SQL Editor on 18 Oct; post-check `prosecdef = true`, anon/authenticated cannot execute. |
+| N-09 | Lab role, demo step 6 | `new row for relation "practitioners" violates check constraint "practitioners_role_check"`. `role` and `user_role` checks allow only admin, doctor, nurse, pharmacist, receptionist. The invite screen offers "Lab Tech" (`lab_technician`), which can never become a practitioner. | seed script | 2026-10-18 | N-07 | **P0** (demo step 6) | Fixed: `20261018060000_allow_lab_technician_role.sql`, applied 18 Oct. It turned out to be four constraints, not two: `invitations_role_check` and `role_permissions_role_check` also refused the role, so a Lab Tech invite failed at its first insert. Lab gets `patients:read` and `encounters:read`. |
+| N-10 | Admin → invite staff (`app/admin/page.tsx`) | Every invitation is inserted with `hospital_id: ORG_ID`, a constant `e90e4607-dd60-4821-b736-02a2577432e0` (line 8), whatever hospital the admin belongs to | code | 2026-10-18 | — | **P0** (tenancy) if this page is live | Suspected. Confirm which page serves invites (`/admin` vs `/admin/dashboard/staff-directory`) and whether RLS on `invitations` would reject the cross-tenant insert. |
+| N-11 | Every signed-in page (`components/CurrentUserBadge.tsx`) | `404 GET /rest/v1/profiles?select=full_name,display_name,role…` (no `profiles` table) and `400 GET /rest/v1/practitioners?select=…,sub_role…` (no `sub_role` column) | console (route walk) | 2026-10-18 | — | P1 | Fixed in code on 18 Oct: the badge reads `practitioners` only, without `sub_role`. Verified on a local production build: no failed REST calls on any role's landing page. **Not deployed yet.** |
+| N-12 | Sign-in, all roles | Nurse, pharmacist, lab and admin land on `/dashboard/opd`, not their home. `app/page.tsx:140` always does `router.push("/opd")` ("Temporary: skip role fetch"); `/opd` redirects to `/dashboard/opd`, which their allowed prefixes accept. | route walk | 2026-10-18 | B-16 | **P0** (demo steps 5, 6, 8 start from the wrong screen) | Fixed in code on 18 Oct: sign-in pushes to `/dashboard`, which `proxy.ts` redirects to each role's home. Verified on a local production build: all 6 roles land on their home (lab needs N-07, verified together). **Not deployed yet.** |
+| N-13 | `/billing/insurance` | `400 GET /rest/v1/tpas?select=id,name&hospital_id=eq.…` and the same for `insurance_companies`: neither table has a `hospital_id` column | console (route walk) | 2026-10-18 | — | P1 | Confirmed. Panels never load. |
+| N-14 | `/nursing` (nurse) | `404 POST /rest/v1/rpc/get_nursing_shift_tasks`. The function exists, so the call's arguments do not match its signature. | console (route walk) | 2026-10-18 | — | P1 | Confirmed (404); cause suspected. |
+| N-15 | Staff directory | `400 POST /rest/v1/rpc/get_clinical_specialties_for_filter` | console (route walk) | 2026-10-18 | — | P2 | Confirmed; cause not checked. |
+| N-16 | Patient photos | `400 POST /storage/v1/object/sign/patient-photos/<id>.jpg`, including `unknown.jpg` | console (route walk) | 2026-10-18 | — | P2 | Confirmed. The app requests signed URLs for photos that do not exist instead of checking first. |
+| N-17 | `/dashboard/opd` (doctor) | Counters disagree: "2 Scheduled today" vs "Expected today 4"; "Waiting room 0" while reception shows 3 in the queue | route walk screenshot | 2026-10-18 | — | P1 (demo step 2) | Confirmed on seeded data; cause not checked. Could be seed shape (`queue_status` values, `doctor_id`) rather than app logic. |
+| N-18 | Encounter view (doctor) | Finalised seeded encounter shows empty chief complaint and diagnosis; treating doctor shows "Pending" | route walk screenshot | 2026-10-18 | — | P2 | Suspected seed shape: the seed writes `chief_complaint` / `working_diagnosis`, which the encounter UI may not read. Check before treating as an app bug. |
 | N-06 | Build | `[MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///…/tailwind.config.ts … is not specified` | build | 2026-10-18 | — | P2 | Confirmed, harmless. Build, typecheck and lint all pass (lint: 0 errors, 193 warnings). |
 
 ---
@@ -163,28 +175,35 @@ Checked 18 Oct 2026 with `vercel env ls`. ☑ = set, ☒ = missing (or present w
 
 Sign in as each role and open each page. **OK** means the page loads with real data and the console has no errors.
 
+**Walked 18 Oct 2026** by a headless Chromium script (Playwright) against production, signed in as each seeded demo account. It navigates only; it does not click actions, so the interactive rows (prescribing, dictation, discharge, OCR upload, ABHA registration) are still open. Every page also shows the two global errors in N-11; "Console" below lists anything beyond those.
+
+**Landing after sign-in:** reception → `/reception` ✓, doctor → `/dashboard/opd` ✓, nurse, pharmacist, lab and admin → `/dashboard/opd` ✗ (N-12).
+
 | Role | Route | Loads | Data | Console errors | Notes / suspect ID |
 |---|---|---|---|---|---|
-| Reception | `/reception` | | | | |
-| Reception | `/reception/beds` | | | | |
-| Reception | `/reception/billing/[patientId]` | | | | |
-| Reception | registration form (new patient) | | | | B-07 |
-| Doctor | `/dashboard/opd` | | | | |
-| Doctor | `/dashboard/opd/encounter/[id]` | | | | B-06 |
-| Doctor | prescribe + allergy stop + finalise | | | | |
-| Doctor | voice dictation | | | | B-02, B-03 |
-| Doctor | `/dashboard/ipd`, an admission, discharge | | | | B-05 |
-| Nurse | `/dashboard` (nursing home) | | | | |
-| Nurse | `/nursing` | | | | |
-| Pharmacist | `/dashboard/pharmacy`, inventory, audit | | | | B-15 |
-| Lab | `/lab`, OCR upload | | | | B-02 |
-| Billing | `/billing`, invoices, an invoice PDF | | | | |
-| Billing | `/billing/insurance` | | | | B-17 |
-| Admin | `/dashboard/admin` | | | | |
-| Admin | `/admin/analytics/*` | | | | B-14 |
-| Admin | hospital profile, staff directory, templates | | | | |
-| Public | `/rx/[id]` from a WhatsApp link | | | | |
-| Any | `/ipd` as a non-clinical role | | | | B-16 |
+| Reception | `/reception` | ✓ | ✓ 3 walk-ins, tokens OPD-001…003 | — | |
+| Reception | `/reception/beds` | ✓ | | — | |
+| Reception | `/reception/billing/[patientId]` | ✓ | | — | |
+| Reception | registration form (new patient) | not tested (needs clicks) | | | B-07 |
+| Doctor | `/dashboard/opd` | ✓ | ⚠ "2 Scheduled today" but "Expected today 4"; waiting room 0 although the queue has 3 | `TypeError: Failed to fetch` once | N-17 |
+| Doctor | `/dashboard/opd/encounter/[id]` | ✓ | ⚠ finalised encounter shows empty complaint and diagnosis; treating doctor "Pending" | `patient-photos/unknown.jpg` sign 400 | B-06 **confirmed**: second DocPad nav bar (Dashboard · Patients · Encounters · Analytics · Settings) under the shell header. N-18 |
+| Doctor | prescribe + allergy stop + finalise | not tested (needs clicks) | | | |
+| Doctor | voice dictation | not tested | | | B-02, B-03 |
+| Doctor | `/dashboard/ipd`, an admission, discharge | ✓ list loads; no admissions seeded | | — | B-05 not tested |
+| Doctor | `/admin/analytics/clinical` | redirected to `/dashboard/opd` | | | correct gating |
+| Nurse | `/dashboard` (nursing home) | ⚠ onboarding "Customize your DocPad experience", IPD card "Coming Soon"; greets "Dr. Rekha Thomas" | | — | B-15 **confirmed** |
+| Nurse | `/nursing` | ✓ | ⚠ | `404 rpc/get_nursing_shift_tasks` | N-14 |
+| Pharmacist | `/dashboard/pharmacy`, inventory, audit | ✓ all three | | — | |
+| Lab | `/lab`, OCR upload | ✗ redirected to `/dashboard/opd` | | | N-07 (fix not deployed) |
+| Billing | `/billing`, invoices, an invoice PDF | ✓ page loads (as reception and admin) | no invoices seeded | — | PDF not tested |
+| Billing | `/billing/insurance` | ✓ readable in light mode | ⚠ panels fail to load | `400 tpas`, `400 insurance_companies` | B-17 **not reproduced** in light mode. N-13 |
+| Admin | `/dashboard/admin` | ✓ | | — | |
+| Admin | `/admin/analytics/clinical` | ✓ page renders | ⚠ "Encounters counted: 0" although 2 completed encounters fall in the default range | — | B-14: not broken as a page; data empty |
+| Admin | `/admin/dashboard/investigation-panels` | ⚠ "Coming soon" | | — | B-15 |
+| Admin | `/nursing` | ✗ skeleton never resolves | | auth-token lock "stolen" errors | B-15 |
+| Admin | staff directory | ✓ | | `400 rpc/get_clinical_specialties_for_filter` | N-15 |
+| Public | `/rx/[id]` from a WhatsApp link | inconclusive | | — | tried the prescription row id; page says "Link Invalid or Expired". Needs a real link from a send. |
+| Any | `/ipd` as a non-clinical role | ✗ opens for pharmacist and lab (`/ipd`, `/ipd/beds`) | | | B-16 **confirmed** |
 
 ---
 
@@ -194,3 +213,5 @@ Sign in as each role and open each page. **OK** means the page loads with real d
 |---|---|---|
 | 2026-10-18 | Tracker created from code reading; nothing confirmed yet | Claude |
 | 2026-10-18 | Steps 1–5 run. Step 1: build, typecheck and lint pass. Step 2: all recent deployments Ready; one old error (N-03, fixed). Step 3: DB safety job red daily since 20 Sep (N-01, N-02); clinical safety and billing suites pass. Step 4: section 5 filled in. Step 5: only 30 minutes of logs retained (W-04); no 5xx in that window. Code re-checked for B-05, B-07, B-16. Steps 6–7 not started: the route walk needs a browser and a login per role. | Claude |
+| 2026-10-18 | Demo seed extended and run: one account per role except lab (N-09). Seed needed an `organizations` row (audit FK) and the N-08 trigger fix. Found N-08, N-09, N-10. | Claude |
+| 2026-10-18 | N-09 migration applied; N-07 fixed in code (not deployed); lab account seeded. Headless route walk of section 6 (navigation only): B-06, B-15, B-16 confirmed; B-17 not reproduced; found N-11 to N-18. | Claude |

@@ -166,7 +166,9 @@ export function resolveDashboardRoutingFromRoleRaw(raw: string | null | undefine
     };
   }
 
-  if (/\blab\b/i.test(s) && (s.includes("tech") || s.includes("technician") || s.includes("scientist"))) {
+  // Not /\blab\b/: "_" is a word character, so that never matched the stored value
+  // "lab_technician" and lab staff fell through to the doctor home.
+  if (/(^|[^a-z])lab([^a-z]|$)/i.test(s) && (s.includes("tech") || s.includes("technician") || s.includes("scientist"))) {
     return {
       homePath: "/lab",
       allowedPrefixes: [

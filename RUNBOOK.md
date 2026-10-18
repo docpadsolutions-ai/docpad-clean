@@ -182,7 +182,8 @@ node scripts/seed-demo-day.mjs           # actually writes it
 It reads `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from `.env.local`,
 both already there. It takes a few seconds.
 
-At the end it prints two sign-in accounts and a password. Sign in at `/auth` as the
+At the end it prints six sign-in accounts (doctor, reception, nurse, pharmacist, lab,
+admin) and one shared password. Sign in at `/auth` as the
 doctor and try these five things, in this order. Each one exercises a rule that
 existed only in the interface until this week, so this is also your acceptance test
 that the week's work is real:
