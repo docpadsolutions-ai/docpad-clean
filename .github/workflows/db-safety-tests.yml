@@ -42,10 +42,12 @@ on:
     paths:
       - "supabase/migrations/**"
       - "supabase/tests/**"
+      - "scripts/test-invoice-number-lock.mjs"
   pull_request:
     paths:
       - "supabase/migrations/**"
       - "supabase/tests/**"
+      - "scripts/test-invoice-number-lock.mjs"
       - "components/PrescriptionModal.tsx"
       - "hooks/usePrescriptionSafety.ts"
 
@@ -89,6 +91,14 @@ jobs:
             echo "::error::Billing arithmetic assertions failed - an invoice does not add up"
             exit 1
           fi
+
+      # Two sessions, so it cannot be a pgTAP file: proves concurrent invoices in one
+      # hospital queue on the numbering lock instead of colliding. Writes nothing.
+      - name: Invoice numbering lock
+        if: steps.secret.outputs.present == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node scripts/test-invoice-number-lock.mjs
 
       - name: Tenancy and audit suite
         if: steps.secret.outputs.present == 'true'
