@@ -35,7 +35,7 @@ Requires Node 22 (matching CI) and access to the project's Supabase instance.
 
 ```bash
 npm ci
-cp .env.example .env.local   # if absent, see "Environment" below
+# create .env.local with the variables listed under "Environment" below
 npm run dev                  # http://localhost:3000
 ```
 
