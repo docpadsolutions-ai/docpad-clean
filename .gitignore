@@ -38,3 +38,6 @@ services/ecg-digitizer/*.png
 
 # Raw schema dump used to build a baseline; regenerate with pg_dump when needed.
 supabase/_baseline_schema.sql
+
+# Local symlink to docs/graphify-out, which is committed
+/graphify-out
