@@ -168,6 +168,7 @@ ul.defects li { margin: 8px 0; }
       <a href="#target">C4 containers (section 9)</a>
       <a href="#appbp">18. Application blueprint</a>
       <a href="#intbp">19. Integration blueprint</a>
+      <a href="#abdm">20. ABDM blueprint</a>
     </nav>
   </div>
 
@@ -936,7 +937,15 @@ erDiagram
     <li><b>Backups cannot be restored.</b> <code>lib/backup/runHospitalBackup.ts</code> throws away the random AES key and stores only its hash. It also needs <code>pg_dump</code>, which Vercel does not provide.</li>
     <li><b>Missing edge function.</b> <code>components/ipd/discharge-summary-modal.tsx:830</code> invokes <code>generate-discharge-summary</code>, and no such function exists.</li>
     <li><b>No confirmation gate on AI output.</b> <code>clinical_extractions.doctor_confirmed</code> is never set to true.</li>
-    <li><b>ABDM does not run.</b> The gateway URL is unset, <code>abha-enrol</code> is a mock, and <code>lib/abdm/fhir-builder.ts</code> is never called.</li>
+    <li><b>ABDM does not run, and its skeleton does not match the v3 contract.</b> The gateway URL is unset and <code>abha-enrol</code> is a mock. The endpoint paths are guesses, not the real <code>/api/hiecm/...</code> routes. No callback receivers exist. Encryption uses RSA where ABDM requires Fidelius ECDH. None of the 7 ABDM tables is read or written. Section 20 has the full list.</li>
+    <li><b>ABDM code has live bugs.</b>
+      <ul>
+        <li>Link and consent calls send the anon key as the bearer, so every call fails with 401.</li>
+        <li><code>ABHALinkModal.tsx</code> can write a raw Aadhaar or mobile number into <code>patients.abha_id</code>.</li>
+        <li>Consent webhook rows have no <code>hospital_id</code>, so RLS hides them from everyone.</li>
+        <li><code>abdm-auth</code> returns the gateway token to any signed-in browser.</li>
+        <li>The webhook check passes everything when its secret is unset.</li>
+      </ul></li>
     <li><b>Reminders never sent.</b> <code>CRON_SECRET</code> is not configured in Vercel.</li>
     <li><b>Route RBAC gap.</b> <code>proxy.ts</code> does not match <code>/ipd</code>, so the legacy IPD tree relies on RLS alone.</li>
     <li><b>Silent key fallback.</b> <code>lib/supabase/admin.ts</code> falls back to the anon key when the service role key is missing.</li>
@@ -1487,12 +1496,12 @@ erDiagram
 <text class="rl" x="20" y="362">Multi-hospital onboarding + config</text><rect class="ba" x="542" y="348" width="316" height="18" rx="3"/>
 <rect class="stripe" x="10" y="372" width="1180" height="30"/><text class="rl" x="20" y="392">IPD, lab, billing, insurance end to end</text><rect class="ba" x="542" y="378" width="396" height="18" rx="3"/>
 <text class="rl" x="20" y="422">Notifications: reminders, invites</text><rect class="ba" x="622" y="408" width="156" height="18" rx="3"/>
-<rect class="stripe" x="10" y="432" width="1180" height="30"/><text class="rl" x="20" y="452">ABDM M1: ABHA create, verify, link</text><rect class="bx" x="302" y="438" width="636" height="18" rx="3"/><text class="bn" x="310" y="451">depends on NHA sandbox credentials; apply in W1</text>
+<rect class="stripe" x="10" y="432" width="1180" height="30"/><text class="rl" x="20" y="452">ABDM v3 M1 + M2 in NHA sandbox</text><rect class="bx" x="302" y="438" width="636" height="18" rx="3"/><text class="bn" x="310" y="451">sandbox approval takes 7–10 days; apply in W1</text>
 <text class="rl" x="20" y="482">UAT, load + security test, go-live</text><rect class="ba" x="782" y="468" width="236" height="18" rx="3"/>
 <text class="gh" x="20" y="516">AFTER MVP · CONTINUOUS TRACKS</text>
 <text class="rl" x="20" y="544">BFF + Core API (strangler), outbox, Valkey</text><path class="bp" d="M1042 530 H1170 L1180 539 L1170 548 H1042 Z"/>
 <rect class="stripe" x="10" y="554" width="1180" height="30"/><text class="rl" x="20" y="574">Keycloak + Cerbos, practitioner affiliations</text><path class="bp" d="M1042 560 H1170 L1180 569 L1170 578 H1042 Z"/>
-<text class="rl" x="20" y="604">ABDM M2–M3, HAPI FHIR, NHCX</text><path class="bp" d="M1042 590 H1170 L1180 599 L1170 608 H1042 Z"/>
+<text class="rl" x="20" y="604">ABDM M3, certification, FHIR, NHCX</text><path class="bp" d="M1042 590 H1170 L1180 599 L1170 608 H1042 Z"/>
 <rect class="stripe" x="10" y="614" width="1180" height="30"/><text class="rl" x="20" y="634">Kafka CDC, lakehouse, Snowflake</text><path class="bp" d="M1042 620 H1170 L1180 629 L1170 638 H1042 Z"/>
 <text class="rl" x="20" y="664">Edge agent, patient app, Razorpay</text><path class="bp" d="M1042 650 H1170 L1180 659 L1170 668 H1042 Z"/>
 <rect class="stripe" x="10" y="674" width="1180" height="30"/><text class="rl" x="20" y="694">AWS cells, Hyderabad DR, OpenSearch</text><path class="bp" d="M1042 680 H1170 L1180 689 L1170 698 H1042 Z"/>
@@ -1543,7 +1552,7 @@ erDiagram
         <li>Tablet layouts for the nursing screens</li>
         <li><code>organizations</code> merged into <code>hospitals</code>; scripted hospital onboarding</li>
         <li>Working WhatsApp reminders and invite emails</li>
-        <li>ABDM M1 (ABHA), if NHA sandbox access arrives in time</li>
+        <li>ABDM v3 M1 (ABHA) and M2 (HIP) working in the NHA sandbox. Production certification needs an empanelled functional-test agency and a WASA audit, so it follows after the MVP.</li>
       </ul>
     </div>
     <div>
@@ -1552,7 +1561,7 @@ erDiagram
         <li>BFF and Core API (strangler: one module at a time)</li>
         <li>Outbox, Kafka, Valkey, OpenSearch</li>
         <li>Keycloak, Cerbos, multi-hospital practitioner logins</li>
-        <li>ABDM M2–M3, HAPI FHIR, NHCX claims</li>
+        <li>ABDM M3, functional test + WASA, production go-live; HAPI FHIR; NHCX claims</li>
         <li>Lakehouse and Snowflake analytics</li>
         <li>Edge agent and lab analyser integration</li>
         <li>Patient app and Razorpay payments</li>
@@ -1581,7 +1590,7 @@ erDiagram
       <tr><td><span class="prio p1">MVP</span></td><td>No observability; CI hits prod</td><td>Sentry, alerts; CI on staging</td></tr>
       <tr><td><span class="prio p1">MVP</span></td><td><code>hospitals</code> / <code>organizations</code> split</td><td>Merge; scripted onboarding</td></tr>
       <tr><td><span class="prio p1">MVP</span></td><td>No tablet layouts</td><td>Nursing screens at 10–11"</td></tr>
-      <tr><td><span class="prio p1">MVP</span></td><td>ABDM not running</td><td>M1 if sandbox access arrives; else first post-MVP item</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>ABDM not running</td><td>Fix the live ABDM bugs; v3 M1 + M2 in sandbox; certification after the MVP</td></tr>
       <tr><td><span class="prio p2">Post-MVP</span></td><td>Browser writes directly; orchestration in triggers</td><td>BFF + Core API, outbox, Kafka</td></tr>
       <tr><td><span class="prio p2">Post-MVP</span></td><td>One hospital per practitioner; no SSO</td><td>Keycloak, Cerbos, affiliations</td></tr>
       <tr><td><span class="prio p2">Post-MVP</span></td><td>Analytics on the primary</td><td>Read replica, then lakehouse</td></tr>
@@ -1595,7 +1604,8 @@ erDiagram
   <div class="tbl"><table>
     <thead><tr><th>Risk</th><th>Effect</th><th>Mitigation</th></tr></thead>
     <tbody>
-      <tr><td>NHA sandbox credentials and HFR/HPR registration</td><td>ABDM M1 slips past MVP</td><td>Apply in W1; MVP does not depend on ABDM</td></tr>
+      <tr><td>NHA sandbox approval (weekly committee, 7–10 days) and HFR registration</td><td>Sandbox work starts late</td><td>Apply in W1; build against the official mock gateway until keys arrive</td></tr>
+      <tr><td>Certification needs functional testing (FIME, Suma Soft or Tata Communications) and a WASA audit (CERT-In empanelled)</td><td>Production ABDM is not possible by 18 Dec</td><td>Book both agencies in W4; target certification in Q1 2027</td></tr>
       <tr><td>Drug-interaction licence not chosen</td><td>Prescribing safety stays weak at go-live</td><td>Client decides by W3; fallback is curating the top 500 pairs</td></tr>
       <tr><td>Baseline dump differs from live schema</td><td>Staging behaves differently from prod</td><td>Drift check passes before the demo</td></tr>
       <tr><td>Pilot hospital not ready for UAT in W7</td><td>Go-live slips</td><td>Name the pilot hospital and UAT leads by W4</td></tr>
@@ -1826,8 +1836,8 @@ flowchart LR
   <div class="tbl"><table>
     <thead><tr><th>Integration</th><th>Direction · pattern</th><th>Protocol / standard</th><th>Today</th><th>Target</th></tr></thead>
     <tbody>
-      <tr><td>ABDM ABHA (M1)</td><td>Out · sync request, async callback</td><td>REST/JSON, gateway session token</td><td><span class="pill pt">skeleton</span> enrolment mocked</td><td>Interop gateway, HFR/HPR registered</td></tr>
-      <tr><td>ABDM HIP / HIU (M2–M3)</td><td>Both · async callbacks</td><td>FHIR R4 NRCES bundles, ECDH X25519 + AES-GCM</td><td><span class="pill pt">skeleton</span> gateway URL unset</td><td>Temporal workflow per consent</td></tr>
+      <tr><td>ABDM ABHA (M1)</td><td>Out · sync</td><td>ABHA v3 REST; Aadhaar and OTP encrypted with RSA-OAEP (SHA-1) using the ABHA public certificate; <code>T-token</code> / <code>X-token</code> headers</td><td><span class="pill pt">skeleton</span> enrolment mocked</td><td>Interop gateway; see section 20</td></tr>
+      <tr><td>ABDM HIP / HIU (M2–M3)</td><td>Both · 202 then callback on the bridge URL</td><td>HIE-CM v3 under <code>/api/hiecm</code>; headers <code>REQUEST-ID</code>, <code>TIMESTAMP</code>, <code>X-CM-ID</code>, <code>X-HIP-ID</code>; NRCES FHIR documents; Fidelius ECDH Curve25519 + AES-GCM</td><td><span class="pill pt">skeleton</span> not v3-conformant</td><td>Temporal workflow per request; see section 20</td></tr>
       <tr><td>NHCX</td><td>Out · async</td><td>FHIR Claim / ClaimResponse, JWE</td><td><span class="pill no">none</span></td><td>Interop gateway + Temporal</td></tr>
       <tr><td>Insurers &amp; TPAs (non-NHCX)</td><td>Out · document pack</td><td>PDF pack, email or partner API</td><td><span class="pill no">manual</span></td><td>Generated claim packs, tracked status</td></tr>
       <tr><td>Public health (IDSP/IHIP, Nikshay)</td><td>Out · batch or API</td><td>Programme formats</td><td><span class="pill no">none</span></td><td>Reports from notifiable diagnosis events</td></tr>
@@ -1849,37 +1859,13 @@ flowchart LR
   </table></div>
 
   <h3>Example flow: sharing records with ABDM (DocPad as HIP)</h3>
-  <figure>
-    <div class="scroll">
-<pre class="mermaid">
-sequenceDiagram
-  autonumber
-  participant CM as ABDM consent manager
-  participant IG as Interop gateway
-  participant WF as Temporal
-  participant API as Core API
-  participant HIU as Requesting HIU
-  CM->>IG: consent notification
-  IG->>IG: verify gateway signature, write to inbox
-  IG-->>CM: acknowledge
-  CM->>IG: health information request with keys and push URL
-  IG->>WF: start data-transfer workflow
-  WF->>API: fetch care contexts within consent scope
-  API-->>WF: records filtered by HI types and date range
-  WF->>WF: build NRCES FHIR bundles, encrypt
-  WF->>HIU: push encrypted bundles
-  WF->>CM: notify transfer status
-  Note over WF: retries with backoff, every step written to audit_logs
-</pre>
-    </div>
-    <figcaption><b>Consent scope is enforced by the API, not the gateway.</b> The workflow can only fetch what the consent artefact allows. Temporal makes the multi-step exchange survive restarts and partner timeouts.</figcaption>
-  </figure>
+  <p>Section 20 has the full flow, with the real v3 paths and the encryption steps. In short: the gateway calls DocPad's bridge, DocPad acknowledges at once, works asynchronously, pushes encrypted bundles directly to the requester, and reports status back to the gateway.</p>
 
   <h3>Integration rules</h3>
   <div class="two">
     <ul>
       <li><b>Canonical model:</b> FHIR R4 with NRCES profiles at the boundary. Domain modules never parse partner formats.</li>
-      <li><b>Credentials per hospital:</b> each hospital has its own HFR and HIP IDs, NHCX participant code, WhatsApp sender, Razorpay linked account and edge agent certificate. These live in an <code>integration_connections</code> table, with secrets held in Secrets Manager and referenced by ARN.</li>
+      <li><b>Credentials:</b> DocPad holds one ABDM client ID and one bridge URL for all hospitals. The gateway routes calls by <code>X-HIP-ID</code>, which is each hospital's HFR facility ID. Each hospital also has its own NHCX participant code, WhatsApp sender, Razorpay linked account and edge agent certificate. These live in an <code>integration_connections</code> table, with secrets held in Secrets Manager and referenced by ARN.</li>
       <li><b>Idempotency:</b> every outbound request carries a key, and every inbound message is deduplicated in the inbox.</li>
       <li><b>Verification:</b> webhooks are rejected unless the signature checks out (gateway JWT, HMAC or mTLS). This replaces today's shared-secret check.</li>
     </ul>
@@ -1890,6 +1876,342 @@ sequenceDiagram
       <li><b>Data minimisation:</b> only the fields a partner needs leave DocPad. Identifiers are redacted before any AI call. Every outbound PHI transfer is written to <code>audit_logs</code>.</li>
     </ul>
   </div>
+
+  <!-- 20 -->
+  <h2 id="abdm">20. ABDM integration blueprint</h2>
+  <p>ABDM is the largest unbuilt part of the SOW. It is also a revenue line: DHIS incentives pay hospitals and software vendors per linked record, but only for ABDM v3 software. This section covers how DocPad should plug in, what the repository has today, and the route to certification.</p>
+  <div class="note">Sources: NHA's official <code>ABDM-wrapper</code> and <code>ABDM-MOCK-HIP</code> repositories, the <code>kiranma72/abdm-docs</code> guide, the NRCES FHIR IG v6.5.0, <code>fidelius-cli</code>, and the official DHIS Corrigendum 7 text. <code>docs.abdm.gov.in</code> returned 404 on 18 Oct 2026, and the <code>abdm.gov.in</code> sandbox and portal sites blocked non-Indian traffic, so items marked <b>verify</b> need a check from an Indian network or with sandbox access. Rows marked [3P] come from third-party integrators.</div>
+
+  <h3>How DocPad fits into ABDM</h3>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+flowchart LR
+  subgraph DP[DocPad: one ABDM client ID, one bridge URL]
+    HA[Hospital A: HFR id = HIP id]
+    HB[Hospital B: HFR id = HIP id]
+    HC[Hospital C: HFR id = HIP id]
+    BR[Interop gateway: bridge]
+    HA --> BR
+    HB --> BR
+    HC --> BR
+  end
+  BR <-->|v3 calls and callbacks, routed by X-HIP-ID| GW[ABDM gateway and HIE-CM]
+  BR -->|RSA-encrypted Aadhaar and OTP| ABHA[ABHA service v3]
+  GW <--> PHR[Patient PHR app]
+  GW <--> OHIU[Other HIUs]
+  BR -->|Fidelius-encrypted bundles, direct push| OHIU
+  HA -.->|facility registered, linked to bridge| HFR[HFR]
+</pre>
+    </div>
+    <figcaption><b>One bridge serves every hospital.</b> DocPad registers once with NHA and gets one client ID and one callback URL. Each hospital registers in HFR and links its facility to DocPad's bridge ID. Every call and callback carries <code>X-HIP-ID</code>, so the interop gateway can tell which tenant it belongs to. Health data never passes through ABDM. It goes encrypted, directly from HIP to HIU.</figcaption>
+  </figure>
+
+  <h3>Milestones and DocPad status</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Milestone</th><th>What must be demonstrated</th><th>DocPad today</th></tr></thead>
+    <tbody>
+      <tr><td>M1 · ABHA</td><td>
+        <ul>
+          <li><b>Create via Aadhaar OTP</b> (<code>CRT_ABHA_101</code>–<code>114</code>):
+            <ul>
+              <li>Consent text with "I agree"</li>
+              <li>Resend OTP twice, after 60 s</li>
+              <li>Verify the communication mobile</li>
+              <li>3 ABHA address suggestions</li>
+              <li>Show the ABHA number and address</li>
+              <li>Download the ABHA card</li>
+            </ul></li>
+          <li><b>Verify</b> by ABHA + Aadhaar OTP, ABHA + mobile OTP, mobile + list of ABHAs, and QR scan</li>
+          <li><b>Scan &amp; Share</b> counter token</li>
+          <li><b>Link</b> an ABHA number to an ABHA address</li>
+        </ul>
+      </td><td><span class="pill no">mocked</span> OTP returns <code>mock-123</code>; <code>abha_verify_otp</code> RPC does not exist; no Scan &amp; Share</td></tr>
+      <tr><td>M2 · HIP</td><td>
+        <ul>
+          <li>FHIR records</li>
+          <li>HIP-initiated linking: link token, then link care context, then deep-link SMS</li>
+          <li>User-initiated discover, init and confirm</li>
+          <li>Consent: store on grant, delete on revoke or expiry</li>
+          <li>On ABHA deactivation, unlink without deleting clinical data</li>
+          <li>On a data request: validate, encrypt, push and notify</li>
+        </ul>
+      </td><td><span class="pill pt">skeleton</span> wrong paths; no callback receivers; no care contexts; only the OP consult bundle; RSA encryption</td></tr>
+      <tr><td>M3 · HIU</td><td>
+        <ul>
+          <li>Find the patient</li>
+          <li>Create and list consent requests</li>
+          <li>Fetch each HI type</li>
+          <li>Decrypt and display</li>
+          <li>Block access on deny, revoke and expiry</li>
+        </ul>
+      </td><td><span class="pill no">none</span> (the <code>consent-approve</code> function wrongly has the provider grant consent; only the patient can)</td></tr>
+      <tr><td>"M4"</td><td>Informal name for NHCX claims. It has a separate sandbox; it is not an ABDM milestone.</td><td><span class="pill no">none</span></td></tr>
+    </tbody>
+  </table></div>
+  <p>A hospital system needs M1, M2 and M3. NHA support has said any two milestones are enough to exit the sandbox [3P]. DHIS, however, counts a hospital's records only on software integrated up to M3.</p>
+
+  <h3>Flow 1 · Scan &amp; Share at the front desk (M1)</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant P as Patient PHR app
+  participant CM as ABDM gateway
+  participant BR as DocPad bridge
+  participant FD as Reception queue
+  P->>CM: scan counter QR with hip-id and counter-id
+  CM->>BR: POST /api/v3/hip/patient/share with ABHA profile
+  BR-->>CM: 202 Accepted
+  BR->>BR: match or create patient, issue daily token
+  BR->>CM: POST /patient-share/v3/on-share with token and expiry
+  CM-->>P: token number shown on phone
+  BR->>FD: patient appears in today's queue
+</pre>
+  </div><figcaption><b>The patient registers themselves by scanning a QR at the desk.</b> The official wrapper resets token numbers daily and returns the same token if the same ABHA scans again within 60 minutes. The counter QR is generated in HFR once the facility is linked to the bridge.</figcaption></figure>
+
+  <h3>Flow 2 · Linking a visit to the patient's ABHA (M2, HIP-initiated)</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant API as Core API
+  participant BR as DocPad bridge
+  participant CM as ABDM gateway
+  participant P as Patient PHR app
+  API->>BR: EncounterFinalized, patient has a KYC-verified ABHA
+  BR->>CM: POST /v3/token/generate-token with ABHA, name, gender, year of birth
+  CM->>BR: callback /api/v3/hip/token/on-generate-token with link token
+  BR->>CM: POST /hip/v3/link/carecontext with X-LINK-TOKEN, hiType, care context
+  CM->>BR: callback /api/v3/link/on_carecontext
+  CM-->>P: new record appears in the PHR app
+  Note over BR: one care context per OPD visit or IPD admission, sent once per HI type
+</pre>
+  </div><figcaption><b>Every finalized visit becomes a linked care context.</b> This is the event that earns DHIS incentives: ₹10 per DiagnosticReport or DischargeSummary and ₹5 for other types to the facility, and half that to DocPad as the software vendor. The official wrapper caches the link token for 6 months per ABHA and HIP. If the patient has a phone number but no ABHA, DocPad sends a deep-link SMS (<code>/hip/v3/link/patient/links/sms/notify2</code>) instead.</figcaption></figure>
+
+  <h3>Flow 3 · Sharing records when consent is granted (M2)</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant CM as ABDM HIE-CM
+  participant BR as DocPad bridge
+  participant WF as Temporal
+  participant API as Core API
+  participant HIU as Requesting HIU
+  CM->>BR: /api/v3/consent/request/hip/notify (artefact)
+  BR->>BR: verify, store consent per hospital
+  BR->>CM: POST /consent/v3/request/hip/on-notify
+  CM->>BR: /api/v3/hip/health-information/request with keyMaterial and dataPushUrl
+  BR->>CM: POST /data-flow/v3/health-information/hip/on-request ACKNOWLEDGED
+  BR->>WF: start transfer workflow
+  WF->>API: care contexts in consent scope, HI types and date range
+  API-->>WF: NRCES FHIR documents
+  WF->>WF: Fidelius: ECDH, XOR nonces, HKDF, AES-GCM
+  WF->>HIU: POST pages of entries to dataPushUrl
+  WF->>CM: POST /data-flow/v3/health-information/notify TRANSFERRED per care context
+</pre>
+  </div><figcaption><b>Acknowledge first, then work.</b> Every inbound callback is answered with 202, written to the inbox, and processed asynchronously. Callbacks can arrive twice and ABDM does not resend a lost consent notification [3P], so handlers must be idempotent and durable.</figcaption></figure>
+
+  <h3>Flow 4 · Fetching records from other providers (M3, HIU)</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant Dr as Doctor
+  participant BR as DocPad bridge
+  participant CM as ABDM HIE-CM
+  participant P as Patient PHR app
+  participant HIP as Source HIP
+  Dr->>BR: request history: purpose, HI types, date range, expiry
+  BR->>CM: POST /consent/v3/request/init
+  CM->>BR: /api/v3/hiu/consent/request/on-init
+  CM-->>P: approve or deny
+  CM->>BR: /api/v3/hiu/consent/request/notify GRANTED
+  BR->>CM: POST /consent/v3/fetch
+  CM->>BR: /api/v3/hiu/consent/on-fetch with artefact
+  BR->>CM: POST /data-flow/v3/health-information/request with DocPad public key
+  HIP->>BR: encrypted pages to DocPad dataPushUrl
+  BR->>BR: decrypt, validate FHIR, show read-only, purge at dataEraseAt
+</pre>
+  </div><figcaption><b>Records from other providers are read-only and time-limited.</b> Copy the date range from the artefact exactly, or the request fails with <code>ABDM-1063</code> [3P]. Fetched data is purged on revoke, on expiry, or at <code>dataEraseAt</code>.</figcaption></figure>
+
+  <h3>Encryption (Fidelius)</h3>
+  <div class="two">
+    <ol>
+      <li>The HIU sends <code>keyMaterial</code>: <code>cryptoAlg: "ECDH"</code>, <code>curve: "Curve25519"</code>, a public key and a 32-byte nonce.</li>
+      <li>DocPad generates a fresh key pair and 32-byte nonce for each request, then computes the shared secret with ECDH.</li>
+      <li>XOR the two nonces. The first 20 bytes are the HKDF salt and the last 12 bytes are the AES-GCM IV.</li>
+      <li>HKDF-SHA256 derives a 32-byte AES-256 key.</li>
+      <li>Encrypt each FHIR document with AES-GCM and base64 it into <code>entries[].content</code>, with its <code>careContextReference</code> and a real checksum.</li>
+    </ol>
+    <div>
+      <p><b>Trap:</b> ABDM's Curve25519 is BouncyCastle's short-Weierstrass form, with 65-byte uncompressed keys (<code>04‖X‖Y</code>). Standard X25519 libraries do not interoperate with it. That includes the <code>@noble/curves</code> x25519 code in <code>lib/abdm/encryption.ts</code>.</p>
+      <p><b>Recommendation:</b> run <code>fidelius-cli</code> (Java) as a sidecar for the first certification. Port it to TypeScript later, and only if the port passes Fidelius's own test vectors.</p>
+      <p><b>ABHA APIs</b> use a different scheme. Aadhaar, OTP, mobile and email are encrypted with <code>RSA/ECB/OAEPWithSHA-1AndMGF1Padding</code> using the public certificate from <code>/profile/public/certificate</code>.</p>
+    </div>
+  </div>
+
+  <h3>v3 API map</h3>
+  <p>Gateway base: <code>https://dev.abdm.gov.in/api/hiecm</code> (sandbox) and <code>https://apis.abdm.gov.in/api/hiecm</code> (production). ABHA base: <code>https://abhasbx.abdm.gov.in/abha/api/v3</code> (sandbox); the production ABHA base has two conflicting published forms (<b>verify</b>). <code>X-CM-ID</code> is <code>sbx</code> in sandbox and <code>abdm</code> in production. Every call carries <code>Authorization</code>, a new <code>REQUEST-ID</code> UUID, and a <code>TIMESTAMP</code> in ISO UTC with milliseconds.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Role</th><th>DocPad calls ABDM</th><th>ABDM calls DocPad's bridge</th></tr></thead>
+    <tbody>
+      <tr><td>Session</td><td><code>POST /gateway/v3/sessions</code> (client credentials; refresh about every 15 min), <code>PATCH /gateway/v3/bridge/url</code>, <code>GET /gateway/v3/bridge-services</code></td><td>—</td></tr>
+      <tr><td>ABHA (M1)</td><td><code>/enrollment/request/otp</code>, <code>/enrollment/enrol/byAadhaar</code>, <code>/enrollment/auth/byAbdm</code>, <code>/enrollment/enrol/suggestion</code>, <code>/enrollment/enrol/abha-address</code>, <code>/profile/login/request/otp</code>, <code>/profile/login/verify</code>, <code>/profile/account</code>, <code>/profile/account/abha-card</code>, <code>/profile/account/qrCode</code></td><td>—</td></tr>
+      <tr><td>Scan &amp; Share</td><td><code>/patient-share/v3/on-share</code></td><td><code>/api/v3/hip/patient/share</code></td></tr>
+      <tr><td>HIP linking</td><td><code>/v3/token/generate-token</code>, <code>/hip/v3/link/carecontext</code>, <code>/hip/v3/link/context/notify</code>, <code>/hip/v3/link/patient/links/sms/notify2</code></td><td><code>/api/v3/hip/token/on-generate-token</code>, <code>/api/v3/link/on_carecontext</code>, <code>/api/v3/links/context/on-notify</code>, <code>/api/v3/patients/sms/on-notify</code></td></tr>
+      <tr><td>User-initiated linking</td><td><code>/user-initiated-linking/v3/patient/care-context/on-discover</code>, <code>.../link/care-context/on-init</code>, <code>.../on-confirm</code></td><td><code>/api/v3/hip/patient/care-context/discover</code>, <code>/api/v3/hip/link/care-context/init</code>, <code>/api/v3/hip/link/care-context/confirm</code></td></tr>
+      <tr><td>HIP consent &amp; data</td><td><code>/consent/v3/request/hip/on-notify</code>, <code>/data-flow/v3/health-information/hip/on-request</code>, <code>/data-flow/v3/health-information/notify</code></td><td><code>/api/v3/consent/request/hip/notify</code>, <code>/api/v3/hip/health-information/request</code></td></tr>
+      <tr><td>HIU (M3)</td><td><code>/consent/v3/request/init</code>, <code>/consent/v3/request/status</code>, <code>/consent/v3/request/hiu/on-notify</code>, <code>/consent/v3/fetch</code>, <code>/data-flow/v3/health-information/request</code>, <code>/data-flow/v3/health-information/notify</code></td><td><code>/api/v3/hiu/consent/request/on-init</code>, <code>.../on-status</code>, <code>/api/v3/hiu/consent/request/notify</code>, <code>/api/v3/hiu/consent/on-fetch</code>, <code>/api/v3/hiu/health-information/on-request</code>, plus DocPad's <code>dataPushUrl</code></td></tr>
+    </tbody>
+  </table></div>
+  <p class="sc">Open questions to verify: whether v3 discovery is synchronous or asynchronous (the official wrapper treats it as asynchronous, while one integrator reports it as synchronous [3P]), and whether a v3 subscription API exists.</p>
+
+  <h3>Health record types and where DocPad's data comes from</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>HI type</th><th>NRCES profile · Composition.type</th><th>DocPad source</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr><td><code>OPConsultation</code></td><td>OPConsultRecord · SNOMED 371530004</td><td>opd_encounters + vitals, allergies, orders</td><td><span class="pill pt">SQL bundle</span> no ABHA identifier, no HPR</td></tr>
+      <tr><td><code>Prescription</code></td><td>PrescriptionRecord · 440545006 (MedicationRequest, Binary)</td><td>prescriptions + Rx PDF</td><td><span class="pill no">none</span></td></tr>
+      <tr><td><code>DischargeSummary</code></td><td>DischargeSummaryRecord · 373942005</td><td>ipd_discharge_summaries</td><td><span class="pill no">none</span> (<code>abdm_pushed</code> flag unused)</td></tr>
+      <tr><td><code>DiagnosticReport</code></td><td>DiagnosticReportRecord (lab or imaging), LOINC observations</td><td>investigations, lab_result_entries</td><td><span class="pill no">none</span></td></tr>
+      <tr><td><code>WellnessRecord</code></td><td>WellnessRecord (vital signs, body measurement)</td><td>ipd_vitals, encounter vitals</td><td><span class="pill no">none</span></td></tr>
+      <tr><td><code>HealthDocumentRecord</code></td><td>HealthDocumentRecord · 419891008</td><td>clinical_attachments</td><td><span class="pill no">none</span></td></tr>
+      <tr><td><code>ImmunizationRecord</code></td><td>ImmunizationRecord · 41000179103</td><td>no source table yet</td><td><span class="pill no">none</span></td></tr>
+      <tr><td>Invoice</td><td>InvoiceRecord</td><td>invoices (FHIR JSON exists)</td><td><span class="pill pt">verify</span> whether the gateway accepts it as an HI type</td></tr>
+    </tbody>
+  </table></div>
+  <p>Every bundle must use the <code>DocumentBundle</code> profile with <code>type: document</code>, a <code>meta.versionId</code>, an identifier and a timestamp, and the Composition as its first entry. Patient identifiers must include the ABHA number. Practitioners should carry their HPR ID; today <code>practitioners.hpr_id</code> is filled with the medical council number instead. Validate in CI with the NRCES <code>package.tgz</code> and the HL7 FHIR validator.</p>
+
+  <h3>What the repository has today</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Area</th><th>Finding</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>Gateway calls</td><td>Paths such as <code>/hip/v3/patients/link/on-init</code> are invented, and <code>/api/hiecm</code> is missing. The session call has no <code>REQUEST-ID</code>, <code>TIMESTAMP</code> or <code>X-CM-ID</code>. Calls are treated as synchronous.</td><td>Rewrite against the v3 map above</td></tr>
+      <tr><td>Callbacks</td><td>Only <code>consent-request-notify</code> exists. It never acknowledges, stores rows without <code>hospital_id</code>, and nothing processes them.</td><td>One bridge endpoint that verifies, writes to the inbox and returns 202; route by <code>X-HIP-ID</code></td></tr>
+      <tr><td>Security</td><td><code>abdm-auth</code> returns the gateway token to browsers. The webhook check fails open. The gateway's signature is not verified. CORS is <code>*</code>.</td><td>Delete <code>abdm-auth</code>; verify the gateway JWT; fail closed</td></tr>
+      <tr><td>ABHA</td><td>Enrolment is mocked. Aadhaar is not RSA-encrypted. The unsalted Aadhaar SHA-256 is brute-forceable. The link modal can save a raw Aadhaar or mobile number as <code>abha_id</code>.</td><td>Real v3 enrolment; store no Aadhaar derivative, or a keyed HMAC at most; fix the modal</td></tr>
+      <tr><td>Calls from the UI</td><td><code>useABHALinking</code> and <code>ConsentApprovalModal</code> send the anon key as the bearer, so every call fails with 401.</td><td>Send the user's session token</td></tr>
+      <tr><td>Consent</td><td><code>consent-approve</code> has the provider grant consent; only the patient can. Deny never reaches ABDM. <code>abdm_patient_consents</code> exists only in archived migrations.</td><td>Remove; model HIP consent storage and HIU consent requests separately</td></tr>
+      <tr><td>Encryption</td><td>Two incompatible implementations (RSA-OAEP wrapping, and X25519 + HKDF). Neither is Fidelius.</td><td>Fidelius sidecar</td></tr>
+      <tr><td>Data model</td><td><code>abha_id</code>, <code>abha_number</code>, <code>abha_address</code> and <code>patient_abha</code> all exist, inconsistently. None of the 7 ABDM tables is used. Gateway tokens are stored in plain text. <code>X-HIP-ID</code> is a global environment variable, not <code>hospitals.hfr_id</code>.</td><td>New ABDM model below</td></tr>
+      <tr><td>Unused code</td><td><code>lib/abdm/*</code> and <code>useConsentRequests</code> are not imported anywhere.</td><td>Delete once replaced</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>ABDM data model</h3>
+  <figure><div class="scroll">
+<pre class="mermaid">
+erDiagram
+  hospitals ||--o| abdm_facility : "registers as HIP"
+  persons ||--o{ abha_identities : holds
+  patient_registrations ||--o{ care_contexts : "linked as"
+  abha_identities ||--o{ care_contexts : "linked to"
+  care_contexts ||--o{ consent_artefacts : "shared under"
+  consent_artefacts ||--o{ hi_transfer_sessions : "fulfilled by"
+  hospitals ||--o{ abdm_request_log : logs
+  abdm_facility {
+    uuid hospital_id FK
+    text hfr_id "X-HIP-ID"
+    text bridge_id
+    text counter_qr_ids
+    text status "sandbox, linked, certified"
+  }
+  abha_identities {
+    uuid id PK
+    uuid person_id FK
+    text abha_number "14 digits"
+    text abha_address "user@abdm"
+    bool kyc_verified
+    text link_token_ref "secret store"
+    timestamptz link_token_expires_at
+  }
+  care_contexts {
+    uuid id PK
+    uuid hospital_id FK
+    text reference_number "visit or admission id"
+    text display
+    text hi_type
+    text source_type "opd, ipd"
+    timestamptz linked_at
+  }
+  consent_artefacts {
+    text artefact_id PK
+    uuid hospital_id FK
+    text role "hip or hiu"
+    text purpose "CAREMGT etc"
+    text status "GRANTED, REVOKED, EXPIRED"
+    jsonb permission
+    timestamptz data_erase_at
+    text signature
+  }
+  hi_transfer_sessions {
+    text transaction_id PK
+    text artefact_id FK
+    text direction "push or pull"
+    text session_status "ACKNOWLEDGED, TRANSFERRED, FAILED"
+    int page_count
+  }
+  abdm_request_log {
+    uuid request_id PK "REQUEST-ID"
+    text hip_id
+    text api_path
+    int http_status
+    timestamptz received_at
+  }
+</pre>
+  </div><figcaption><b>Care contexts are the unit of sharing.</b> Consent applies to care contexts, not to individual FHIR resources, which is the unit today's <code>consent-filter.ts</code> works on. Plaintext bundles are not stored in transfer sessions; they are rebuilt from source data per request. Link tokens and gateway tokens live in the secret store, not in table rows.</figcaption></figure>
+
+  <h3>Route to certification</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Step</th><th>What happens</th><th>Typical time</th></tr></thead>
+    <tbody>
+      <tr><td>1 · Sandbox signup</td><td>Register DocPad as a company at <code>sandbox.abdm.gov.in</code> with HIP + HRP and HIU + HRP roles. Client ID and secret arrive by email. Missing roles: <code>Integration.support@nha.gov.in</code>.</td><td>7–10 days (weekly committee)</td></tr>
+      <tr><td>2 · Bridge</td><td>Get a session, register the bridge URL (via the portal if the API is blocked [3P]), link a test HIP. Create test ABHAs in the sandbox PHR app.</td><td>Days; URL changes take 5–15 minutes [3P]</td></tr>
+      <tr><td>3 · Build &amp; self-test</td><td>M1, M2, M3 against the official test-case IDs, using NHA's <code>ABDM-wrapper</code> mock gateway and Postman collections.</td><td>MVP W1–W8 for M1 + M2</td></tr>
+      <tr><td>4 · Functional test</td><td>By an NHA-empanelled agency (FIME India, Suma Soft or Tata Communications), paid by DocPad.</td><td>Book in W4; <b>verify</b> lead times</td></tr>
+      <tr><td>5 · Security audit</td><td>WASA by a CERT-In or STQC empanelled auditor. Produces a closure certificate and a Safe-to-Host certificate. NHA's secure-development guide is essentially OWASP: 15-minute idle timeout, lockout after about 5 failed attempts, salted hashes.</td><td>Run alongside step 4</td></tr>
+      <tr><td>6 · Exit &amp; production</td><td>Submit the exit form with both reports and the production-keys template, then demo to NHA. With production keys, each hospital's facility manager links its HFR facility to DocPad's production bridge ID.</td><td>Target Q1 2027</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>DHIS incentives (Corrigendum 7, April–September 2026)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Transaction</th><th>Facility</th><th>DocPad as software vendor</th></tr></thead>
+    <tbody>
+      <tr><td>Record linked: DiagnosticReport or DischargeSummary</td><td>₹10</td><td>₹5</td></tr>
+      <tr><td>Record linked: other HI types</td><td>₹5</td><td>₹2.5</td></tr>
+      <tr><td>Consent-based share</td><td>₹10 to the HIU, ₹5 to each source HIP</td><td>—</td></tr>
+      <tr><td>NHCX PM-JAY claim</td><td>₹200 or 10% of claim, whichever is lower</td><td>₹10 per claim</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Conditions:</b></p>
+  <ul>
+    <li>Only records linked to a KYC-verified ABHA count.</li>
+    <li>A facility must have more than 100 eligible transactions per month, and the lowest-value 100 are deducted.</li>
+    <li>At most 1 transaction per ABHA per day and 5 per month.</li>
+    <li>A hospital's transactions count only on software integrated up to M3.</li>
+    <li>The software vendor needs at least 10 facilities linking records each month and a valid WASA.</li>
+    <li>From July 2026, only ABDM v3 software qualifies.</li>
+    <li>Scan &amp; Share earns nothing since April 2026.</li>
+    <li>Rules after September 2026 are not confirmed (<b>verify</b>).</li>
+  </ul>
+
+  <h3>Build or adopt</h3>
+  <p>NHA publishes an official v3 wrapper (Spring Boot + MongoDB) that handles sessions, callbacks, multiple HIP IDs and a FHIR mapper. Running it in production would add a second stack and a second database holding PHI. The recommendation is to <b>build the bridge inside the interop gateway in TypeScript</b>. Use the official wrapper and its mock gateway as the reference and the test oracle, and use <code>fidelius-cli</code> as a sidecar for encryption. That keeps tenant routing, audit and RLS in one place, while the riskiest parts, crypto and contract shape, are checked against NHA's own code.</p>
+
+  <h3>Sources</h3>
+  <ul class="sc">
+    <li>NHA ABDM wrapper (v3, Postman collections, migration document): https://github.com/NHA-ABDM/ABDM-wrapper</li>
+    <li>NHA mock HIP: https://github.com/NHA-ABDM/ABDM-MOCK-HIP</li>
+    <li>ABDM developer guide (test cases, sandbox exit): https://kiranma72.github.io/abdm-docs/</li>
+    <li>NRCES FHIR IG v6.5.0: https://nrces.in/ndhm/fhir/r4/index.html</li>
+    <li>Fidelius encryption: https://github.com/mgrmtech/fidelius-cli</li>
+    <li>DHIS Corrigendum 7 (official text via Rajasthan NHM mirror)</li>
+    <li>[3P] Nirmitee v3 Postman collection and guides; AIAnytime abha-bridge-console; BlueBash abdm-ruby</li>
+    <li>Not reachable from outside India on 18 Oct 2026: docs.abdm.gov.in, sandbox.abdm.gov.in, abdm.gov.in</li>
+  </ul>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>

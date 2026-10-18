@@ -547,7 +547,7 @@ Each hospital is onboarded without engineering help. Every clinical write is saf
 | Multi-hospital | W4–W7 | Merge `organizations` into `hospitals`; scripted onboarding that seeds master data from a versioned catalogue; per-hospital configuration screen |
 | IPD, lab, billing, insurance | W4–W8 | Admit → notes → MAR → discharge → final bill; pre-auth and claim forms (manual submission) |
 | Notifications | W5–W6 | WhatsApp reminders and invite emails working |
-| ABDM M1 | W1–W8 | ABHA create, verify and link, **only if** NHA sandbox credentials arrive; otherwise it is the first post-MVP item |
+| ABDM v3 M1 + M2 (sandbox) | W1–W8 | Fix the live ABDM bugs (section 17.6). Build ABHA enrolment, verification and Scan & Share, then HIP linking and data push, against the NHA sandbox. Production certification follows after the MVP. |
 | Launch | W7–W9 | UAT with the pilot hospital, load test, security review, go-live runbook. Code freeze at the end of W8. |
 
 ### 10.4 Priorities, re-ranked for the dates
@@ -569,7 +569,7 @@ Each hospital is onboarded without engineering help. Every clinical write is saf
 | MVP | No observability; CI tests hit production | Sentry and alerts; CI on staging |
 | MVP | `hospitals` / `organizations` split | Merge; scripted onboarding |
 | MVP | No tablet layouts | Nursing screens at 10–11" |
-| MVP | ABDM not running | M1 if sandbox access arrives |
+| MVP | ABDM not running; live ABDM bugs | Fix the bugs; v3 M1 + M2 in sandbox; certification after the MVP |
 | Post-MVP | Browser writes directly; orchestration in triggers | BFF + Core API (strangler), outbox, Kafka |
 | Post-MVP | One hospital per practitioner; no SSO | Keycloak, Cerbos, affiliations |
 | Post-MVP | Analytics on the primary | Read replica, then lakehouse + Snowflake |
@@ -581,7 +581,8 @@ Each hospital is onboarded without engineering help. Every clinical write is saf
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| NHA sandbox credentials and HFR/HPR registration | ABDM M1 slips past MVP | Apply in W1; MVP does not depend on ABDM |
+| NHA sandbox approval (weekly committee, 7–10 days) and HFR registration | Sandbox work starts late | Apply in W1; build against the official mock gateway meanwhile |
+| Certification needs an empanelled functional-test agency and a WASA audit | Production ABDM not possible by 18 Dec | Book both agencies in W4; target Q1 2027 |
 | Drug-interaction licence not chosen | Prescribing safety weak at go-live | Client decides by W3; fallback is curating the top 500 pairs |
 | Baseline dump differs from the live schema | Staging behaves differently from prod | Drift check must pass before the demo |
 | Pilot hospital not ready for UAT in W7 | Go-live slips | Name the pilot hospital and UAT leads by W4 |
@@ -597,7 +598,7 @@ From January 2027, each track ships in small increments behind feature flags whi
 |---|---|---|
 | Platform seams | BFF → Core API with the strangler pattern, one module at a time (billing first: clearest boundary, strongest tests) → outbox → Valkey | The browser writes to no tables; every write emits an event |
 | Identity | Keycloak with SSO for chains → Cerbos policies → practitioner affiliations | One login works across hospitals; policies are code |
-| Interop | ABDM M2–M3 → HAPI FHIR facade → NHCX | ABDM certified; a cashless claim submitted through NHCX |
+| Interop | ABDM M3 → functional test + WASA → production keys → HAPI FHIR facade → NHCX | ABDM certified; hospitals earn DHIS incentives; a cashless claim submitted through NHCX |
 | Data | Read replica for dashboards → Kafka CDC → lakehouse → Snowflake | Group dashboards served off the primary |
 | Integration and patient | Edge agent and first lab analyser → Expo patient app → Razorpay | One analyser live; patients book and pay in the app |
 | AI | AI gateway → Vertex in an India region → in-house speech-to-text | All model calls go through the gateway; SOW STT delivered |
@@ -820,8 +821,8 @@ flowchart LR
 
 | Integration | Direction and pattern | Protocol / standard | Today | Target |
 |---|---|---|---|---|
-| ABDM ABHA (M1) | Out; sync request, async callback | REST/JSON, gateway session token | Skeleton; enrolment mocked | Interop gateway; HFR/HPR registered |
-| ABDM HIP/HIU (M2–M3) | Both; async callbacks | FHIR R4 NRCES bundles; ECDH X25519 + AES-GCM | Skeleton; gateway URL unset | Temporal workflow per consent |
+| ABDM ABHA (M1) | Out; sync | ABHA v3 REST; Aadhaar and OTP encrypted with RSA-OAEP (SHA-1); `T-token` / `X-token` headers | Skeleton; enrolment mocked | Interop gateway (section 17) |
+| ABDM HIP/HIU (M2–M3) | Both; 202 then callback on the bridge URL | HIE-CM v3 under `/api/hiecm`; `REQUEST-ID`, `TIMESTAMP`, `X-CM-ID`, `X-HIP-ID`; NRCES FHIR documents; Fidelius ECDH Curve25519 + AES-GCM | Skeleton; not v3-conformant | Temporal workflow per request (section 17) |
 | NHCX | Out; async | FHIR Claim / ClaimResponse, JWE | None | Interop gateway + Temporal |
 | Insurers and TPAs outside NHCX | Out; document pack | PDF pack, email or partner API | Manual | Generated claim packs with tracked status |
 | Public health (IDSP/IHIP, Nikshay) | Out; batch or API | Programme formats | None | Reports triggered by notifiable diagnosis events |
@@ -840,36 +841,23 @@ flowchart LR
 | Drug knowledge base | In; batch | Vendor file or API | None (24 pairs in SQL) | Monthly versioned load |
 | ECG digitizer | Out; sync | REST (FastAPI) | Not deployed | Behind the AI gateway, or retired |
 
-### 16.2 Example flow: DocPad as ABDM health information provider
+### 16.2 Example flow
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant CM as ABDM consent manager
-  participant IG as Interop gateway
-  participant WF as Temporal
-  participant API as Core API
-  participant HIU as Requesting HIU
-  CM->>IG: consent notification
-  IG->>IG: verify gateway signature, write to inbox
-  IG-->>CM: acknowledge
-  CM->>IG: health information request with keys and push URL
-  IG->>WF: start data-transfer workflow
-  WF->>API: fetch care contexts within consent scope
-  API-->>WF: records filtered by HI types and date range
-  WF->>WF: build NRCES FHIR bundles, encrypt
-  WF->>HIU: push encrypted bundles
-  WF->>CM: notify transfer status
-  Note over WF: retries with backoff, every step written to audit_logs
-```
+Section 17 has the full ABDM flows with real v3 paths.
 
-The Core API enforces the consent scope, not the gateway. The workflow can fetch only what the consent artefact allows.
+In short:
+
+1. The gateway calls DocPad's bridge.
+2. DocPad acknowledges with 202.
+3. DocPad processes asynchronously and pushes Fidelius-encrypted bundles directly to the requester.
+4. DocPad reports status back to the gateway.
 
 ### 16.3 Integration rules
 
 1. **Canonical model.** FHIR R4 with NRCES profiles at the boundary. Domain modules never parse partner formats.
-2. **Credentials per hospital.** Each hospital has its own:
-   - HFR and HIP IDs
+2. **Credentials.** DocPad holds one ABDM client ID and one bridge URL for all hospitals. The gateway routes by `X-HIP-ID`, which is each hospital's HFR facility ID.
+
+   Each hospital has its own:
    - NHCX participant code
    - WhatsApp sender
    - Razorpay linked account
@@ -883,3 +871,247 @@ The Core API enforces the consent scope, not the gateway. The workflow can fetch
 7. **Contracts.** Partner sandboxes run in CI, and consumer-driven contract tests cover internal events.
 8. **Observability.** One correlation ID runs from the module through the gateway to the partner. Each integration has a dashboard per hospital.
 9. **Data minimisation.** Only the fields a partner needs leave DocPad. Identifiers are redacted before any AI call. Every outbound PHI transfer is written to `audit_logs`.
+
+---
+
+## 17. ABDM integration blueprint
+
+### 17.0 Sources and verification status
+
+**Sources:**
+- NHA's official `ABDM-wrapper` (v3) and `ABDM-MOCK-HIP` on GitHub
+- `kiranma72.github.io/abdm-docs` (test cases, sandbox exit)
+- NRCES FHIR IG v6.5.0
+- `mgrmtech/fidelius-cli`
+- the official DHIS Corrigendum 7 text
+
+**Not reachable on 18 Oct 2026:**
+- `docs.abdm.gov.in` returned 404.
+- `sandbox.abdm.gov.in` and `abdm.gov.in` blocked non-Indian traffic.
+
+Items marked **verify** need a check from an Indian network or with sandbox access. **[3P]** marks claims from third-party integrators (Nirmitee, AIAnytime, BlueBash).
+
+### 17.1 How DocPad fits
+
+```mermaid
+flowchart LR
+  subgraph DP[DocPad: one ABDM client ID, one bridge URL]
+    HA[Hospital A: HFR id = HIP id]
+    HB[Hospital B: HFR id = HIP id]
+    BR[Interop gateway: bridge]
+    HA --> BR
+    HB --> BR
+  end
+  BR <-->|v3 calls and callbacks, routed by X-HIP-ID| GW[ABDM gateway and HIE-CM]
+  BR -->|RSA-encrypted Aadhaar and OTP| ABHA[ABHA service v3]
+  GW <--> PHR[Patient PHR app]
+  GW <--> OHIU[Other HIUs]
+  BR -->|Fidelius-encrypted bundles, direct push| OHIU
+```
+
+- **One bridge serves every hospital.** Each hospital registers in HFR, links its facility to DocPad's bridge ID, and is addressed by `X-HIP-ID`. `X-HIP-ID` therefore comes from `hospitals.hfr_id`, not a global environment variable.
+- **Health data does not pass through ABDM.** It goes encrypted, directly from the HIP to the HIU.
+
+### 17.2 Milestones
+
+| Milestone | Must demonstrate | DocPad today |
+|---|---|---|
+| M1 · ABHA | Create via Aadhaar OTP (`CRT_ABHA_101`–`114`: consent text, resend OTP twice after 60 s, verify the communication mobile, 3 ABHA address suggestions, show the ABHA number and address, download the card). Verify by ABHA + Aadhaar OTP, ABHA + mobile OTP, mobile + list of ABHAs, QR. Scan & Share. Link an ABHA number to an address. | Mocked |
+| M2 · HIP | FHIR records. HIP-initiated linking (link token, then care context, then deep-link SMS). User-initiated discover, init, confirm. Store consent on grant, delete on revoke or expiry. Unlink on ABHA deactivation without deleting clinical data. On a data request: validate, encrypt, push, notify. | Skeleton, not v3-conformant |
+| M3 · HIU | Find patient, create and list consent requests, fetch and display each HI type, block on deny, revoke and expiry | None |
+| "M4" | Informal name for NHCX; separate sandbox | None |
+
+**Which milestones are needed:**
+- A hospital system needs M1, M2 and M3.
+- Exiting the sandbox reportedly needs any two milestones [3P].
+- DHIS counts a hospital's records only on software integrated up to M3.
+
+### 17.3 Key flows
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant API as Core API
+  participant BR as DocPad bridge
+  participant CM as ABDM gateway
+  API->>BR: EncounterFinalized, patient has a KYC-verified ABHA
+  BR->>CM: POST /v3/token/generate-token
+  CM->>BR: /api/v3/hip/token/on-generate-token with link token
+  BR->>CM: POST /hip/v3/link/carecontext with X-LINK-TOKEN and hiType
+  CM->>BR: /api/v3/link/on_carecontext
+  Note over BR: one care context per OPD visit or IPD admission, once per HI type
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant CM as ABDM HIE-CM
+  participant BR as DocPad bridge
+  participant WF as Temporal
+  participant HIU as Requesting HIU
+  CM->>BR: /api/v3/consent/request/hip/notify
+  BR->>CM: POST /consent/v3/request/hip/on-notify
+  CM->>BR: /api/v3/hip/health-information/request with keyMaterial
+  BR->>CM: POST /data-flow/v3/health-information/hip/on-request ACKNOWLEDGED
+  BR->>WF: start transfer workflow
+  WF->>HIU: encrypted pages to dataPushUrl
+  WF->>CM: POST /data-flow/v3/health-information/notify TRANSFERRED
+```
+
+**Scan & Share:**
+1. The patient scans the counter QR.
+2. The gateway calls `/api/v3/hip/patient/share`.
+3. DocPad replies with `/patient-share/v3/on-share`, carrying a token number. The token resets daily, and the same token is returned if the same ABHA scans again within 60 minutes.
+
+**HIU flow (M3):**
+1. `/consent/v3/request/init`
+2. The patient approves in the PHR app.
+3. The notify callback arrives.
+4. `/consent/v3/fetch`
+5. `/data-flow/v3/health-information/request`, with DocPad's public key.
+6. DocPad decrypts the pushed data, shows it read-only, and purges it at `dataEraseAt`.
+
+Copy the consent date range exactly, or the request fails with `ABDM-1063` [3P].
+
+### 17.4 v3 conventions
+
+**Base URLs:**
+
+| | Sandbox | Production |
+|---|---|---|
+| Gateway | `https://dev.abdm.gov.in/api/hiecm` | `https://apis.abdm.gov.in/api/hiecm` |
+| ABHA | `https://abhasbx.abdm.gov.in/abha/api/v3` | **verify**: published forms conflict |
+
+**Headers and tokens:**
+- `X-CM-ID` is `sbx` in sandbox and `abdm` in production.
+- Every call carries `Authorization`, a new `REQUEST-ID` UUID, and a `TIMESTAMP` in ISO UTC with milliseconds.
+- HIP calls add `X-HIP-ID`. Care-context linking adds `X-LINK-TOKEN`. ABHA calls use `T-token` and `X-token`.
+- Session: `POST /gateway/v3/sessions` with client credentials. The official wrapper refreshes every 15 minutes.
+
+**Calling pattern:**
+- The gateway answers 202, and the result arrives later as a callback on DocPad's bridge URL.
+- Callbacks must answer 202 at once and be idempotent. They can arrive twice, and ABDM does not resend a lost consent notification [3P].
+
+**Retries:** retry 5 times with exponential backoff, on 5xx and timeouts only, with a new `REQUEST-ID` each time.
+
+**Rate limiting:** `ABDM-1027` blocks an ABHA for 24 hours after repeated OTP requests [3P].
+
+Full endpoint map: section 20 of `docpad-architecture.html`.
+
+### 17.5 Encryption
+
+**Fidelius (health data):**
+1. The HIU sends an ECDH Curve25519 public key and a 32-byte nonce.
+2. DocPad generates a fresh key pair and nonce per request.
+3. XOR the two nonces. The first 20 bytes are the HKDF salt; the last 12 bytes are the AES-GCM IV.
+4. HKDF-SHA256 derives a 32-byte key.
+5. Encrypt with AES-256-GCM.
+
+**Trap:** this Curve25519 is BouncyCastle's Weierstrass form, with 65-byte `04‖X‖Y` keys. It does not interoperate with standard X25519 libraries, including `@noble/curves` as used in `lib/abdm/encryption.ts`. Use `fidelius-cli` as a sidecar until a TypeScript port passes Fidelius test vectors.
+
+**ABHA APIs:** encrypt Aadhaar, OTP, mobile and email with `RSA/ECB/OAEPWithSHA-1AndMGF1Padding`, using the certificate from `/profile/public/certificate`.
+
+### 17.6 Repository findings and actions
+
+| Area | Finding | Action |
+|---|---|---|
+| Gateway calls | Invented paths (no `/api/hiecm`); session call missing v3 headers; calls treated as synchronous | Rewrite to the v3 contract |
+| Callbacks | Only `consent-request-notify`; no acknowledgement; rows lack `hospital_id` so RLS hides them; nothing processes them | One bridge endpoint: verify, write inbox, return 202, route by `X-HIP-ID` |
+| Security | `abdm-auth` returns the gateway token to browsers; webhook check fails open; gateway JWT not verified; CORS `*` | Delete `abdm-auth`; verify the gateway JWT; fail closed |
+| ABHA | Mocked enrolment; Aadhaar not RSA-encrypted; unsalted Aadhaar SHA-256 is brute-forceable; link modal can write a raw Aadhaar or mobile into `abha_id` | Real v3 enrolment; no Aadhaar derivative, or a keyed HMAC at most; fix the modal |
+| UI calls | `useABHALinking` and `ConsentApprovalModal` send the anon key as bearer, so every call fails with 401 | Send the user's session token |
+| Consent | `consent-approve` lets the provider grant consent (only the patient can); deny is never sent; `abdm_patient_consents` exists only in archived migrations | Remove; model HIP consent storage and HIU consent requests separately |
+| Encryption | RSA-OAEP wrapping in one place, X25519 + HKDF in another; neither is Fidelius | Fidelius sidecar |
+| Data model | `abha_id` / `abha_number` / `abha_address` / `patient_abha` drift; the 7 ABDM tables are unused; gateway tokens stored in plain text; `X-HIP-ID` is a global env var | New model (17.7) |
+| FHIR | Only the OP consult bundle exists, and it lacks the ABHA identifier and HPR; `hpr_id` holds the medical council number | Bundles per HI type (17.8); validate against the NRCES package in CI |
+
+### 17.7 Data model
+
+```mermaid
+erDiagram
+  hospitals ||--o| abdm_facility : "registers as HIP"
+  persons ||--o{ abha_identities : holds
+  abha_identities ||--o{ care_contexts : "linked to"
+  care_contexts ||--o{ consent_artefacts : "shared under"
+  consent_artefacts ||--o{ hi_transfer_sessions : "fulfilled by"
+  hospitals ||--o{ abdm_request_log : logs
+```
+
+| Table | Purpose |
+|---|---|
+| `abdm_facility` | `hfr_id` (= `X-HIP-ID`), bridge ID, counter QR IDs, status (sandbox, linked, certified) |
+| `abha_identities` | ABHA number, ABHA address, KYC-verified flag, link-token reference (secret store) and expiry |
+| `care_contexts` | One per OPD visit or IPD admission per HI type; reference number, display, `linked_at` |
+| `consent_artefacts` | HIP and HIU artefacts: purpose, status, permission, `data_erase_at`, signature |
+| `hi_transfer_sessions` | Transaction ID, direction, session status, page count. Plaintext bundles are not stored. |
+| `abdm_request_log` | Keyed on `REQUEST-ID`, for idempotency and audit |
+
+### 17.8 HI types
+
+| HI type | NRCES profile (Composition.type) | DocPad source |
+|---|---|---|
+| `OPConsultation` | OPConsultRecord (371530004) | opd_encounters |
+| `Prescription` | PrescriptionRecord (440545006) | prescriptions + Rx PDF |
+| `DischargeSummary` | DischargeSummaryRecord (373942005) | ipd_discharge_summaries |
+| `DiagnosticReport` | DiagnosticReportRecord, LOINC observations | investigations, lab_result_entries |
+| `WellnessRecord` | WellnessRecord | vitals |
+| `HealthDocumentRecord` | HealthDocumentRecord (419891008) | clinical_attachments |
+| `ImmunizationRecord` | ImmunizationRecord (41000179103) | none yet |
+| Invoice (**verify** HI-type support) | InvoiceRecord | invoices |
+
+**Bundle requirements:**
+- `DocumentBundle` profile with `type: document`.
+- `meta.versionId`, an identifier and a timestamp.
+- The Composition is the first entry.
+- The ABHA number is on the Patient, and the HPR ID is on the Practitioner.
+
+### 17.9 Certification route
+
+1. **Sandbox signup.** Register DocPad as a company with HIP + HRP and HIU + HRP roles. Expect 7–10 days.
+2. **Bridge setup.** Register the bridge URL and link a test HIP. Create test ABHAs in the sandbox PHR app.
+3. **Build and self-test.** Work through the official test-case IDs, using the NHA wrapper's mock gateway.
+4. **Functional test.** By an NHA-empanelled agency: FIME India, Suma Soft or Tata Communications.
+5. **Security audit.** WASA by a CERT-In or STQC empanelled auditor, which issues a Safe-to-Host certificate.
+6. **Exit and production.** Submit the exit form, demo to NHA and receive production keys. Each hospital then links its HFR facility to DocPad's production bridge ID.
+
+Target: M1 + M2 working in sandbox by the MVP (18 Dec 2026), certification in Q1 2027.
+
+### 17.10 DHIS incentives (Corrigendum 7, April–September 2026)
+
+| Transaction | Facility | DocPad (software vendor) |
+|---|---|---|
+| Record linked: DiagnosticReport or DischargeSummary | ₹10 | ₹5 |
+| Record linked: other HI types | ₹5 | ₹2.5 |
+| Consent-based share | ₹10 to HIU, ₹5 to each source HIP | — |
+| NHCX PM-JAY claim | ₹200 or 10%, whichever is lower | ₹10 |
+
+**Conditions:**
+- Only records linked to a KYC-verified ABHA count.
+- A facility needs more than 100 eligible transactions per month; the lowest-value 100 are deducted.
+- At most 1 transaction per ABHA per day and 5 per month.
+- A hospital's records count only on software integrated up to M3.
+- DocPad needs at least 10 facilities linking records each month and a valid WASA.
+- Only v3 software qualifies from July 2026.
+- Scan & Share earns nothing since April 2026.
+- Rules after September 2026 are not confirmed (**verify**).
+
+### 17.11 Build or adopt
+
+NHA's official wrapper (Spring Boot + MongoDB) handles sessions, callbacks, multiple HIP IDs and FHIR mapping. Running it in production would add a second stack and a second PHI store.
+
+**Recommendation:** build the bridge inside the TypeScript interop gateway, and:
+- use the official wrapper and its mock gateway as the reference and test oracle
+- use `fidelius-cli` as the encryption sidecar
+
+### 17.12 Open items to verify
+
+1. Production ABHA base URL.
+2. Whether v3 discovery is synchronous or asynchronous.
+3. The v3 sandbox mechanism for linking a HIP to a bridge.
+4. Whether `Invoice` is accepted as an HI type.
+5. v3 subscription APIs.
+6. Official rate limits.
+7. WASA validity period.
+8. Certification fees and lead times.
+9. DHIS rules after September 2026.
+10. The official `ABDM_M1/M2/M3.docx` and `API_Mapping_ABHA_HIECM.xlsx` on `sandbox.abdm.gov.in/documents/`.
