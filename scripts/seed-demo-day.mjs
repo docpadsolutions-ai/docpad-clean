@@ -209,21 +209,72 @@ const PATIENTS = [
   { n: 12, name: "Meera Pillai", age: 25, sex: "female", phone: "+919800000012", allergies: [], complaint: "Recurrent right shoulder dislocation" },
 ];
 
+/**
+ * A minimal price list. The consultation item matters most: the queue trigger turns it
+ * into a charge on each new reception_queue row, and without that charge reception has
+ * no Collect / Override button, so no walk-in ever reaches the doctor's waiting room
+ * (it lists only paid or overridden rows). Codes are DEMO- so nothing collides with a
+ * real hospital's list.
+ */
+const CHARGE_DEFS = [
+  { n: 1, code: "DEMO-CONS-001", display_name: "OPD Consultation (General)", category: "consultation", base_price: 500 },
+  { n: 2, code: "DEMO-REG-001", display_name: "Registration fee", category: "registration", base_price: 100 },
+  // Lab prices are matched to test_catalogue by code, so these must be the catalogue's
+  // short codes; with any other code the order is placed with no charge and never
+  // reaches reception's "Pending lab payments" or the lab queue.
+  { n: 3, code: "CBC", display_name: "Complete Blood Count", category: "lab_test", base_price: 350 },
+  { n: 4, code: "UA", display_name: "Uric Acid", category: "lab_test", base_price: 250 },
+  { n: 5, code: "DEMO-PROC-001", display_name: "Knee joint aspiration", category: "procedure", base_price: 1500 },
+  { n: 6, code: "DEMO-SUP-001", display_name: "Knee brace", category: "supply", base_price: 900, tax_type: "gst_12", tax_rate: 12 },
+];
+
+/**
+ * Pharmacy stock. Prescription search reads only this hospital's hospital_inventory,
+ * so without it the doctor cannot pick a drug. The first four are the ones the
+ * prescribing checks exercise: amoxicillin and cefuroxime against Ramesh's penicillin
+ * allergy, warfarin against Mohammed's aceclofenac.
+ */
+const INVENTORY = [
+  { n: 1, brand_name: "Mox 500", generic_name: "Amoxicillin", strength: "500 mg", form: "Capsule" },
+  { n: 2, brand_name: "Ceftum 500", generic_name: "Cefuroxime", strength: "500 mg", form: "Tablet" },
+  { n: 3, brand_name: "Warf 5", generic_name: "Warfarin", strength: "5 mg", form: "Tablet", high_risk: true },
+  { n: 4, brand_name: "Hifenac 100", generic_name: "Aceclofenac", strength: "100 mg", form: "Tablet" },
+  { n: 5, brand_name: "Dolo 650", generic_name: "Paracetamol", strength: "650 mg", form: "Tablet" },
+  { n: 6, brand_name: "Pan 40", generic_name: "Pantoprazole", strength: "40 mg", form: "Tablet" },
+  { n: 7, brand_name: "Shelcal 500", generic_name: "Calcium carbonate + Vitamin D3", strength: "500 mg", form: "Tablet" },
+  { n: 8, brand_name: "Ultracet", generic_name: "Tramadol + Paracetamol", strength: "37.5/325 mg", form: "Tablet" },
+];
+
 // ---------------------------------------------------------------- teardown
 
 async function destroy() {
   // Explicit order rather than trusting cascade, because not every foreign key in
   // this schema declares one and a half-deleted demo is worse than none.
+  // The first block is what a click-through of the demo leaves behind (lab results,
+  // invoices, payments, charges). Any table that is absent or has no hospital_id is
+  // skipped with a note rather than stopping the teardown.
   const tables = [
+    "lab_result_entries",
+    "investigation_ocr_uploads",
+    "investigations",
+    "payments",
+    "invoice_line_items",
+    "invoices",
+    "charge_items",
+    "stock_transactions",
+    "transcriptions",
+    "clinical_extractions",
+    "prescription_attachments",
     "prescriptions",
     "appointment_reminders",
+    "reception_queue", // references appointments, so it goes first
     "appointments",
-    "reception_queue",
     "patient_allergies",
     "patient_consents",
     "opd_encounters",
     "patients",
-    "practitioners",
+    "hospital_inventory",
+    "charge_item_definitions",
   ];
   for (const t of tables) {
     try {
@@ -245,15 +296,20 @@ async function destroy() {
       process.stdout.write(`  skipped ${t}: ${e.message}\n`);
     }
   }
-  await del("hospitals", `id=eq.${DEMO_HOSPITAL_ID}`);
-  process.stdout.write("  cleared hospitals\n");
-  // The organizations row usually stays: append-only audit_logs rows reference it,
-  // and a re-seed reuses it.
-  try {
-    await del("organizations", `id=eq.${DEMO_HOSPITAL_ID}`);
-    process.stdout.write("  cleared organizations\n");
-  } catch {
-    process.stdout.write("  kept organizations (referenced by audit_logs)\n");
+  // Practitioners, the hospital and its organization usually cannot go: append-only
+  // audit_logs rows reference them from the first audited write onwards. They are kept
+  // and reused by the next seed, which upserts them on their fixed ids.
+  for (const [table, filter] of [
+    ["practitioners", `hospital_id=eq.${DEMO_HOSPITAL_ID}`],
+    ["hospitals", `id=eq.${DEMO_HOSPITAL_ID}`],
+    ["organizations", `id=eq.${DEMO_HOSPITAL_ID}`],
+  ]) {
+    try {
+      await del(table, filter);
+      process.stdout.write(`  cleared ${table}\n`);
+    } catch {
+      process.stdout.write(`  kept ${table} (referenced by audit_logs)\n`);
+    }
   }
 }
 
@@ -320,6 +376,42 @@ async function seed() {
     })),
   );
   process.stdout.write(`  practitioners (${PRACTITIONERS.length})\n`);
+
+  // Before any queue row: the queue trigger looks up the consultation charge on insert.
+  await upsert(
+    "charge_item_definitions",
+    CHARGE_DEFS.map((c) => ({
+      id: id(800 + c.n),
+      hospital_id: DEMO_HOSPITAL_ID,
+      code: c.code,
+      display_name: c.display_name,
+      category: c.category,
+      base_price: c.base_price,
+      tax_type: c.tax_type ?? "gst_exempt",
+      tax_rate: c.tax_rate ?? 0,
+      status: "active",
+    })),
+  );
+  process.stdout.write(`  price list (${CHARGE_DEFS.length})\n`);
+
+  await upsert(
+    "hospital_inventory",
+    INVENTORY.map((d) => ({
+      id: id(900 + d.n),
+      hospital_id: DEMO_HOSPITAL_ID,
+      brand_name: d.brand_name,
+      generic_name: d.generic_name,
+      strength: d.strength,
+      dosage_form_name: d.form,
+      is_high_risk: Boolean(d.high_risk),
+      stock_quantity: 200,
+      reorder_level: 20,
+      batch_number: `DEMO-${String(d.n).padStart(3, "0")}`,
+      expiry_date: ymd(365),
+      is_active: true,
+    })),
+  );
+  process.stdout.write(`  pharmacy stock (${INVENTORY.length})\n`);
 
   const doctorId = PRACTITIONERS[0].id;
 
@@ -507,6 +599,7 @@ async function main() {
     console.log(`  3 past encounters, 1 of them finalised, with 2 active medications`);
     console.log(`  5 bookings (4 today including a follow-up, 1 tomorrow for the reminder job)`);
     console.log(`  3 walk-ins already in today's queue`);
+    console.log(`  ${CHARGE_DEFS.length} price-list items and ${INVENTORY.length} pharmacy stock lines`);
     console.log(`\nNothing outside hospital ${DEMO_HOSPITAL_ID} is read or written.`);
     return;
   }

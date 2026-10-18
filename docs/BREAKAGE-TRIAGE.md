@@ -2,7 +2,7 @@
 
 *Started 18 Oct 2026. Working document: update the Status column as items are confirmed or fixed.*
 
-The suspects in section 3 come from reading the code on 17–18 Oct 2026. **None of them has been confirmed against the running Vercel app yet.** The first job is to confirm or rule out each one, then record anything new found in the logs in section 4.
+The suspects in section 3 come from reading the code on 17–18 Oct 2026. Triage steps 1–6 ran on 18 Oct (see section 8): each suspect's Status column says whether it was confirmed, ruled out or fixed, and section 4 holds everything new found along the way. **Section 7 is the current work list.**
 
 **Status values:** `Suspected` (from code reading) · `Confirmed` (seen in the app or logs) · `Not reproduced` · `In progress` · `Fixed` (link the PR) · `Deferred` (say until when)
 
@@ -109,7 +109,7 @@ Work through these steps in order. Record every new finding in section 4 before 
 
 | ID | Issue | Action |
 |---|---|---|
-| W-01 | `db-safety-tests.yml` passes green when `SUPABASE_DB_URL` is unset | **Corrected 18 Oct:** the secret has been set since 18 Sep 2026, and the job has failed every day since 20 Sep (see N-01, N-02). The problem is that nobody noticed the red runs. Turn on failure notifications. Repoint the secret at **staging** once W-03 exists. |
+| W-01 | `db-safety-tests.yml` passes green when `SUPABASE_DB_URL` is unset | **Corrected 18 Oct:** the secret has been set since 18 Sep 2026, and the job failed every day from 20 Sep (see N-01, N-02). The problem was that nobody noticed the red runs. **Green again from 18 Oct 06:35 UTC** after N-01, N-02, N-19 and N-20. Still to do: turn on failure notifications; repoint the secret at **staging** once W-03 exists. |
 | W-04 | Vercel Hobby plan keeps runtime logs for **30 minutes** only. The Vercel MCP log tools return 403 for this team. | Read logs live during the route walk (`vercel logs --environment production`), or move to Pro for longer retention. Error tracking (W-02) matters more because of this. |
 | W-02 | No error tracking; only `console.*` | Add error tracking in W2–W4 (GlitchTip, using the Sentry SDK). Until then, use Vercel runtime logs. |
 | W-03 | No staging project; testing happens against production | Create the demo/staging project in W1 (architecture §10.2) |
@@ -121,7 +121,7 @@ Work through these steps in order. Record every new finding in section 4 before 
 | ID | Route / screen | Error (exact text, first line) | Seen in | First seen | Linked suspect | Pri | Status |
 |---|---|---|---|---|---|---|---|
 | N-01 | Database (any signed-out caller via `/rest/v1/rpc`) | `not ok 2 - only the public RPCs and RLS helpers are anon-executable`. 15 extra SECURITY DEFINER functions are anon-executable: `list_hospitals_for_platform_admin`, `set_hospital_live`, `provision_hospital`, `invite_first_admin`, `is_platform_admin`, `get_encounter_draft`, `save_encounter_draft`, `clear_encounter_draft`, `fn_fhir_opd_encounter`, `trg_set_mobile_hash`, `trg_recalc_invoice_from_child`, `trg_set_encounter_visit_type`, `trg_assign_cr_number`, `trg_block_unsafe_prescription`, `trg_lock_finalized_encounter` | CI (`db-safety-tests.yml`, `rls_isolation.sql`) | 2026-09-20 | — | **P0** (data protection) | Fixed: `20261018070000_revoke_anon_execute_security_definer.sql`, applied 18 Oct. Bodies reviewed first: each already refused anon internally, so no data was exposed; anon could only learn whether an encounter id exists (from `save_encounter_draft`'s error text). `rls_isolation.sql` now passes 50/50. Cause: EXECUTE granted to PUBLIC, which anon inherits. |
-| N-02 | Migrations | `4 migration(s) applied to the database with no file in the repo.` (`20260919175302 hospital_onboarding_pipeline`, `20260919180005 provision_hospital_creates_organization`, `20260919180144 fix_set_hospital_live_blocker_array`, `20260920070955 encounter_server_drafts`) | CI (`check-migration-drift.mjs`) | 2026-09-20 | N-01 (these probably created most of the N-01 functions) | P1 | Fixed 18 Oct: the 4 files were written from `schema_migrations` in the restore script's format, without archiving anything else (the script itself archives the whole folder and needs `psql`). Commit them. The live-only `sync_practitioner_email` trigger (N-08) is in none of them; it predates migration tracking. |
+| N-02 | Migrations | `4 migration(s) applied to the database with no file in the repo.` (`20260919175302 hospital_onboarding_pipeline`, `20260919180005 provision_hospital_creates_organization`, `20260919180144 fix_set_hospital_live_blocker_array`, `20260920070955 encounter_server_drafts`) | CI (`check-migration-drift.mjs`) | 2026-09-20 | N-01 (these probably created most of the N-01 functions) | P1 | Fixed 18 Oct: the 4 files were written from `schema_migrations` in the restore script's format, without archiving anything else (the script itself archives the whole folder and needs `psql`). Committed; drift check reports `394 applied, 394 files`. The live-only `sync_practitioner_email` trigger (N-08) is in none of them; it predates migration tracking. |
 | N-03 | Deployment `docpad-clean-po99vbc6f` | `Error: The \`CRON_SECRET\` environment variable contains leading or trailing whitespace, which is not allowed in HTTP header values.` | build | 2026-09-20 | B-04 | P2 | Fixed (the next deployment, also 20 Sep, built; all later ones are Ready) |
 | N-04 | Dependencies | `27 vulnerabilities (1 low, 8 moderate, 16 high, 2 critical)` | `npm ci` | 2026-10-18 | — | P1 (until reviewed) | Confirmed. Run `npm audit` and check whether the critical ones are reachable. |
 | N-05 | Vercel env | All secrets (`SUPABASE_SERVICE_ROLE_KEY`, `TWILIO_AUTH_TOKEN`, API keys) are type `Config`, not Sensitive, and are also in Development, so `vercel env pull` writes them to every laptop | `vercel env ls` | 2026-10-18 | B-01, B-02 | P1 (security) | Confirmed. When rotating keys, re-add them as Sensitive, for Production and Preview only. |
@@ -137,8 +137,26 @@ Work through these steps in order. Record every new finding in section 4 before 
 | N-14 | `/nursing` (nurse) | `404 POST /rest/v1/rpc/get_nursing_shift_tasks`. The function exists, so the call's arguments do not match its signature. | console (route walk) | 2026-10-18 | — | P1 | Confirmed (404); cause suspected. |
 | N-15 | Staff directory | `400 POST /rest/v1/rpc/get_clinical_specialties_for_filter` | console (route walk) | 2026-10-18 | — | P2 | Confirmed; cause not checked. |
 | N-16 | Patient photos | `400 POST /storage/v1/object/sign/patient-photos/<id>.jpg`, including `unknown.jpg` | console (route walk) | 2026-10-18 | — | P2 | Confirmed. The app requests signed URLs for photos that do not exist instead of checking first. |
-| N-17 | `/dashboard/opd` (doctor) | Counters disagree: "2 Scheduled today" vs "Expected today 4"; "Waiting room 0" while reception shows 3 in the queue | route walk screenshot | 2026-10-18 | — | P1 (demo step 2) | Confirmed on seeded data; cause not checked. Could be seed shape (`queue_status` values, `doctor_id`) rather than app logic. |
+| N-17 | `/dashboard/opd` (doctor) | Counters disagree: "2 Scheduled today" vs "Expected today 4"; "Waiting room 0" while reception shows 3 in the queue | route walk screenshot | 2026-10-18 | — | P1 (demo step 2) | Explained 18 Oct, seed shape not an app bug: the waiting room lists only queue rows with `payment_collected` or `payment_override`, and Collect/Override appear only when a consultation price exists. The seed now creates a price list; a registered, queued and paid walk-in reaches the waiting room. "Scheduled today" vs "Expected today" mismatch still unexplained. |
 | N-18 | Encounter view (doctor) | Finalised seeded encounter shows empty chief complaint and diagnosis; treating doctor shows "Pending" | route walk screenshot | 2026-10-18 | — | P2 | Suspected seed shape: the seed writes `chief_complaint` / `working_diagnosis`, which the encounter UI may not read. Check before treating as an app bug. |
+| N-21 | Prescribing, any patient registered at reception | Amoxicillin for a patient whose registration lists "Penicillin" shows only the amber `Check before continuing … cross-reacts with a recorded allergy to Penicillin`; **Finalize stays enabled**, and a direct insert as the doctor is **not blocked** by the database. The same drug for a patient with a structured `patient_allergies` row is blocked by both. Registration writes allergies only to `patients.known_allergies` (free text), which the matcher never treats as a blocking drug allergy. | click-through + rolled-back insert | 2026-10-18 | — | **P0** (clinical safety, real patients, not only the demo) | Confirmed. Fix: registration writes structured `patient_allergies` rows (category from `allergen_groups`), and/or an unclassified free-text allergy that matches a drug or drug group blocks as "ungraded drug allergy". |
+| N-22 | Every AI feature: lab OCR, insurance OCR, ECG, discharge compile, ICD suggestion, patient summary, dictation extraction | Gemini: `This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash` (`/api/ocr/process` → 502). `/api/ai/generate` allows only `gemini-2.5-*`, so dictation's `gemini-3.6-flash` gets `400 {"error":"Model not allowed."}` | click-through; direct API test | 2026-10-18 | B-02, B-03 | **P0** (demo steps 2 and 6) | Confirmed. With this key, `gemini-3.6-flash` and `gemini-3.8-flash` answer; `gemini-2.5-flash` is 404. `gemini-2.5-flash` is hard-coded in 9 files, 2 of them edge functions (`generate-patient-summary`, `suggest-icd10`), which need a redeploy. |
+| N-23 | Pharmacy queue (pharmacist) | "0 orders" while `pharmacy_ordered_prescription_queue` holds the demo clinic's rows. RLS on `opd_encounters` requires `has_permission(uid, 'encounters', 'read')`; the pharmacist role has no such row, so the view's join to encounters returns nothing. | click-through; query as the pharmacist | 2026-10-18 | — | **P0** (demo step 5: nothing can be dispensed) | Confirmed. Fix: `role_permissions` row (pharmacist, encounters, read). **Correction to N-09:** `role_permissions` *is* read by RLS (via `has_permission`) on `opd_encounters`, `patients`, `prescriptions`, `vitals` and `hospital_inventory`. |
+| N-24 | Invoice → Record payment | `409 record_payment: Key (collected_by)=(…) is not present in table "practitioners"` (`payments_collected_by_fkey`). `PaymentRecordModal` passes the auth user id; the column references `practitioners.id`. | click-through | 2026-10-18 | — | **P0** (demo step 7: no invoice can be marked paid) | Confirmed. Fix: pass the practitioner id, as the lab-payment path already does. |
+| N-25 | Invoice detail and PDF | `400 patients?select=…gender…address` (`column patients.gender does not exist`) and `400 hospitals?select=name,address…` (`column hospitals.address does not exist`). Detail page shows `Patient: <uuid>`; the PDF is headed "Hospital", says "Patient details unavailable.", and renders the rupee sign as "¹" in the Unit column. | click-through; downloaded `invoice-INV-2026-000002.pdf` | 2026-10-18 | — | **P0** (demo step 7) | Confirmed. Live columns are `sex`, `address_line1`. |
+| N-26 | Invoice line tax | A price-list item defined as `gst_12` / 12 % lands on the invoice with Tax % empty and total tax ₹0 | click-through | 2026-10-18 | N-20 | P1 (GST) | Confirmed. The charge definition's tax is not carried onto the line. |
+| N-27 | Lab orders, every hospital | `auto_create_investigation_charge()` begins `if tg_op = 'insert'`; `TG_OP` is `'INSERT'`, so the trigger never prices an order. The only price path is the "Pricing required" box shown once right after ordering; leave the page and the order has no charge, so it never reaches "Pending lab payments" or the lab queue. Live hospital: 40 orders, 14 charges. | click-through; trigger source | 2026-10-18 | — | **P0** (demo step 6) | Confirmed. Fix: `'INSERT'`. The trigger then matches price-list items by `display_name ilike '%' || test_name || '%'`. |
+| N-28 | Encounter workspace | Chief complaint and diagnosis added in the UI are lost on reload (no save until "Save as draft" / finalise). "Save & close" then finalised the encounter with an empty required chief complaint, and it is now locked. | click-through; DB row | 2026-10-18 | — | P1 (demo step 2) | Confirmed. Required-field check missing on finalise. |
+| N-29 | Encounter workspace | Input typed in the first ~10 s is dropped; one load lost its data ("Unknown Patient", "Unassigned") after `Lock "lock:sb-…-auth-token" was released because another request stole it` | click-through | 2026-10-18 | B-06 | P1 (demo step 2) | Confirmed. Several Supabase clients on the page race for the auth lock. |
+| N-30 | Vitals | `500 patient_latest_vitals: infinite recursion detected in rules for relation "patient_latest_vitals"`. Separately the doctor role has no `vitals` permissions in `role_permissions`. | click-through; `role_permissions` | 2026-10-18 | — | P1 | First confirmed; second suspected (vitals entry not exercised). |
+| N-31 | Encounter workspace | `400 prescriptions?select=…drug_name…` (`column prescriptions.drug_name does not exist`) and `400 opd_prescriptions?select=…medicine_name…` | click-through | 2026-10-18 | — | P2 | Confirmed. |
+| N-32 | Reception → Add to queue | `400 POST appointments: Could not find the 'updated_at' column of 'appointments'` (PGRST204). The queue row is created anyway, with no appointment behind it. | click-through | 2026-10-18 | — | P1 | Confirmed. |
+| N-33 | Reception → Add to queue | "Assigned doctor" lists the lab technician and the admin | click-through | 2026-10-18 | N-09 | P2 | Confirmed. `lib/doctorAssignmentOptions.ts` excludes only nurse, pharmacist and receptionist. |
+| N-34 | Prescription preview and confirm popover | Shows DocPad ID `DCP-2ADFFA` (derived from the patient UUID) while the chart says `DCP-307464`; C/O and O/E print "Nil" although set; signature line "Dr. Doctor" | click-through screenshot | 2026-10-18 | — | P1 (patient identity on a printed Rx) | Confirmed. The public `/rx` page shows the correct `DCP-307464`. |
+| N-35 | Pharmacy stock | Finalising a 10-tablet line left stock at 200. Lines are saved as `Dolo 650 [Paracetamol]`; stock is matched by name (`brand_name ILIKE` / `generic_name ILIKE` in `dispense_prescription`), which never matches that form. | click-through; DB | 2026-10-18 | — | P1 | Finalise side confirmed; dispense side not yet testable (N-23). |
+| N-36 | Admin audit view (staff directory → Performance) | Red `column ipn.doctor_id does not exist` from `rpc/get_staff_performance_summary`; the activity log never renders. The audit trail itself is complete: today's demo actions are all in `audit_logs`, including `patient:READ_PUBLIC_LINK`. | click-through; DB | 2026-10-18 | — | **P0** (demo step 8) | Confirmed. |
+| N-37 | `/rx/[id]` | Date shows the previous day for viewers west of UTC: `new Date("2026-10-18")` is UTC midnight | click-through (EDT machine) | 2026-10-18 | — | P2 | Confirmed; correct in India. |
+| N-38 | Missing database functions | `generate_encounter_prescription_receipt` (pharmacy per-visit receipt and dispense), `apply_advance_wallet_payment` and `set_invoice_line_item_unit_price` (reception billing page), `get_lab_queue_external` (lab External tab) do not exist live | DB check | 2026-10-18 | — | P1 | Confirmed. `dispense_prescription` itself exists live and, unlike the repo file, has no `status = 'ordered'` filter. |
 | N-06 | Build | `[MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///…/tailwind.config.ts … is not specified` | build | 2026-10-18 | — | P2 | Confirmed, harmless. Build, typecheck and lint all pass (lint: 0 errors, 193 warnings). |
 
 ---
@@ -147,8 +165,6 @@ Work through these steps in order. Record every new finding in section 4 before 
 
 Tick each one after `vercel env ls`. **S** means the variable must be server-only and must never have a `NEXT_PUBLIC_` copy.
 
-| Variable | Needed by | Prod | Preview | Notes |
-|---|---|---|---|---|
 Checked 18 Oct 2026 with `vercel env ls`. ☑ = set, ☒ = missing (or present when it must be absent). Every variable below that is set is also set in Development.
 
 | Variable | Needed by | Prod | Preview | Notes |
@@ -179,7 +195,7 @@ Sign in as each role and open each page. **OK** means the page loads with real d
 
 **Walked 18 Oct 2026** by a headless Chromium script (Playwright) against production, signed in as each seeded demo account. It navigates only; it does not click actions, so the interactive rows (prescribing, dictation, discharge, OCR upload, ABHA registration) are still open. Every page also shows the two global errors in N-11; "Console" below lists anything beyond those.
 
-**Landing after sign-in:** reception → `/reception` ✓, doctor → `/dashboard/opd` ✓, nurse, pharmacist, lab and admin → `/dashboard/opd` ✗ (N-12).
+**Landing after sign-in:** reception → `/reception` ✓, doctor → `/dashboard/opd` ✓, nurse, pharmacist, lab and admin → `/dashboard/opd` ✗ (N-12). **Re-checked after `de3a22c` deployed:** all 6 land on their own home ✓, and the N-11 errors are gone.
 
 | Role | Route | Loads | Data | Console errors | Notes / suspect ID |
 |---|---|---|---|---|---|
@@ -196,7 +212,7 @@ Sign in as each role and open each page. **OK** means the page loads with real d
 | Nurse | `/dashboard` (nursing home) | ⚠ onboarding "Customize your DocPad experience", IPD card "Coming Soon"; greets "Dr. Rekha Thomas" | | — | B-15 **confirmed** |
 | Nurse | `/nursing` | ✓ | ⚠ | `404 rpc/get_nursing_shift_tasks` | N-14 |
 | Pharmacist | `/dashboard/pharmacy`, inventory, audit | ✓ all three | | — | |
-| Lab | `/lab`, OCR upload | ✗ redirected to `/dashboard/opd` | | | N-07 (fix not deployed) |
+| Lab | `/lab`, OCR upload | ✗ redirected to `/dashboard/opd` at walk time; ✓ lands on `/lab` since `de3a22c` | | | N-07, N-09 (both fixed). OCR upload not tested |
 | Billing | `/billing`, invoices, an invoice PDF | ✓ page loads (as reception and admin) | no invoices seeded | — | PDF not tested |
 | Billing | `/billing/insurance` | ✓ readable in light mode | ⚠ panels fail to load | `400 tpas`, `400 insurance_companies` | B-17 **not reproduced** in light mode. N-13 |
 | Admin | `/dashboard/admin` | ✓ | | — | |
@@ -207,13 +223,48 @@ Sign in as each role and open each page. **OK** means the page loads with real d
 | Public | `/rx/[id]` from a WhatsApp link | inconclusive | | — | tried the prescription row id; page says "Link Invalid or Expired". Needs a real link from a send. |
 | Any | `/ipd` as a non-clinical role | ✗ opens for pharmacist and lab (`/ipd`, `/ipd/beds`) | | | B-16 **confirmed** |
 
+### 6b. Click-through of the demo path (18 Oct 2026)
+
+Driven with Playwright against production as the seeded demo accounts, clicking the real controls. Demo-clinic data only. The seed gained a price list and pharmacy stock first, without which steps 2, 3, 5 and 7 cannot start.
+
+| Demo step | What was done | Result | Findings |
+|---|---|---|---|
+| 1 Registration | Reception: + New patient → mobile-only path → details, consent, allergy → Create patient → Add to queue → Collect ₹500 | ✓ patient created, queued as OPD-004, "Consultation fee collected · ₹500". Consent is enforced. | N-21 (allergy stored as free text only), N-32, N-33 |
+| 2 OPD consult | Doctor: waiting room → start chart → SNOMED complaint and diagnosis | ✓ waiting room fills after payment; SNOMED search answers in 2.5–4 s. ✗ edits lost on reload; empty encounter could be finalised. | N-28, N-29, N-30, N-31, B-06 |
+| 2 Voice | Dictation with a fake microphone | Token route 200; recording never started headless (needs a human with a mic). Extraction would fail regardless. | N-22 |
+| 3 Prescribing | In-house search → Dolo 650 → BD, 5 days → Add → Finalise | ✓ line saved and finalised (`final`). ✗ stock not decremented. | N-34, N-35 |
+| 3 Safety checks | 5 cases through the real modal | ✓ Ramesh + amoxicillin **blocked**; ✓ Ramesh + cefuroxime **advised**; ✓ Mohammed + warfarin **blocked** (Severe, with management text); ✓ Arjun + paracetamol clear; ✗ **reception-registered penicillin allergy + amoxicillin only advised** | N-21 |
+| 4 WhatsApp and `/rx` | Public `/rx/<encounter id>` signed out | ✓ renders patient, drug, frequency, duration; correct DocPad ID. Send not tested (sandbox; finalised Rx disables Send). | N-37; `NEXT_PUBLIC_APP_URL` unset (§5) |
+| 5 Dispense | Pharmacist queue | ✗ queue always empty | N-23, N-38 |
+| 6 Lab OCR | Doctor orders CBC → reception Mark Paid → lab Collect Sample → Enter Result → upload report → Run OCR | ✓ order, payment and collection work once priced by hand. ✗ auto-pricing never fires; ✗ OCR 502 (retired Gemini model). | N-27, N-22 |
+| 7 Billing | New invoice (consultation + knee brace) → Generate bill → Download PDF → Record payment | ✓ `INV-2026-000002` issued (N-20 fix holds). ✗ GST not applied; ✗ patient shown as UUID; ✗ PDF has no hospital or patient; ✗ payment fails | N-24, N-25, N-26 |
+| 8 Admin audit | Staff directory → doctor → Performance | ✗ error banner, no activity log. ✓ `audit_logs` records every action. | N-36 |
+
 ---
 
-## 7. Log
+## 7. Next steps (as of 18 Oct 2026)
+
+In priority order. Demo is Fri 30 Oct.
+
+1. **Click-through test of the demo path.** **Done 18 Oct**, results in §6b, findings N-21 to N-38. Still needs a human: live voice dictation with a real microphone, and a WhatsApp send to a sandbox-joined phone. Re-run after the fixes below.
+1a. **Fixes the click-through found, for the demo path** (proposed, not applied):
+   - *Database (needs approval before applying):* N-23 pharmacist `encounters:read`; N-27 `tg_op = 'INSERT'`; N-21 make reception-entered drug allergies block.
+   - *Code (one PR):* N-22 replace `gemini-2.5-flash` and widen the `/api/ai/generate` allowlist (then redeploy the 2 edge functions); N-24 pass the practitioner id to `record_payment`; N-25 use `sex` / `address_line1` on the invoice and PDF and fix the rupee glyph; N-26 carry tax onto invoice lines; N-36 fix `get_staff_performance_summary` or show the activity log on its own; N-28 require chief complaint before finalising.
+2. **P0 code fixes for the demo** (one PR): B-06 (second nav bar on the encounter screen), B-15 (hide nurse home onboarding, investigation panels, admin `/nursing`), B-07 (hide the ABHA option at registration), N-10 (invite page hard-codes one hospital id).
+3. **P0 data protection, B-09.** Stop writing a typed Aadhaar or mobile number into `patients.abha_id`; query for 10- and 12-digit values and clean any found.
+4. **Owner tasks.** B-02: add `GEMINI_API_KEY` in Vercel, delete `NEXT_PUBLIC_GEMINI_API_KEY`, rotate the key. N-05: re-add secrets as Sensitive, Production and Preview only. W-01: turn on failure notifications for the DB safety job.
+5. **P1 before the MVP.** B-16 (`proxy.ts` deny by default), N-13 (insurance panels), N-14 (nursing tasks RPC), N-17 (OPD counters), B-05 (discharge summary), B-11 (`abdm-auth` token), B-12 (hide backup UI).
+6. **Decisions from the 19 Oct stakeholder meeting.** W-03 staging environment; W-02 and W-04 error tracking and log retention; N-20 GST financial-year invoice numbering.
+
+---
+
+## 8. Log
 
 | Date | What was done | By |
 |---|---|---|
-| 2026-10-18 | Tracker created from code reading; nothing confirmed yet | Claude |
-| 2026-10-18 | Steps 1–5 run. Step 1: build, typecheck and lint pass. Step 2: all recent deployments Ready; one old error (N-03, fixed). Step 3: DB safety job red daily since 20 Sep (N-01, N-02); clinical safety and billing suites pass. Step 4: section 5 filled in. Step 5: only 30 minutes of logs retained (W-04); no 5xx in that window. Code re-checked for B-05, B-07, B-16. Steps 6–7 not started: the route walk needs a browser and a login per role. | Claude |
-| 2026-10-18 | Demo seed extended and run: one account per role except lab (N-09). Seed needed an `organizations` row (audit FK) and the N-08 trigger fix. Found N-08, N-09, N-10. | Claude |
-| 2026-10-18 | N-09 migration applied; N-07 fixed in code (not deployed); lab account seeded. Headless route walk of section 6 (navigation only): B-06, B-15, B-16 confirmed; B-17 not reproduced; found N-11 to N-18. | Claude |
+| 2026-10-18 | Tracker created from code reading; nothing confirmed yet | Hunar |
+| 2026-10-18 | Steps 1–5 run. Step 1: build, typecheck and lint pass. Step 2: all recent deployments Ready; one old error (N-03, fixed). Step 3: DB safety job red daily since 20 Sep (N-01, N-02); clinical safety and billing suites pass. Step 4: section 5 filled in. Step 5: only 30 minutes of logs retained (W-04); no 5xx in that window. Code re-checked for B-05, B-07, B-16. Steps 6–7 not started: the route walk needs a browser and a login per role. | Hunar |
+| 2026-10-18 | Demo seed extended and run: one account per role except lab (N-09). Seed needed an `organizations` row (audit FK) and the N-08 trigger fix. Found N-08, N-09, N-10. | Hunar |
+| 2026-10-18 | N-09 migration applied; N-07 fixed in code (not deployed); lab account seeded. Headless route walk of section 6 (navigation only): B-06, B-15, B-16 confirmed; B-17 not reproduced; found N-11 to N-18. | Hunar |
+| 2026-10-18 | N-07, N-11, N-12 deployed (`de3a22c`) and verified on production. N-01 fixed (no data exposed), N-02 files restored, N-19 secret fixed by owner, N-20 fixed plus advisory lock and its concurrency test. All DB suites pass; safety job green from 06:35 UTC. Section 7 added. | Hunar |
+| 2026-10-18 | Click-through of the demo path (§6b). Seed extended with a price list and pharmacy stock, and its teardown fixed. 4 of 5 prescribing safety checks pass; found N-21 to N-38, including a clinical-safety gap (N-21) and a retired AI model behind every AI feature (N-22). | Hunar |
