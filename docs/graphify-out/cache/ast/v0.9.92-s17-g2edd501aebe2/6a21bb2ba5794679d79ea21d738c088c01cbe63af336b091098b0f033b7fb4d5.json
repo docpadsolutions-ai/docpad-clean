@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260409055900_fix_appointments_rls_for_reception_staff_sql", "label": "20260409055900_fix_appointments_rls_for_reception_staff.sql", "file_type": "code", "source_file": "supabase/migrations/20260409055900_fix_appointments_rls_for_reception_staff.sql", "source_location": null}], "edges": []}

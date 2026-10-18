@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260412075133_extract_strength_from_brand_name_sql", "label": "20260412075133_extract_strength_from_brand_name.sql", "file_type": "code", "source_file": "supabase/migrations/20260412075133_extract_strength_from_brand_name.sql", "source_location": null}], "edges": []}

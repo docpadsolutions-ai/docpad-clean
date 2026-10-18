@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_sql_abdm_consent_expiry_cron_example_sql", "label": "abdm-consent-expiry-cron.example.sql", "file_type": "code", "source_file": "supabase/sql/abdm-consent-expiry-cron.example.sql", "source_location": null}], "edges": []}

@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260415063802_backfill_hunar_invoice_sql", "label": "20260415063802_backfill_hunar_invoice.sql", "file_type": "code", "source_file": "supabase/migrations/20260415063802_backfill_hunar_invoice.sql", "source_location": null}], "edges": []}

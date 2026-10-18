@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_archive_pre_restore_20260422180000_ipd_admissions_opd_encounter_id_only_sql", "label": "20260422180000_ipd_admissions_opd_encounter_id_only.sql", "file_type": "code", "source_file": "supabase/migrations/_archive_pre_restore/20260422180000_ipd_admissions_opd_encounter_id_only.sql", "source_location": null}], "edges": []}
