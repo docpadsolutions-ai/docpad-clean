@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>DocPad Architecture Map</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -81,23 +82,96 @@ pre.code { background: var(--surface); border: 1px solid var(--line); border-rad
 .note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 14px; margin: 16px 0; font-size: 14px; }
 ul.defects { padding-left: 20px; }
 ul.defects li { margin: 8px 0; }
+
+.toc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 32px; margin-top: 22px; }
+.toc-grid nav.toc { margin-top: 0; flex-direction: column; gap: 4px; align-items: flex-start; }
+.toc-h { font: 600 12px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.part { margin-top: 64px; padding: 22px 24px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); }
+.part.target { border-left-color: var(--warn); }
+.part-h { font-size: 2rem; margin: 6px 0 0; padding: 0; border: 0; }
+.part p { margin: 6px 0 0; color: var(--muted); }
+.arch .mod { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+.arch .mt { font-size: 12.5px; font-weight: 500; }
+.pp { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 16px 0; }
+.pp > div { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+.pp h4 { margin: 0 0 4px; font: 600 15px/1.3 var(--display); }
+.pp .ch { font: 500 11px/1.4 var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
+.pp p { margin: 6px 0 0; font-size: 13.5px; }
+.pp .sc { color: var(--muted); font-size: 12.5px; }
+.pp .new { color: var(--warn); }
+.tl .grid { stroke: var(--line); stroke-width: 1; }
+.tl .stripe { fill: var(--bg); }
+.tl .rl { font-size: 12.5px; }
+.tl .wk { font-weight: 600; font-size: 12.5px; }
+.tl .gh { font: 600 11px var(--mono); letter-spacing: 0.08em; fill: var(--muted); }
+.tl .ba { fill: var(--accent); }
+.tl .bd { fill: var(--warn); }
+.tl .bx { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.tl .bp { fill: var(--line); }
+.tl .bn { font-size: 11px; fill: var(--warn); }
+.tl .ms { stroke: var(--warn); stroke-width: 2; }
+.tl .msd { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.tl .msl { font-weight: 600; font-size: 12.5px; fill: var(--warn); }
+.sc { color: var(--muted); font-size: 13.5px; }
+.part.blue { border-left-color: var(--fg); }
+.c4 .person { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+.c4 .sys { fill: var(--accent); }
+.arch text.systx { fill: var(--surface); font-size: 12.5px; }
+.arch text.sysh { font: 600 18px var(--display); }
+.c4 .ext { fill: var(--surface); stroke: var(--muted); stroke-width: 1.3; }
+.c4 .extd { fill: var(--surface); stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 5 4; }
+.c4 .ed { stroke: var(--muted); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+.arch text.halo { paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.pt { background: var(--bg); color: var(--fg); border: 1px solid var(--line); }
+.capmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin: 16px 0; }
+.capmap > div { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+.capmap h4 { margin: 0 0 8px; font: 600 15px/1.3 var(--display); }
+.capmap ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.capmap li { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13.5px; max-width: none; }
+.prio { font: 600 11px/1 var(--mono); padding: 3px 6px; border-radius: 3px; }
+.p0 { background: var(--warn); color: var(--surface); }
+.p1 { background: var(--warn-soft); color: var(--warn); }
+.p2 { background: var(--accent-soft); color: var(--accent); }
 @media (max-width: 560px) { h1 { font-size: 1.9rem; } h2 { font-size: 1.35rem; } }
 </style>
 
 <div class="wrap">
   <div class="eyebrow">docpad-clean · commit cfeaa1e · mapped 17 Oct 2026</div>
   <h1>DocPad Architecture Map</h1>
-  <p class="lede">End-to-end system architecture, data architecture and data model of the DocPad hospital platform (OPD, IPD, nursing, lab, pharmacy, billing, insurance, ABDM), reconstructed from the repository.</p>
-  <nav class="toc" aria-label="Sections">
-    <a href="#system">1. System architecture</a>
-    <a href="#request">2. Request path</a>
-    <a href="#data">3. Data architecture</a>
-    <a href="#etl">4. Ingestion &amp; ETL</a>
-    <a href="#db">5. Database platform</a>
-    <a href="#tenancy">6. Tenancy &amp; RLS</a>
-    <a href="#model">7. Data model</a>
-    <a href="#gaps">8. Gaps found</a>
-  </nav>
+  <p class="lede">Current-state and target-state architecture of the DocPad hospital platform (OPD, IPD, nursing, lab, pharmacy, billing, insurance, ABDM). Part A is reconstructed from the repository. Part B proposes the architecture for running hundreds of hospitals. The full write-up is in <code>docs/architecture/TARGET-ARCHITECTURE.md</code>.</p>
+  <div class="toc-grid">
+    <nav class="toc" aria-label="Current state sections">
+      <span class="toc-h">Part A · Current state</span>
+      <a href="#system">1. System architecture</a>
+      <a href="#request">2. Request path</a>
+      <a href="#data">3. Data architecture</a>
+      <a href="#etl">4. Ingestion &amp; ETL</a>
+      <a href="#db">5. Database platform</a>
+      <a href="#tenancy">6. Tenancy &amp; RLS</a>
+      <a href="#model">7. Data model</a>
+      <a href="#gaps">8. Gaps found</a>
+    </nav>
+    <nav class="toc" aria-label="Target state sections">
+      <span class="toc-h">Part B · Target state</span>
+      <a href="#target">9. Target architecture</a>
+      <a href="#compare">10. Current vs target</a>
+      <a href="#stack">11. Tech stack</a>
+      <a href="#tdata">12. Target data platform</a>
+      <a href="#multi">13. Multi-hospital operation</a>
+      <a href="#personas">14. Personas</a>
+      <a href="#waf">15. Well-Architected review</a>
+      <a href="#roadmap">16. MVP plan &amp; roadmap</a>
+    </nav>
+    <nav class="toc" aria-label="Blueprint sections">
+      <span class="toc-h">Part C · Blueprints</span>
+      <a href="#c4">17. C4 system context</a>
+      <a href="#target">C4 containers (section 9)</a>
+      <a href="#appbp">18. Application blueprint</a>
+      <a href="#intbp">19. Integration blueprint</a>
+    </nav>
+  </div>
+
+  <div class="part"><span class="eyebrow">Part A</span><h2 class="part-h">Current state</h2><p>What runs today, as built at commit cfeaa1e.</p></div>
 
   <div class="stats">
     <div class="stat"><b>1</b><span>Supabase Postgres 17 project, ap-south-1</span></div>
@@ -111,7 +185,7 @@ ul.defects li { margin: 8px 0; }
   </div>
 
   <!-- 1 -->
-  <h2 id="system">1. System architecture</h2>
+  <h2 id="system">1. Current system architecture</h2>
   <p>DocPad is a Next.js 16 app on Vercel in front of one Supabase project. The browser does most of the work: client components query Postgres directly through <code>supabase-js</code>, and Row Level Security is the real security boundary. The Next.js server only handles things that need a secret: AI calls, WhatsApp, SNOMED lookups, FHIR export and backups. There is no staging environment, queue, cache tier or warehouse.</p>
 
   <figure>
@@ -871,6 +945,951 @@ erDiagram
     <li><b>Schema drift risk.</b> Core-table DDL is missing from the repo. <code>hospitals</code> and <code>organizations</code> both act as the tenant table.</li>
     <li><b>Unenforced retention.</b> <code>hospitals.data_retention_years</code> (default 7) is not enforced by anything. Phone numbers are stored in plain text.</li>
   </ul>
+
+  <!-- ================= PART B ================= -->
+  <div class="part target"><span class="eyebrow">Part B</span><h2 class="part-h">Target state</h2><p>The proposed architecture for running hundreds of hospitals, hospital groups and their patients on one platform. This is a proposal, not something built yet. It assumes 500 hospitals, 20 million patient registrations and 50,000 staff users over three years. Delivery is staged: a demo on 30 Oct 2026 and an MVP on 18 Dec 2026, both on today's stack, then continuous tracks toward this target (section 16).</p></div>
+
+  <!-- 9 -->
+  <h2 id="target">9. Target architecture (C4 container view)</h2>
+  <p>The target keeps the two strongest assets of today's build, the Next.js UI and the Postgres data model with its safety rules. It adds what is missing between them. A typed Core API owns all writes. An event backbone carries every change to the services that react to it. Every layer carries hospital context. All PHI stays in India, and the system can survive the loss of a whole region.</p>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Target</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Availability</td><td>99.95% for clinical core (charting, prescribing, MAR); 99.9% for other modules</td></tr>
+      <tr><td>Recovery</td><td>RPO 5 min or less, RTO 1 h or less, with failover to Hyderabad (ap-south-2)</td></tr>
+      <tr><td>Latency</td><td>p95 under 300 ms for reads and under 500 ms for writes; patient search under 200 ms</td></tr>
+      <tr><td>Ward offline</td><td>30 minutes of charting without connectivity</td></tr>
+      <tr><td>Residency</td><td>All PHI stored and processed in India, AI inference included</td></tr>
+    </tbody>
+  </table></div>
+
+  <figure>
+    <div class="scroll">
+<svg class="arch" viewBox="0 0 1200 1000" role="img" aria-label="Target architecture: four channels pass through one edge into a Next.js BFF and a modular Core API with identity, workflows, interop, AI, notification and integration services; data lands in Multi-AZ Postgres with Valkey, OpenSearch and S3; an outbox feeds Kafka into an Iceberg lakehouse and Snowflake; hospital sites connect through an edge agent.">
+  <defs>
+    <marker id="bh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="hd"/></marker>
+  </defs>
+
+  <!-- Channels -->
+  <rect class="pg" x="40" y="20" width="268" height="80" rx="6"/>
+  <text class="t" x="56" y="46">Staff web · Next.js</text>
+  <text class="s" x="56" y="67">doctor · nurse · front desk · lab</text>
+  <text class="s" x="56" y="85">pharmacy · billing · admin · MRD</text>
+  <rect class="box" x="324" y="20" width="268" height="80" rx="6"/>
+  <text class="t" x="340" y="46">Ward &amp; OT tablets · PWA</text>
+  <text class="s" x="340" y="67">offline queue: vitals, MAR, notes</text>
+  <text class="s" x="340" y="85">barcode wristband scanning</text>
+  <rect class="box" x="608" y="20" width="268" height="80" rx="6"/>
+  <text class="t" x="624" y="46">Patient app + WhatsApp</text>
+  <text class="s" x="624" y="67">Expo iOS/Android · ABHA or OTP login</text>
+  <text class="s" x="624" y="85">bookings, reports, bills, consent</text>
+  <rect class="box" x="892" y="20" width="268" height="80" rx="6"/>
+  <text class="t" x="908" y="46">Partner portals &amp; APIs</text>
+  <text class="s" x="908" y="67">TPA / insurer · referring doctors</text>
+  <text class="s" x="908" y="85">external labs · corporate panels</text>
+  <line class="e" x1="174" y1="100" x2="174" y2="126" marker-end="url(#bh)"/>
+  <line class="e" x1="458" y1="100" x2="458" y2="126" marker-end="url(#bh)"/>
+  <line class="e" x1="742" y1="100" x2="742" y2="126" marker-end="url(#bh)"/>
+  <line class="e" x1="1026" y1="100" x2="1026" y2="126" marker-end="url(#bh)"/>
+
+  <!-- Edge -->
+  <rect class="box" x="40" y="128" width="1120" height="44" rx="6"/>
+  <text class="t" x="56" y="155">Edge</text>
+  <text class="s" x="100" y="155">CloudFront CDN · AWS WAF + Shield · per-tenant rate limits · TLS 1.3 · mTLS for partners and devices · India-only origins</text>
+  <line class="e" x1="170" y1="172" x2="170" y2="238" marker-end="url(#bh)"/>
+  <line class="e" x1="570" y1="172" x2="570" y2="238" marker-end="url(#bh)"/>
+  <line class="e" x1="1000" y1="172" x2="1000" y2="238" marker-end="url(#bh)"/>
+  <text class="lbl" x="1008" y="212">partner APIs</text>
+
+  <!-- Application tier -->
+  <rect class="ctr" x="40" y="196" width="1120" height="304" rx="8"/>
+  <text class="ct" x="58" y="218">Application tier · ECS Fargate, private subnets, ap-south-1 Mumbai</text>
+
+  <rect class="pg" x="60" y="240" width="220" height="62" rx="4"/>
+  <text class="t" x="74" y="264">Next.js BFF / SSR</text>
+  <text class="s" x="74" y="284">UI, session, SSE live queues</text>
+  <rect class="box" x="60" y="320" width="220" height="70" rx="4"/>
+  <text class="t" x="74" y="343">Identity &amp; access</text>
+  <text class="s" x="74" y="362">Keycloak: SSO, MFA, patient OTP</text>
+  <text class="s" x="74" y="380">Cerbos: role × hospital × care team</text>
+  <rect class="box" x="60" y="408" width="220" height="72" rx="4"/>
+  <text class="t" x="74" y="431">Temporal workflows</text>
+  <text class="s" x="74" y="450">pre-auth → claim, discharge,</text>
+  <text class="s" x="74" y="468">ABDM consent, tenant onboarding</text>
+
+  <rect class="box" x="300" y="240" width="540" height="240" rx="5"/>
+  <text class="t" x="316" y="264">Core API · modular monolith · TypeScript (NestJS + Kysely)</text>
+  <text class="s" x="316" y="283">one deployable, eight domain modules, transactional outbox on every write</text>
+  <rect class="mod" x="316" y="296" width="250" height="36" rx="3"/><text class="mt" x="330" y="319">Patient identity &amp; MPI</text>
+  <rect class="mod" x="574" y="296" width="250" height="36" rx="3"/><text class="mt" x="588" y="319">Scheduling &amp; queues</text>
+  <rect class="mod" x="316" y="340" width="250" height="36" rx="3"/><text class="mt" x="330" y="363">Clinical: OPD · IPD · nursing</text>
+  <rect class="mod" x="574" y="340" width="250" height="36" rx="3"/><text class="mt" x="588" y="363">Orders, lab &amp; radiology</text>
+  <rect class="mod" x="316" y="384" width="250" height="36" rx="3"/><text class="mt" x="330" y="407">Pharmacy &amp; inventory</text>
+  <rect class="mod" x="574" y="384" width="250" height="36" rx="3"/><text class="mt" x="588" y="407">Billing &amp; revenue cycle</text>
+  <rect class="mod" x="316" y="428" width="250" height="36" rx="3"/><text class="mt" x="330" y="451">Insurance &amp; NHCX claims</text>
+  <rect class="mod" x="574" y="428" width="250" height="36" rx="3"/><text class="mt" x="588" y="451">Consent, DPDPA &amp; audit</text>
+
+  <rect class="box" x="860" y="240" width="280" height="52" rx="4"/>
+  <text class="t" x="874" y="261">Interop gateway</text><text class="s" x="874" y="280">HAPI FHIR R4 · ABDM HIP/HIU · NHCX</text>
+  <rect class="box" x="860" y="298" width="280" height="52" rx="4"/>
+  <text class="t" x="874" y="319">AI gateway</text><text class="s" x="874" y="338">Vertex Gemini · own STT · PHI redaction</text>
+  <rect class="box" x="860" y="356" width="280" height="52" rx="4"/>
+  <text class="t" x="874" y="377">Notification service</text><text class="s" x="874" y="396">WhatsApp BSP · DLT SMS · SES · push</text>
+  <rect class="box" x="860" y="414" width="280" height="52" rx="4"/>
+  <text class="t" x="874" y="435">Integration engine</text><text class="s" x="874" y="454">HL7 v2 · ASTM · DICOM (Orthanc)</text>
+
+  <line class="e" x1="280" y1="271" x2="298" y2="271" marker-end="url(#bh)"/>
+  <line class="e" x1="298" y1="355" x2="282" y2="355" marker-end="url(#bh)"/>
+  <line class="e" x1="280" y1="444" x2="298" y2="444" marker-end="url(#bh)"/>
+  <line class="e" x1="840" y1="266" x2="858" y2="266" marker-end="url(#bh)"/>
+  <line class="e" x1="840" y1="324" x2="858" y2="324" marker-end="url(#bh)"/>
+  <line class="e" x1="840" y1="382" x2="858" y2="382" marker-end="url(#bh)"/>
+  <line class="e" x1="840" y1="440" x2="858" y2="440" marker-end="url(#bh)"/>
+
+  <!-- Data tier -->
+  <rect class="ctr" x="40" y="530" width="1120" height="160" rx="8"/>
+  <text class="ct" x="58" y="554">Data tier · one system of record, derived stores around it</text>
+  <rect class="box" x="60" y="572" width="170" height="96" rx="4"/>
+  <text class="t" x="74" y="596">Kafka (Amazon MSK)</text>
+  <text class="s" x="74" y="616">domain events</text>
+  <text class="s" x="74" y="634">Debezium CDC</text>
+  <text class="s" x="74" y="652">from the outbox</text>
+  <rect class="pg" x="250" y="572" width="300" height="96" rx="4"/>
+  <text class="t" x="266" y="596">PostgreSQL 17 · Multi-AZ</text>
+  <text class="s" x="266" y="616">RLS on hospital_id · pgvector HNSW</text>
+  <text class="s" x="266" y="634">partitioned audit &amp; vitals (pg_partman)</text>
+  <text class="s" x="266" y="652">RDS Proxy · read replicas · PITR</text>
+  <rect class="box" x="570" y="572" width="170" height="96" rx="4"/>
+  <text class="t" x="584" y="596">Valkey (Redis)</text>
+  <text class="s" x="584" y="616">cache · rate limits</text>
+  <text class="s" x="584" y="634">locks · idempotency</text>
+  <text class="s" x="584" y="652">bed board pub/sub</text>
+  <rect class="box" x="760" y="572" width="170" height="96" rx="4"/>
+  <text class="t" x="774" y="596">OpenSearch</text>
+  <text class="s" x="774" y="616">patient search</text>
+  <text class="s" x="774" y="634">phonetic Indian names</text>
+  <text class="s" x="774" y="652">terminology lookup</text>
+  <rect class="box" x="950" y="572" width="190" height="96" rx="4"/>
+  <text class="t" x="964" y="596">S3 + KMS</text>
+  <text class="s" x="964" y="616">documents, scans, DICOM</text>
+  <text class="s" x="964" y="634">backups, exports</text>
+  <text class="s" x="964" y="652">Object Lock, lifecycle</text>
+
+  <line class="e" x1="400" y1="480" x2="400" y2="570" marker-end="url(#bh)"/>
+  <text class="lbl" x="408" y="520">SQL + outbox row, one transaction</text>
+  <line class="e" x1="655" y1="480" x2="655" y2="570" marker-end="url(#bh)"/>
+  <line class="e" x1="800" y1="480" x2="800" y2="570" marker-end="url(#bh)"/>
+  <line class="e" x1="1045" y1="466" x2="1045" y2="570" marker-end="url(#bh)"/>
+  <line class="e" x1="250" y1="620" x2="232" y2="620" marker-end="url(#bh)"/>
+
+  <!-- Analytics -->
+  <rect class="ctr" x="40" y="720" width="720" height="140" rx="8"/>
+  <text class="ct" x="58" y="744">Analytics · India-resident lakehouse</text>
+  <rect class="box" x="60" y="762" width="220" height="80" rx="4"/>
+  <text class="t" x="74" y="786">S3 + Apache Iceberg</text>
+  <text class="s" x="74" y="806">bronze → silver → gold</text>
+  <text class="s" x="74" y="824">raw CDC, conformed, marts</text>
+  <rect class="box" x="300" y="762" width="180" height="80" rx="4"/>
+  <text class="t" x="314" y="786">dbt</text>
+  <text class="s" x="314" y="806">conform to FHIR shapes</text>
+  <text class="s" x="314" y="824">de-identify, test</text>
+  <rect class="box" x="500" y="762" width="240" height="80" rx="4"/>
+  <text class="t" x="514" y="786">Snowflake (AWS Mumbai)</text>
+  <text class="s" x="514" y="806">group and NABH analytics</text>
+  <text class="s" x="514" y="824">→ Superset, per-hospital RLS</text>
+  <line class="e" x1="145" y1="668" x2="145" y2="760" marker-end="url(#bh)"/>
+  <line class="e" x1="280" y1="802" x2="298" y2="802" marker-end="url(#bh)"/>
+  <line class="e" x1="480" y1="802" x2="498" y2="802" marker-end="url(#bh)"/>
+
+  <!-- Platform -->
+  <rect class="ctr" x="780" y="720" width="380" height="140" rx="8"/>
+  <text class="ct" x="798" y="744">Platform &amp; security</text>
+  <text class="s" x="798" y="768">OpenTelemetry → Grafana (Loki, Tempo, Mimir) · Sentry</text>
+  <text class="s" x="798" y="788">KMS envelope keys · Secrets Manager</text>
+  <text class="s" x="798" y="808">GuardDuty · Security Hub · logs 180 days in India</text>
+  <text class="s" x="798" y="828">Terraform · GitHub Actions · dev / staging / prod</text>
+  <text class="s" x="798" y="848">DR: Hyderabad ap-south-2 · RPO 5 min · RTO 1 h</text>
+
+  <!-- External + hospital site -->
+  <rect class="box" x="40" y="890" width="175" height="80" rx="6"/>
+  <text class="t" x="54" y="914">ABDM gateway</text><text class="s" x="54" y="934">ABHA, HIP/HIU, consent</text><text class="s" x="54" y="952">via interop gateway</text>
+  <rect class="box" x="232" y="890" width="175" height="80" rx="6"/>
+  <text class="t" x="246" y="914">NHCX</text><text class="s" x="246" y="934">national claims exchange</text><text class="s" x="246" y="952">FHIR claim bundles</text>
+  <rect class="box" x="424" y="890" width="175" height="80" rx="6"/>
+  <text class="t" x="438" y="914">Razorpay</text><text class="s" x="438" y="934">UPI, cards, refunds</text><text class="s" x="438" y="952">webhooks → billing</text>
+  <rect class="box" x="616" y="890" width="164" height="80" rx="6"/>
+  <text class="t" x="630" y="914">Snowstorm</text><text class="s" x="630" y="934">SNOMED CT India</text><text class="s" x="630" y="952">+ LOINC, ICD-10</text>
+  <rect class="box" x="800" y="890" width="360" height="80" rx="6"/>
+  <text class="t" x="816" y="914">Hospital site · DocPad edge agent</text>
+  <text class="s" x="816" y="934">lab analysers (ASTM / HL7), PACS, label printers</text>
+  <text class="s" x="816" y="952">store-and-forward when the internet drops</text>
+  <path class="e" d="M1140 440 H1180 V930 H1162" marker-end="url(#bh)"/>
+  <text class="lbl" x="1112" y="878">LAN</text>
+</svg>
+    </div>
+    <figcaption><b>Writes go through one API, and every change becomes an event.</b> Teal boxes are carried over from today: the Next.js UI and the Postgres data model, including its RLS, safety triggers and billing identities. Everything else is new. The Core API writes each change together with an outbox row in a single transaction. Debezium then publishes it to Kafka for search, notifications, FHIR and analytics. Nothing writes to the database directly from the browser.</figcaption>
+  </figure>
+
+  <h3>What each layer is responsible for</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Layer</th><th>Responsibility</th></tr></thead>
+    <tbody>
+      <tr><td>Edge</td><td>Blocks attacks and rate-limits each tenant before traffic reaches compute. Partners and devices authenticate with mTLS.</td></tr>
+      <tr><td>BFF</td><td>Renders pages and holds the session. Refresh tokens never reach browser storage. Pushes live queues (beds, lab, reception) over server-sent events.</td></tr>
+      <tr><td>Identity &amp; access</td><td>Keycloak authenticates staff (SSO for chains, mandatory MFA) and patients (OTP or ABHA). Cerbos authorises each action by role, hospital, facility and care relationship. Break-glass access requires a reason and alerts the DPO.</td></tr>
+      <tr><td>Core API</td><td>Owns every write. Validates with shared Zod schemas, sets <code>app.hospital_id</code> per transaction for RLS, and writes the outbox row.</td></tr>
+      <tr><td>Postgres</td><td>Keeps the invariants: prescription hard stops, the finalized-encounter lock, invoice identities, numbering and RLS. Orchestration (auto-billing chains, task generation, FHIR building) moves out of triggers into modules.</td></tr>
+      <tr><td>Temporal</td><td>Runs multi-day processes with retries: pre-auth to claim to settlement, discharge clearance, ABDM consent and hospital onboarding.</td></tr>
+      <tr><td>AI gateway</td><td>The only route out to any model. Redacts identifiers, enforces quotas per tenant, logs prompts, and runs evaluations. Clinical output stays a draft until a clinician confirms it.</td></tr>
+      <tr><td>Edge agent</td><td>A small container on the hospital LAN that talks to analysers, PACS and printers, and buffers data during outages.</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 10 -->
+  <h2 id="compare">10. Current vs target</h2>
+  <p>The main structural change is to the write path. Today the browser writes to tables and triggers do the rest. In the target, the API owns writes, the database guards invariants, and events drive everything downstream.</p>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+flowchart LR
+  subgraph NOW[Current write path]
+    direction TB
+    B1[Browser] -- supabase-js, JWT --> PR[PostgREST]
+    PR --> T1[(Tables)]
+    T1 -- ~90 triggers --> T1
+    T1 -. pg_cron, Vercel cron .-> X1[Twilio, Resend]
+  end
+  subgraph TGT[Target write path]
+    direction TB
+    B2[Browser] --> BFF[BFF]
+    BFF --> API[Core API: validate, authorise]
+    API -- one transaction --> T2[(Tables + outbox)]
+    T2 -- invariant triggers only --> T2
+    T2 -- Debezium --> K[[Kafka]]
+    K --> C1[Notifications]
+    K --> C2[Search index]
+    K --> C3[FHIR and ABDM]
+    K --> C4[Lakehouse]
+  end
+</pre>
+    </div>
+    <figcaption><b>Side effects move from triggers to events.</b> Safety and money invariants stay in Postgres. Everything that reacts to a change (messages, search, interoperability, analytics) consumes events, so a failure there cannot block a clinical write.</figcaption>
+  </figure>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Concern</th><th>Current</th><th>Target</th></tr></thead>
+    <tbody>
+      <tr><td>Hosting</td><td>Vercel + one Supabase project; no staging</td><td>AWS ap-south-1 cells; dev, staging, prod and PR previews; DR in ap-south-2</td></tr>
+      <tr><td>Write path</td><td>Browser → PostgREST → tables</td><td>Browser → BFF → Core API → Postgres (RLS kept as backstop)</td></tr>
+      <tr><td>Business logic</td><td>~300 SQL functions, ~90 triggers</td><td>Invariants in SQL; orchestration in domain modules and events</td></tr>
+      <tr><td>Tenancy</td><td><code>hospital_id</code>; split <code>hospitals</code> / <code>organizations</code>; one hospital per practitioner</td><td>Group → hospital → facility; tenant catalog; pooled and silo tiers; practitioner affiliations</td></tr>
+      <tr><td>Identity</td><td>Email and password; no MFA</td><td>Keycloak SSO and MFA; patient OTP or ABHA; Cerbos policies; break-glass</td></tr>
+      <tr><td>Async work</td><td>pg_cron, Vercel cron; retries happen inside requests</td><td>Outbox → Kafka; SQS jobs with DLQs; Temporal workflows</td></tr>
+      <tr><td>Cache</td><td>None</td><td>Valkey</td></tr>
+      <tr><td>Search</td><td>ILIKE, pg_trgm</td><td>OpenSearch with phonetic matching for Indian names; pgvector for semantic search</td></tr>
+      <tr><td>Analytics</td><td>~30 RPCs on the OLTP primary</td><td>Read replica for hospital dashboards; lakehouse + Snowflake for groups</td></tr>
+      <tr><td>Interop</td><td>FHIR bundle built in SQL; ABDM skeleton, not running</td><td>HAPI FHIR facade; ABDM M1–M3 certified; NHCX claims</td></tr>
+      <tr><td>Devices</td><td>None; ECG captured as a photo</td><td>Integration engine + edge agent: HL7 v2, ASTM, DICOM</td></tr>
+      <tr><td>AI</td><td>Gemini API key (shipped to browser); PHI sent; no confirmation gate</td><td>AI gateway, Vertex in an India region, redaction, clinician confirmation, evaluations</td></tr>
+      <tr><td>Messaging</td><td>Twilio and Resend called ad hoc; reminders never sent</td><td>Notification service: WhatsApp BSP, DLT SMS, SES, push; consent-aware</td></tr>
+      <tr><td>Observability</td><td><code>console.*</code></td><td>OpenTelemetry, Grafana, Sentry, SLOs per module and tenant</td></tr>
+      <tr><td>Backups</td><td>Cannot be decrypted</td><td>PITR, snapshots, cross-region copy, per-tenant export, quarterly restore drills</td></tr>
+      <tr><td>Schema</td><td>Drifted; core DDL missing; untyped queries</td><td>Committed baseline, generated types, drift gate blocks merge</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 11 -->
+  <h2 id="stack">11. Recommended tech stack</h2>
+  <p>Each component has a target choice and an interim option for when moving to the target is not yet worth the cost. The interim column lets the team start on Supabase and move hosting later without redesigning anything.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Component</th><th>Target</th><th>Interim / alternative</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Cloud &amp; region</td><td>AWS ap-south-1 Mumbai; DR ap-south-2 Hyderabad</td><td>Supabase Team/Enterprise on ap-south-1</td><td>India residency in two regions</td></tr>
+      <tr><td>Staff UI</td><td>Next.js 16, React 19, Tailwind 4, Radix</td><td>keep</td><td>Existing investment</td></tr>
+      <tr><td>UI hosting</td><td>ECS Fargate behind CloudFront</td><td>Vercel pinned to <code>bom1</code></td><td>Keeps PHI-rendering SSR in the VPC</td></tr>
+      <tr><td>Patient app</td><td>Expo (React Native)</td><td>PWA</td><td>Shares TypeScript models and validation</td></tr>
+      <tr><td>Core API</td><td>NestJS + Kysely, generated types</td><td>Next.js route handlers</td><td>Typed modules, testable, same language</td></tr>
+      <tr><td>Contracts</td><td>Zod shared FE/BE, generated OpenAPI</td><td>—</td><td>One schema for form, API and docs</td></tr>
+      <tr><td>Identity</td><td>Keycloak</td><td>Cognito; Supabase Auth with forced MFA</td><td>SSO, MFA, OTP, hosted in India</td></tr>
+      <tr><td>Authorisation</td><td>Cerbos</td><td>OpenFGA; RLS only</td><td>Care-relationship rules, decision audit</td></tr>
+      <tr><td>Workflows</td><td>Temporal</td><td>AWS Step Functions</td><td>Durable multi-day processes</td></tr>
+      <tr><td>Jobs</td><td>Amazon SQS + workers</td><td>pg_cron</td><td>Retries, dead-letter queues</td></tr>
+      <tr><td>OLTP database</td><td>Aurora PostgreSQL 17</td><td>Supabase Postgres + PITR + replica</td><td>Keeps all SQL, tests and RLS</td></tr>
+      <tr><td>Pooling</td><td>RDS Proxy</td><td>Supavisor</td><td>Connection limits per tenant</td></tr>
+      <tr><td>Cache</td><td>ElastiCache Valkey</td><td>Upstash Redis (India)</td><td>Locks, rate limits, hot reference data</td></tr>
+      <tr><td>Search</td><td>Amazon OpenSearch</td><td>pg_trgm + pgvector up to ~5M patients</td><td>Phonetic and transliterated names</td></tr>
+      <tr><td>Vectors</td><td>pgvector (HNSW)</td><td>—</td><td>Embeddings stay next to their rows</td></tr>
+      <tr><td>Objects</td><td>S3 + KMS + Object Lock</td><td>Supabase Storage</td><td>Retention lock, lifecycle, replication</td></tr>
+      <tr><td>Events</td><td>Amazon MSK (Kafka) + Debezium</td><td>Confluent Cloud Mumbai; EventBridge at small scale</td><td>Ordered, replayable domain events</td></tr>
+      <tr><td>Terminology</td><td>Snowstorm (SNOMED CT India), LOINC, ICD-10</td><td>CSIRO Ontoserver</td><td>SOW names Snowstorm; no PHI fragments sent out</td></tr>
+      <tr><td>FHIR</td><td>HAPI FHIR R4, NRCES profiles</td><td>SQL-built bundles</td><td>Conformance for ABDM and NHCX</td></tr>
+      <tr><td>Devices</td><td>HAPI HL7 v2, ASTM parsers, Orthanc + OHIF</td><td>—</td><td>Analysers and PACS on the hospital LAN</td></tr>
+      <tr><td>AI</td><td>Vertex AI Gemini behind the AI gateway; in-house medical ASR on GPU</td><td>Gemini API with a server-side key only</td><td>Residency, contract terms, redaction</td></tr>
+      <tr><td>Messaging</td><td>WhatsApp BSP, DLT SMS provider, SES, FCM/APNs</td><td>Twilio + Resend</td><td>TRAI DLT rules, cost</td></tr>
+      <tr><td>Payments</td><td>Razorpay</td><td>—</td><td>UPI, refunds, reconciliation</td></tr>
+      <tr><td>Lakehouse</td><td>S3 + Apache Iceberg</td><td>—</td><td>Open format, replayable</td></tr>
+      <tr><td>Transform</td><td>dbt</td><td>—</td><td>Tested SQL models</td></tr>
+      <tr><td>Warehouse</td><td>Snowflake (AWS Mumbai)</td><td>Redshift; Athena on Iceberg</td><td>Governance, sharing data with groups</td></tr>
+      <tr><td>BI</td><td>Apache Superset, embedded with RLS</td><td>Metabase</td><td>Embeddable per tenant</td></tr>
+      <tr><td>Catalog</td><td>OpenMetadata</td><td>DataHub</td><td>PII tags, lineage</td></tr>
+      <tr><td>Observability</td><td>OpenTelemetry + Grafana (Loki, Tempo, Mimir) + Sentry</td><td>Datadog</td><td>End-to-end traces</td></tr>
+      <tr><td>IaC &amp; CI</td><td>Terraform, GitHub Actions, Trivy, Semgrep</td><td>—</td><td>Reproducible environments</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 12 -->
+  <h2 id="tdata">12. Target data platform</h2>
+  <p>Data has three homes, each with a different job. Postgres is the system of record for one hospital's live operations. Kafka carries every change in commit order. The lakehouse holds history and anything that compares hospitals. Hospital dashboards run from a read replica. Group and network analytics run from Snowflake on de-identified data.</p>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+flowchart LR
+  subgraph SRC[Sources]
+    UI[Staff and patient apps]
+    DEV[Analysers and PACS via edge agent]
+    EXT[ABDM, NHCX, payment webhooks]
+    REF[Terminology releases]
+  end
+  UI --> API[Core API]
+  DEV --> IE[Integration engine] --> API
+  EXT --> INT[Interop gateway] --> API
+  REF --> TS[Snowstorm]
+  API --> PG[(PostgreSQL)]
+  PG --> OB[outbox]
+  OB -- Debezium --> K[[Kafka topics by domain]]
+  K --> SE[OpenSearch indexer]
+  K --> NO[Notification service]
+  K --> FH[HAPI FHIR facade]
+  K --> BR[(Bronze: raw events)]
+  BR -- dbt --> SI[(Silver: conformed, pseudonymised)]
+  SI -- dbt --> GO[(Gold: marts)]
+  GO --> SF[(Snowflake)]
+  SF --> BI[Superset per hospital and group]
+  SI --> ML[Consented, de-identified AI datasets]
+  PG --> RR[(Read replica)] --> OPS[Hospital dashboards]
+</pre>
+    </div>
+    <figcaption><b>Analytics never queries the clinical primary.</b> Hospital dashboards read a replica. Anything that crosses hospitals reads de-identified silver and gold tables, filtered by DPDPA purpose consent.</figcaption>
+  </figure>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Layer</th><th>Contents</th><th>Who can read it</th></tr></thead>
+    <tbody>
+      <tr><td>Operational</td><td>Normalised tables, one owning module each</td><td>Core API only; RLS as backstop</td></tr>
+      <tr><td>Read replica</td><td>Materialised views replacing today's ~30 <code>get_*</code> RPCs</td><td>Dashboards for one hospital</td></tr>
+      <tr><td>Bronze</td><td>Raw CDC events, immutable, partitioned by <code>hospital_id</code> and date</td><td>Data engineering</td></tr>
+      <tr><td>Silver</td><td>Conformed, FHIR-shaped entities; patient IDs replaced with keyed tokens</td><td>Analysts with a stated purpose</td></tr>
+      <tr><td>Gold</td><td>Marts: revenue cycle, OPD flow, occupancy and length of stay, NABH indicators, pharmacy, claim turnaround</td><td>BI with tenant and group RLS</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Data model changes</h3>
+  <p>These changes are additive and can be migrated one at a time. The biggest is separating a person from a patient registration, so that one human can be a patient at several hospitals in a group.</p>
+  <figure><div class="scroll">
+<pre class="mermaid">
+erDiagram
+  tenant_groups ||--o{ hospitals : owns
+  hospitals ||--o{ facilities : operates
+  facilities ||--o{ departments : has
+  persons ||--o{ patient_registrations : "registered as"
+  hospitals ||--o{ patient_registrations : issues
+  persons ||--o{ abha_links : links
+  patient_registrations ||--o{ care_team_members : "cared for by"
+  practitioners ||--o{ practitioner_affiliations : "works at"
+  hospitals ||--o{ practitioner_affiliations : employs
+  patient_registrations ||--o{ consent_artifacts : grants
+  hospitals ||--o{ outbox_events : emits
+  tenant_groups {
+    uuid id PK
+    text name
+    text isolation_tier "pooled or silo"
+    text cell_id
+  }
+  hospitals {
+    uuid id PK
+    uuid tenant_group_id FK
+    text hfr_id
+    text gstin
+  }
+  facilities {
+    uuid id PK
+    uuid hospital_id FK
+    text type "hospital, clinic, lab, pharmacy"
+  }
+  persons {
+    uuid id PK
+    text abha_number
+    text name_phonetic_key
+  }
+  patient_registrations {
+    uuid id PK
+    uuid person_id FK
+    uuid hospital_id FK
+    text mrn "CR number"
+  }
+  practitioner_affiliations {
+    uuid practitioner_id FK
+    uuid hospital_id FK
+    text role
+    text privileges
+  }
+  outbox_events {
+    bigint id PK
+    uuid hospital_id
+    text aggregate_type
+    text event_type
+    jsonb payload
+  }
+</pre>
+  </div><figcaption><b>Persons span hospitals; registrations belong to one.</b> <code>organizations</code> merges into <code>hospitals</code>. <code>practitioner_affiliations</code> lets a visiting consultant work at several hospitals with one login.</figcaption></figure>
+
+  <!-- 13 -->
+  <h2 id="multi">13. Multi-hospital operation</h2>
+  <div class="two">
+<pre class="code">Platform (DocPad)
+ └─ Cell  (full stack in one region,
+           serves N hospital groups)
+     └─ Tenant group  (chain or owner;
+                       billing customer)
+         └─ Hospital  (legal entity: HFR ID,
+                       GSTIN, NABH, letterhead)
+             └─ Facility  (branch, clinic,
+                           lab, pharmacy)
+                 └─ Department / ward / OT</pre>
+    <div>
+      <p>A small platform database, the <b>tenant catalog</b>, maps each hospital to its cell and its database. The BFF reads it at login and caches it.</p>
+      <p><b>Cells</b> limit the blast radius. One failed deployment or overloaded database affects one cell's hospitals, not all of them.</p>
+      <p>Moving a tenant from the pooled tier to the silo tier is a scripted operation: logical replication filtered by <code>hospital_id</code>, then a cutover.</p>
+    </div>
+  </div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Isolation tier</th><th>Who</th><th>Database</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Pooled</td><td>Clinics, small and mid-size hospitals (default)</td><td>Shared Aurora cluster in a cell, RLS on <code>hospital_id</code></td><td>Lowest cost; noisy-neighbour limits</td></tr>
+      <tr><td>Silo</td><td>Large groups, or contracts that require it</td><td>Dedicated Aurora cluster</td><td>Same code and schema; routed by the tenant catalog</td></tr>
+      <tr><td>Edge</td><td>Any hospital</td><td>Local buffer only</td><td>Edge agent for devices, printers and offline capture</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Operation</th><th>How the target handles it</th></tr></thead>
+    <tbody>
+      <tr><td>Onboarding</td><td>A Temporal workflow creates the tenant, cell mapping and Keycloak organisation, seeds versioned master data (charges, wards, formulary, templates, consent forms) and invites the admins. Goal: under one day, with no engineer involved.</td></tr>
+      <tr><td>Configuration</td><td>Per-tenant flags, price lists, taxes, languages, numbering and clinical templates are stored as versioned configuration, not code.</td></tr>
+      <tr><td>Hospital groups</td><td>Group roles see aggregated dashboards. Patient detail requires a care relationship or break-glass access.</td></tr>
+      <tr><td>Shared patients</td><td>A group-level patient index links registrations. Clinicians see other branches' history when consent allows, labelled with the source hospital.</td></tr>
+      <tr><td>Visiting consultants</td><td>One login with several affiliations. The user picks a hospital context, and every action is scoped to it.</td></tr>
+      <tr><td>Noisy neighbours</td><td>Rate limits, statement timeouts, connection budgets and queue partitions, all per tenant.</td></tr>
+      <tr><td>Support access</td><td>Time-boxed, approved by the hospital admin, audited and visible to the hospital.</td></tr>
+      <tr><td>Backup &amp; exit</td><td>Per-tenant FHIR bulk export plus documents, used for DPDPA portability, contract exit and single-tenant restore.</td></tr>
+      <tr><td>Metering</td><td>Usage events (encounters, beds, AI minutes, messages) are aggregated per tenant for SaaS billing.</td></tr>
+      <tr><td>Releases</td><td>Ring deployment: internal tenant, then pilot hospitals, then everyone. Feature flags separate deploying a feature from turning it on.</td></tr>
+      <tr><td>Incidents</td><td>SLOs and alerts per tenant, a status page, a runbook for CERT-In's 6-hour reporting deadline, and DPO notification.</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 14 -->
+  <h2 id="personas">14. Personas</h2>
+  <p>Today the proxy routes six staff roles: doctor, nurse, pharmacist, receptionist, lab and admin. Patients only see the public <code>/rx</code> page. The target defines each persona as a policy set in Cerbos, not a role string. Cards marked <span class="new">new</span> have no home in the app today.</p>
+
+  <h3>Clinical</h3>
+  <div class="pp">
+    <div><span class="ch">web · tablet</span><h4>Doctor, OPD consultant</h4><p>Queue, consult, voice notes, prescribe, order, refer, follow-up.</p><p class="sc">Own patients plus department; group history with consent.</p></div>
+    <div><span class="ch">web · tablet</span><h4>Doctor, IPD / intensivist</h4><p>Rounds, progress notes, orders, consults, discharge.</p><p class="sc">Admitted patients on their own service.</p></div>
+    <div><span class="ch">web · tablet</span><h4>Visiting consultant <span class="new">new</span></h4><p>Consults across several hospitals with one login.</p><p class="sc">Per affiliation, per consult.</p></div>
+    <div><span class="ch">tablet</span><h4>Surgeon / anaesthetist <span class="new">new</span></h4><p>PAC, OT schedule, safety checklist, operation notes, implants.</p><p class="sc">Scheduled surgical patients.</p></div>
+    <div><span class="ch">tablet · offline</span><h4>Nurse, ward / ICU</h4><p>MAR, vitals, intake and output, tasks, handover, wound care.</p><p class="sc">Assigned ward and shift.</p></div>
+    <div><span class="ch">web</span><h4>Nursing superintendent <span class="new">new</span></h4><p>Staffing, bed board, quality audits, escalations.</p><p class="sc">All wards in the hospital.</p></div>
+    <div><span class="ch">web · edge agent</span><h4>Lab technician</h4><p>Sample collection, analyser results, validation.</p><p class="sc">Orders and results for their own lab.</p></div>
+    <div><span class="ch">web · PACS viewer</span><h4>Pathologist / radiologist <span class="new">new</span></h4><p>Reporting, sign-off, critical-value calls.</p><p class="sc">Orders and images for their department.</p></div>
+    <div><span class="ch">web</span><h4>Pharmacist</h4><p>Dispense, substitute, returns, stock.</p><p class="sc">Prescriptions and inventory.</p></div>
+  </div>
+
+  <h3>Administrative &amp; governance</h3>
+  <div class="pp">
+    <div><span class="ch">web</span><h4>Front desk / registration</h4><p>Register patients, resolve duplicates, book, issue tokens, check in.</p><p class="sc">Demographics and schedule.</p></div>
+    <div><span class="ch">web</span><h4>Billing / cashier <span class="new">new</span></h4><p>Charges, invoices, payments, refunds, shift reconciliation.</p><p class="sc">Financial records; no clinical notes.</p></div>
+    <div><span class="ch">web</span><h4>Insurance / TPA desk <span class="new">new</span></h4><p>Coverage, pre-auth, claims, NHCX, query responses.</p><p class="sc">Claims plus the clinical extracts they require.</p></div>
+    <div><span class="ch">web</span><h4>Store / procurement <span class="new">new</span></h4><p>Indents, purchase orders, vendors, expiry.</p><p class="sc">Inventory and vendors.</p></div>
+    <div><span class="ch">web</span><h4>Medical records officer <span class="new">new</span></h4><p>ICD-10 coding, record completeness, release of information.</p><p class="sc">Hospital-wide records; every release audited.</p></div>
+    <div><span class="ch">web</span><h4>Quality / infection control <span class="new">new</span></h4><p>NABH indicators, incident reports, infection surveillance.</p><p class="sc">De-identified quality data.</p></div>
+    <div><span class="ch">web</span><h4>Hospital admin / MS</h4><p>Staff, masters, pricing, operational dashboards.</p><p class="sc">Hospital configuration and reports.</p></div>
+    <div><span class="ch">web · mobile</span><h4>Group executive <span class="new">new</span></h4><p>Network analytics and benchmarking across hospitals.</p><p class="sc">Aggregated group data only.</p></div>
+    <div><span class="ch">web</span><h4>Data protection officer <span class="new">new</span></h4><p>DPDPA requests, consent register, breach workflow.</p><p class="sc">Consent records and audit logs.</p></div>
+  </div>
+
+  <h3>Patients &amp; partners</h3>
+  <div class="pp">
+    <div><span class="ch">app · WhatsApp</span><h4>Patient <span class="new">new</span></h4><p>Book, pay, view reports and prescriptions, manage consent, link ABHA.</p><p class="sc">Own records.</p></div>
+    <div><span class="ch">app</span><h4>Caregiver / guardian <span class="new">new</span></h4><p>Acts for a minor or a dependent patient.</p><p class="sc">Delegated, time-bound access.</p></div>
+    <div><span class="ch">partner portal</span><h4>Referring doctor <span class="new">new</span></h4><p>Refers patients; receives discharge summaries and results.</p><p class="sc">Referred patients only.</p></div>
+    <div><span class="ch">NHCX · API</span><h4>TPA / insurer <span class="new">new</span></h4><p>Adjudicates pre-auth requests and claims.</p><p class="sc">Claim bundles they are party to.</p></div>
+    <div><span class="ch">partner API</span><h4>External lab <span class="new">new</span></h4><p>Receives orders and returns results.</p><p class="sc">Orders sent to them.</p></div>
+    <div><span class="ch">internal console</span><h4>DocPad operator / SRE <span class="new">new</span></h4><p>Tenant onboarding, incidents, support.</p><p class="sc">Metadata only; PHI only through approved, audited access.</p></div>
+  </div>
+
+  <!-- 15 -->
+  <h2 id="waf">15. Well-Architected review</h2>
+  <p>This section scores today's build against the six pillars of the AWS Well-Architected Framework and its SaaS Lens.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Pillar</th><th>Current</th><th>Target practice</th></tr></thead>
+    <tbody>
+      <tr><td>Operational excellence</td><td>No staging; CI tests prod and passes green when the DB secret is missing; schema drift; <code>console.*</code> only</td><td>Environments and previews; IaC; drift gate; OpenTelemetry and SLOs; runbooks; ring deployments behind flags</td></tr>
+      <tr><td>Security</td><td>Strong, tested RLS and append-only audit. But the browser writes to tables, the leaked Gemini key is not rotated, there is no MFA, two buckets are public, and the admin client falls back to the anon key.</td><td>WAF; Keycloak with MFA; Cerbos + RLS; server-side, rotated secrets; KMS; AI redaction; private buckets with signed URLs; SIEM; VAPT; ISO 27001</td></tr>
+      <tr><td>Reliability</td><td>One project in one region; backups cannot be decrypted; no queue; one edge function is missing</td><td>Multi-AZ and cross-region DR; restore drills; outbox + Kafka; Temporal retries; DLQs; offline PWA; store-and-forward agent</td></tr>
+      <tr><td>Performance</td><td>Analytics run on the primary; ILIKE search; no cache; ~90 triggers on the write path</td><td>Replicas and materialised views; OpenSearch; Valkey; partitioned time-series tables; load tests per release</td></tr>
+      <tr><td>Cost</td><td>Low today; AI calls unbounded; no cost visibility per tenant</td><td>Cost tags and metering per tenant; AI quotas; S3 lifecycle; Graviton; savings plans</td></tr>
+      <tr><td>Sustainability</td><td>Not considered</td><td>Right-sized cells, Graviton, cold-storage tiers, small models where they suffice</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 16 -->
+  <h2 id="roadmap">16. MVP plan &amp; roadmap</h2>
+  <p>The delivery plan has two hard dates: a <b>demo on Fri 30 Oct 2026</b> and a <b>working MVP live with pilot hospitals on Fri 18 Dec 2026</b>. Neither date leaves room to re-platform. The MVP therefore ships on today's stack, Supabase and Vercel (the "interim" column in section 11), with the safety, security and multi-hospital fixes a real hospital needs. The target architecture is then reached step by step after launch, one track at a time, without stopping feature work.</p>
+
+  <figure>
+    <div class="scroll">
+<svg class="arch tl" viewBox="0 0 1200 720" role="img" aria-label="Delivery timeline: demo track in weeks 1 and 2 ending Friday 30 October 2026; MVP work in weeks 1 to 9 ending Friday 18 December 2026; six platform tracks continue from January 2027.">
+<text class="wk" x="340" y="44" text-anchor="middle">W1</text><text class="s" x="340" y="60" text-anchor="middle">19 Oct</text>
+<line class="grid" x1="300" y1="68" x2="300" y2="704"/>
+<text class="wk" x="420" y="44" text-anchor="middle">W2</text><text class="s" x="420" y="60" text-anchor="middle">26 Oct</text>
+<line class="grid" x1="380" y1="68" x2="380" y2="704"/>
+<text class="wk" x="500" y="44" text-anchor="middle">W3</text><text class="s" x="500" y="60" text-anchor="middle">2 Nov</text>
+<line class="grid" x1="460" y1="68" x2="460" y2="704"/>
+<text class="wk" x="580" y="44" text-anchor="middle">W4</text><text class="s" x="580" y="60" text-anchor="middle">9 Nov</text>
+<line class="grid" x1="540" y1="68" x2="540" y2="704"/>
+<text class="wk" x="660" y="44" text-anchor="middle">W5</text><text class="s" x="660" y="60" text-anchor="middle">16 Nov</text>
+<line class="grid" x1="620" y1="68" x2="620" y2="704"/>
+<text class="wk" x="740" y="44" text-anchor="middle">W6</text><text class="s" x="740" y="60" text-anchor="middle">23 Nov</text>
+<line class="grid" x1="700" y1="68" x2="700" y2="704"/>
+<text class="wk" x="820" y="44" text-anchor="middle">W7</text><text class="s" x="820" y="60" text-anchor="middle">30 Nov</text>
+<line class="grid" x1="780" y1="68" x2="780" y2="704"/>
+<text class="wk" x="900" y="44" text-anchor="middle">W8</text><text class="s" x="900" y="60" text-anchor="middle">7 Dec</text>
+<line class="grid" x1="860" y1="68" x2="860" y2="704"/>
+<text class="wk" x="980" y="44" text-anchor="middle">W9</text><text class="s" x="980" y="60" text-anchor="middle">14 Dec</text>
+<line class="grid" x1="940" y1="68" x2="940" y2="704"/>
+<line class="grid" x1="1020" y1="68" x2="1020" y2="704"/>
+<text class="wk" x="1110" y="44" text-anchor="middle">2027 →</text><text class="s" x="1110" y="60" text-anchor="middle">continuous</text>
+<line class="ms" x1="460" y1="28" x2="460" y2="704"/><text class="msl" x="466" y="22">Demo · Fri 30 Oct</text>
+<line class="msd" x1="940" y1="68" x2="940" y2="494"/><text class="s" x="934" y="84" text-anchor="end">code freeze</text>
+<line class="ms" x1="1020" y1="28" x2="1020" y2="704"/><text class="msl" x="1014" y="22" text-anchor="end">MVP live · Fri 18 Dec</text>
+<text class="gh" x="20" y="92">DEMO TRACK</text>
+<text class="rl" x="20" y="120">Demo environment + seeded hospital</text><rect class="bd" x="302" y="106" width="76" height="18" rx="3"/>
+<rect class="stripe" x="10" y="130" width="1180" height="30"/><text class="rl" x="20" y="150">Golden-path fixes, OPD → billing</text><rect class="bd" x="302" y="136" width="156" height="18" rx="3"/>
+<text class="rl" x="20" y="180">Hide stubs, fix chrome, rehearse</text><rect class="bd" x="382" y="166" width="76" height="18" rx="3"/>
+<text class="gh" x="20" y="214">MVP MUST-HAVES</text>
+<text class="rl" x="20" y="242">Security: keys, MFA, buckets</text><rect class="ba" x="302" y="228" width="316" height="18" rx="3"/>
+<rect class="stripe" x="10" y="252" width="1180" height="30"/><text class="rl" x="20" y="272">Ops: Sentry, CI on staging, DDL, PITR</text><rect class="ba" x="382" y="258" width="236" height="18" rx="3"/>
+<text class="rl" x="20" y="302">Clinical safety: AI gate, DDI, discharge</text><rect class="ba" x="462" y="288" width="316" height="18" rx="3"/>
+<rect class="stripe" x="10" y="312" width="1180" height="30"/><text class="rl" x="20" y="332">Routes, RBAC, nursing tablet layouts</text><rect class="ba" x="462" y="318" width="316" height="18" rx="3"/>
+<text class="rl" x="20" y="362">Multi-hospital onboarding + config</text><rect class="ba" x="542" y="348" width="316" height="18" rx="3"/>
+<rect class="stripe" x="10" y="372" width="1180" height="30"/><text class="rl" x="20" y="392">IPD, lab, billing, insurance end to end</text><rect class="ba" x="542" y="378" width="396" height="18" rx="3"/>
+<text class="rl" x="20" y="422">Notifications: reminders, invites</text><rect class="ba" x="622" y="408" width="156" height="18" rx="3"/>
+<rect class="stripe" x="10" y="432" width="1180" height="30"/><text class="rl" x="20" y="452">ABDM M1: ABHA create, verify, link</text><rect class="bx" x="302" y="438" width="636" height="18" rx="3"/><text class="bn" x="310" y="451">depends on NHA sandbox credentials; apply in W1</text>
+<text class="rl" x="20" y="482">UAT, load + security test, go-live</text><rect class="ba" x="782" y="468" width="236" height="18" rx="3"/>
+<text class="gh" x="20" y="516">AFTER MVP · CONTINUOUS TRACKS</text>
+<text class="rl" x="20" y="544">BFF + Core API (strangler), outbox, Valkey</text><path class="bp" d="M1042 530 H1170 L1180 539 L1170 548 H1042 Z"/>
+<rect class="stripe" x="10" y="554" width="1180" height="30"/><text class="rl" x="20" y="574">Keycloak + Cerbos, practitioner affiliations</text><path class="bp" d="M1042 560 H1170 L1180 569 L1170 578 H1042 Z"/>
+<text class="rl" x="20" y="604">ABDM M2–M3, HAPI FHIR, NHCX</text><path class="bp" d="M1042 590 H1170 L1180 599 L1170 608 H1042 Z"/>
+<rect class="stripe" x="10" y="614" width="1180" height="30"/><text class="rl" x="20" y="634">Kafka CDC, lakehouse, Snowflake</text><path class="bp" d="M1042 620 H1170 L1180 629 L1170 638 H1042 Z"/>
+<text class="rl" x="20" y="664">Edge agent, patient app, Razorpay</text><path class="bp" d="M1042 650 H1170 L1180 659 L1170 668 H1042 Z"/>
+<rect class="stripe" x="10" y="674" width="1180" height="30"/><text class="rl" x="20" y="694">AWS cells, Hyderabad DR, OpenSearch</text><path class="bp" d="M1042 680 H1170 L1180 689 L1170 698 H1042 Z"/>
+</svg>
+    </div>
+    <figcaption><b>Nine weeks to MVP; the rest runs as continuous tracks.</b> Orange bars are demo work, teal bars are MVP must-haves, and the dashed bar is blocked on an external party. Grey arrows are post-MVP tracks that start in January and deliver in small releases behind feature flags. Assumes 3–4 engineers, 1 QA and a product owner available for UAT.</figcaption>
+  </figure>
+
+  <h3>Demo · Fri 30 Oct (2 weeks)</h3>
+  <p>The demo is one scripted patient journey through the modules that work today, run on a separate demo project with seeded data. Unfinished screens are hidden through <code>hospitals.enabled_modules</code>, not shown as stubs.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Step</th><th>Persona</th><th>What the audience sees</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Front desk</td><td>Register a patient, catch a duplicate, book an appointment and issue a token</td></tr>
+      <tr><td>2</td><td>Doctor</td><td>OPD consult with voice dictation, a SNOMED diagnosis and vitals</td></tr>
+      <tr><td>3</td><td>Doctor</td><td>Prescribe; an allergy hard stop fires; finalise and lock the encounter</td></tr>
+      <tr><td>4</td><td>Patient</td><td>Receive the WhatsApp prescription and open the <code>/rx</code> link</td></tr>
+      <tr><td>5</td><td>Pharmacist</td><td>Dispense from stock</td></tr>
+      <tr><td>6</td><td>Lab</td><td>Enter a result from a photographed report (OCR)</td></tr>
+      <tr><td>7</td><td>Billing</td><td>Auto-generated invoice, payment, shift reconciliation</td></tr>
+      <tr><td>8</td><td>Admin</td><td>Operational dashboard and the audit trail of every step above</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tbl"><table>
+    <thead><tr><th>Week</th><th>Demo work</th></tr></thead>
+    <tbody>
+      <tr><td>W1 · 19–23 Oct</td><td>Dump the production schema into a committed baseline (<code>scripts/build-baseline-migration.mjs</code>). Create a separate demo/staging Supabase project from it. Seed it with <code>npm run seed:demo</code>. Rotate the exposed Gemini and service-role keys. Run the script end to end and log every break.</td></tr>
+      <tr><td>W2 · 26–30 Oct</td><td>Fix breaks on the golden path only. Remove the nested header in the encounter workspace. Hide stub routes and <code>/admin/analytics/clinical</code>. Set <code>CRON_SECRET</code> so reminders fire. Do two dry runs, then the demo.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>MVP · Fri 18 Dec (weeks 3–9)</h3>
+  <p><b>MVP definition:</b> one to three pilot hospitals use DocPad on real patients for registration, OPD, prescribing, pharmacy, lab, billing, and basic IPD with nursing. Each hospital is onboarded without engineering help. Every clinical write is safe, audited and recoverable.</p>
+  <div class="two">
+    <div>
+      <h3>In the MVP</h3>
+      <ul>
+        <li>Everything on the demo path, hardened</li>
+        <li>IPD admit → notes → MAR → discharge summary → final bill</li>
+        <li>Insurance pre-auth and claim forms (manual submission)</li>
+        <li>Mandatory MFA for clinicians and admins (Supabase Auth TOTP)</li>
+        <li>Supabase PITR backups and one tested restore</li>
+        <li>Sentry, uptime checks and alerts</li>
+        <li>CI pgTAP suites run against staging, never production</li>
+        <li>AI extractions stay drafts until a doctor confirms them</li>
+        <li>Licensed or substantially expanded drug-interaction content</li>
+        <li>One canonical route tree; proxy denies by default</li>
+        <li>Tablet layouts for the nursing screens</li>
+        <li><code>organizations</code> merged into <code>hospitals</code>; scripted hospital onboarding</li>
+        <li>Working WhatsApp reminders and invite emails</li>
+        <li>ABDM M1 (ABHA), if NHA sandbox access arrives in time</li>
+      </ul>
+    </div>
+    <div>
+      <h3>After the MVP</h3>
+      <ul>
+        <li>BFF and Core API (strangler: one module at a time)</li>
+        <li>Outbox, Kafka, Valkey, OpenSearch</li>
+        <li>Keycloak, Cerbos, multi-hospital practitioner logins</li>
+        <li>ABDM M2–M3, HAPI FHIR, NHCX claims</li>
+        <li>Lakehouse and Snowflake analytics</li>
+        <li>Edge agent and lab analyser integration</li>
+        <li>Patient app and Razorpay payments</li>
+        <li>In-house speech-to-text model</li>
+        <li>Move to AWS cells with Hyderabad DR</li>
+      </ul>
+      <p class="sc">None of these is needed for 1–3 pilot hospitals. All of them are needed before scaling past roughly 20 hospitals.</p>
+    </div>
+  </div>
+
+  <h3>Priorities, re-ranked for the dates</h3>
+  <p><span class="prio p0">Demo</span> must be done by 30 Oct. <span class="prio p1">MVP</span> must be done by 18 Dec. <span class="prio p2">Post-MVP</span> is delivered continuously after launch.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>When</th><th>Gap</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td><span class="prio p0">Demo</span></td><td>No staging; core DDL missing</td><td>Baseline dump → demo/staging project</td></tr>
+      <tr><td><span class="prio p0">Demo</span></td><td>Exposed Gemini and service-role keys</td><td>Rotate; remove <code>NEXT_PUBLIC_GEMINI_API_KEY</code></td></tr>
+      <tr><td><span class="prio p0">Demo</span></td><td>Nested app chrome; stub and broken routes</td><td>Fix chrome; hide unfinished modules per hospital</td></tr>
+      <tr><td><span class="prio p0">Demo</span></td><td>Reminders never sent</td><td>Set <code>CRON_SECRET</code></td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>Backups cannot be restored</td><td>Supabase PITR; retire the custom backup code; restore drill</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>No MFA</td><td>Supabase Auth MFA, enforced in <code>proxy.ts</code></td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>AI output enters the chart unconfirmed</td><td>Confirm step; set <code>doctor_confirmed</code></td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>24 drug-interaction pairs</td><td>Licensed knowledge base (client decision needed by W3)</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>Missing <code>generate-discharge-summary</code></td><td>Point the modal at the existing compile route</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>Duplicate routes; <code>/ipd</code> outside the proxy</td><td>One tree; deny by default</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>No observability; CI hits prod</td><td>Sentry, alerts; CI on staging</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td><code>hospitals</code> / <code>organizations</code> split</td><td>Merge; scripted onboarding</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>No tablet layouts</td><td>Nursing screens at 10–11"</td></tr>
+      <tr><td><span class="prio p1">MVP</span></td><td>ABDM not running</td><td>M1 if sandbox access arrives; else first post-MVP item</td></tr>
+      <tr><td><span class="prio p2">Post-MVP</span></td><td>Browser writes directly; orchestration in triggers</td><td>BFF + Core API, outbox, Kafka</td></tr>
+      <tr><td><span class="prio p2">Post-MVP</span></td><td>One hospital per practitioner; no SSO</td><td>Keycloak, Cerbos, affiliations</td></tr>
+      <tr><td><span class="prio p2">Post-MVP</span></td><td>Analytics on the primary</td><td>Read replica, then lakehouse</td></tr>
+      <tr><td><span class="prio p2">Post-MVP</span></td><td>No devices, patient app, payments or NHCX</td><td>Edge agent, Expo app, Razorpay, NHCX</td></tr>
+      <tr><td><span class="prio p2">Post-MVP</span></td><td>External terminology; plain-text phones; retention unenforced</td><td>Snowstorm; tokenisation; retention workflow</td></tr>
+      <tr><td><span class="prio p2">Post-MVP</span></td><td>Single region</td><td>AWS cells, Hyderabad DR</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Risks to the dates</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Risk</th><th>Effect</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>NHA sandbox credentials and HFR/HPR registration</td><td>ABDM M1 slips past MVP</td><td>Apply in W1; MVP does not depend on ABDM</td></tr>
+      <tr><td>Drug-interaction licence not chosen</td><td>Prescribing safety stays weak at go-live</td><td>Client decides by W3; fallback is curating the top 500 pairs</td></tr>
+      <tr><td>Baseline dump differs from live schema</td><td>Staging behaves differently from prod</td><td>Drift check passes before the demo</td></tr>
+      <tr><td>Pilot hospital not ready for UAT in W7</td><td>Go-live slips</td><td>Name the pilot hospital and UAT leads by W4</td></tr>
+      <tr><td>Scope creep from the demo</td><td>MVP work displaced</td><td>New requests go to the post-MVP tracks by default</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>After MVP: how the target is reached</h3>
+  <p>From January, each track ships in small increments behind feature flags while product work continues. The strangler pattern moves one module at a time from direct table writes to the Core API, starting with billing because it has the clearest boundaries and the strongest tests. Hosting moves to AWS last, once every write goes through the API and every change emits an event, because that makes the move mechanical.</p>
+
+  <h3>Open decisions for the product owner</h3>
+  <ul>
+    <li>Is a shared patient record across a hospital group a product promise? The answer shapes the group patient index and the privacy notice.</li>
+    <li>Which hospitals need silo isolation by contract, and when?</li>
+    <li>Should hosting leave Supabase in Phase 3, or should Supabase Enterprise remain the host? The Postgres design is the same either way.</li>
+    <li>Which licensed drug knowledge base and which SNOMED CT India release will DocPad use?</li>
+    <li>What is the ABDM certification date tied to the SOW payment milestone?</li>
+    <li>Which hospitals are the MVP pilots, and who leads UAT at each? This is needed by W4.</li>
+  </ul>
+
+  <!-- ================= PART C ================= -->
+  <div class="part blue"><span class="eyebrow">Part C</span><h2 class="part-h">Blueprints</h2><p>The standard views an architecture board expects. Section 17 is a C4 system context diagram. Section 9 above is the C4 container view. Sections 18 and 19 are the application and integration blueprints. They describe the target, and each one marks what exists today.</p></div>
+
+  <!-- 17 -->
+  <h2 id="c4">17. C4 system context</h2>
+  <p>The C4 context view (level 1) shows DocPad as one box: who uses it and which systems it depends on. It leaves out everything inside the box. Today only three external dependencies are integrated: messaging, AI and terminology. The other nine are what the target adds.</p>
+  <figure>
+    <div class="scroll">
+<svg class="arch c4" viewBox="0 0 1200 770" role="img" aria-label="C4 system context: five groups of people use the DocPad hospital platform, which exchanges data with twelve external systems; messaging, AI and terminology are integrated today, while ABDM, NHCX, insurers, public health reporting, payments, devices, external labs, hospital SSO and a drug knowledge base are target integrations.">
+<defs><marker id="ch" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="hd"/></marker></defs>
+<line class="e" x1="140" y1="128" x2="450" y2="318" marker-end="url(#ch)"/>
+<line class="e" x1="370" y1="128" x2="525" y2="318" marker-end="url(#ch)"/>
+<line class="e" x1="600" y1="128" x2="600" y2="318" marker-end="url(#ch)"/>
+<line class="e" x1="830" y1="128" x2="675" y2="318" marker-end="url(#ch)"/>
+<line class="e" x1="1060" y1="128" x2="750" y2="318" marker-end="url(#ch)"/>
+<line class="ed" x1="410" y1="340" x2="292" y2="285" marker-start="url(#ch)" marker-end="url(#ch)"/>
+<line class="ed" x1="410" y1="380" x2="292" y2="370" marker-end="url(#ch)"/>
+<line class="ed" x1="410" y1="420" x2="292" y2="455" marker-end="url(#ch)"/>
+<line class="ed" x1="410" y1="455" x2="292" y2="540" marker-end="url(#ch)"/>
+<line class="e" x1="790" y1="340" x2="908" y2="285" marker-end="url(#ch)"/>
+<line class="e" x1="790" y1="380" x2="908" y2="370" marker-end="url(#ch)"/>
+<line class="e" x1="790" y1="420" x2="908" y2="455" marker-end="url(#ch)"/>
+<line class="ed" x1="790" y1="455" x2="908" y2="540" marker-start="url(#ch)" marker-end="url(#ch)"/>
+<line class="ed" x1="200" y1="638" x2="470" y2="472" marker-end="url(#ch)"/>
+<line class="ed" x1="560" y1="472" x2="453" y2="638" marker-start="url(#ch)" marker-end="url(#ch)"/>
+<line class="ed" x1="640" y1="472" x2="746" y2="638" marker-end="url(#ch)"/>
+<line class="ed" x1="1000" y1="638" x2="730" y2="472" marker-end="url(#ch)"/>
+<circle class="person" cx="140" cy="34" r="14"/><rect class="person" x="35" y="48" width="210" height="80" rx="14"/><text class="t" x="140" y="76" text-anchor="middle">Patients &amp; caregivers</text><text class="s" x="140" y="94" text-anchor="middle">[Person]</text><text class="s" x="140" y="112" text-anchor="middle">book, pay, view records</text>
+<circle class="person" cx="370" cy="34" r="14"/><rect class="person" x="265" y="48" width="210" height="80" rx="14"/><text class="t" x="370" y="76" text-anchor="middle">Clinical staff</text><text class="s" x="370" y="94" text-anchor="middle">[Person]</text><text class="s" x="370" y="112" text-anchor="middle">clinicians, lab, pharmacy</text>
+<circle class="person" cx="600" cy="34" r="14"/><rect class="person" x="495" y="48" width="210" height="80" rx="14"/><text class="t" x="600" y="76" text-anchor="middle">Hospital operations</text><text class="s" x="600" y="94" text-anchor="middle">[Person]</text><text class="s" x="600" y="112" text-anchor="middle">front desk, billing, MRD</text>
+<circle class="person" cx="830" cy="34" r="14"/><rect class="person" x="725" y="48" width="210" height="80" rx="14"/><text class="t" x="830" y="76" text-anchor="middle">Group execs &amp; DPO</text><text class="s" x="830" y="94" text-anchor="middle">[Person]</text><text class="s" x="830" y="112" text-anchor="middle">analytics, privacy requests</text>
+<circle class="person" cx="1060" cy="34" r="14"/><rect class="person" x="955" y="48" width="210" height="80" rx="14"/><text class="t" x="1060" y="76" text-anchor="middle">DocPad operators</text><text class="s" x="1060" y="94" text-anchor="middle">[Person]</text><text class="s" x="1060" y="112" text-anchor="middle">onboarding, support, SRE</text>
+<rect class="sys" x="410" y="320" width="380" height="150" rx="8"/><text class="systx sysh" x="600" y="356" text-anchor="middle">DocPad Hospital Platform</text><text class="systx" x="600" y="377" text-anchor="middle">[Software system]</text><text class="systx" x="600" y="404" text-anchor="middle">Registration, OPD, IPD, nursing, lab, pharmacy,</text><text class="systx" x="600" y="422" text-anchor="middle">billing, insurance, consent and interoperability</text><text class="systx" x="600" y="440" text-anchor="middle">for many hospitals on one multi-tenant platform</text>
+<rect class="extd" x="30" y="250" width="260" height="70" rx="6"/><text class="t" x="44" y="274">ABDM (NHA)</text><text class="s" x="44" y="292">[External system]</text><text class="s" x="44" y="309">ABHA, consent manager, HFR/HPR</text>
+<rect class="extd" x="30" y="335" width="260" height="70" rx="6"/><text class="t" x="44" y="359">NHCX</text><text class="s" x="44" y="377">[External system]</text><text class="s" x="44" y="394">national claims exchange</text>
+<rect class="extd" x="30" y="420" width="260" height="70" rx="6"/><text class="t" x="44" y="444">Insurers &amp; TPAs</text><text class="s" x="44" y="462">[External system]</text><text class="s" x="44" y="479">claims outside NHCX</text>
+<rect class="extd" x="30" y="505" width="260" height="70" rx="6"/><text class="t" x="44" y="529">Public health reporting</text><text class="s" x="44" y="547">[External system]</text><text class="s" x="44" y="564">IDSP / IHIP, Nikshay</text>
+<rect class="ext" x="910" y="250" width="260" height="70" rx="6"/><text class="t" x="924" y="274">Messaging providers</text><text class="s" x="924" y="292">[External system]</text><text class="s" x="924" y="309">WhatsApp, SMS (DLT), email</text>
+<rect class="ext" x="910" y="335" width="260" height="70" rx="6"/><text class="t" x="924" y="359">AI services</text><text class="s" x="924" y="377">[External system]</text><text class="s" x="924" y="394">LLM, speech-to-text</text>
+<rect class="ext" x="910" y="420" width="260" height="70" rx="6"/><text class="t" x="924" y="444">Terminology server</text><text class="s" x="924" y="462">[External system]</text><text class="s" x="924" y="479">SNOMED CT, LOINC, ICD-10</text>
+<rect class="extd" x="910" y="505" width="260" height="70" rx="6"/><text class="t" x="924" y="529">Payment gateway</text><text class="s" x="924" y="547">[External system]</text><text class="s" x="924" y="564">UPI, cards, refunds</text>
+<rect class="extd" x="30" y="640" width="260" height="70" rx="6"/><text class="t" x="44" y="664">Hospital devices</text><text class="s" x="44" y="682">[External system]</text><text class="s" x="44" y="699">lab analysers, PACS, printers</text>
+<rect class="extd" x="323" y="640" width="260" height="70" rx="6"/><text class="t" x="337" y="664">External labs &amp; referrers</text><text class="s" x="337" y="682">[External system]</text><text class="s" x="337" y="699">orders, results, referrals</text>
+<rect class="extd" x="616" y="640" width="260" height="70" rx="6"/><text class="t" x="630" y="664">Hospital identity providers</text><text class="s" x="630" y="682">[External system]</text><text class="s" x="630" y="699">staff SSO via SAML / OIDC</text>
+<rect class="extd" x="909" y="640" width="260" height="70" rx="6"/><text class="t" x="923" y="664">Drug knowledge base</text><text class="s" x="923" y="682">[External system]</text><text class="s" x="923" y="699">licensed interaction data</text>
+<text class="lbl halo" x="251" y="196" text-anchor="middle">books, pays, views</text><text class="lbl halo" x="251" y="211" text-anchor="middle">records, consents</text>
+<text class="lbl halo" x="600" y="196" text-anchor="middle">registers, bills,</text><text class="lbl halo" x="600" y="211" text-anchor="middle">claims, configures</text>
+<text class="lbl halo" x="949" y="196" text-anchor="middle">onboards hospitals,</text><text class="lbl halo" x="949" y="211" text-anchor="middle">monitors, supports</text>
+<text class="lbl halo" x="479" y="262" text-anchor="middle">documents care,</text><text class="lbl halo" x="479" y="277" text-anchor="middle">prescribes, orders</text>
+<text class="lbl halo" x="721" y="262" text-anchor="middle">reviews analytics,</text><text class="lbl halo" x="721" y="277" text-anchor="middle">handles data requests</text>
+<text class="lbl halo" x="350" y="306" text-anchor="middle">health records</text>
+<text class="lbl halo" x="350" y="372" text-anchor="middle">claims</text>
+<text class="lbl halo" x="350" y="436" text-anchor="middle">pre-auth, claims</text>
+<text class="lbl halo" x="350" y="496" text-anchor="middle">disease reports</text>
+<text class="lbl halo" x="850" y="306" text-anchor="middle">messages</text>
+<text class="lbl halo" x="850" y="372" text-anchor="middle">prompts, audio</text>
+<text class="lbl halo" x="850" y="436" text-anchor="middle">concept lookup</text>
+<text class="lbl halo" x="850" y="496" text-anchor="middle">payments</text>
+<text class="lbl halo" x="333" y="553" text-anchor="middle">results, images</text>
+<text class="lbl halo" x="506" y="553" text-anchor="middle">orders, results</text>
+<text class="lbl halo" x="694" y="553" text-anchor="middle">staff sign-in</text>
+<text class="lbl halo" x="867" y="553" text-anchor="middle">interaction data</text>
+<rect class="sys" x="30" y="735" width="26" height="16" rx="3"/><text class="s" x="64" y="748">DocPad (in scope)</text><rect class="person" x="200" y="735" width="26" height="16" rx="6"/><text class="s" x="234" y="748">Person</text><rect class="ext" x="320" y="735" width="26" height="16" rx="3"/><line class="e" x1="352" y1="743" x2="384" y2="743"/><text class="s" x="392" y="748">integrated today</text><rect class="extd" x="530" y="735" width="26" height="16" rx="3"/><line class="ed" x1="562" y1="743" x2="594" y2="743"/><text class="s" x="602" y="748">target only (not integrated today)</text>
+</svg>
+    </div>
+    <figcaption><b>Twelve external systems, three integrated today.</b> Solid lines are live integrations: Twilio and Resend for messages, Gemini and AssemblyAI for AI, and CSIRO Ontoserver for terminology. Dashed lines are target integrations. ABDM is dashed because the code exists but the gateway is not configured. Double-headed arrows mark integrations where both sides initiate calls.</figcaption>
+  </figure>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Element</th><th>Type</th><th>Relationship to DocPad</th></tr></thead>
+    <tbody>
+      <tr><td>Patients &amp; caregivers</td><td>Person</td><td>Book, pay, receive prescriptions and reports, grant and withdraw consent</td></tr>
+      <tr><td>Clinical staff</td><td>Person</td><td>Doctors, nurses, lab, pharmacy: document care, prescribe, order, chart, dispense</td></tr>
+      <tr><td>Hospital operations</td><td>Person</td><td>Front desk, billing, TPA desk, MRD, admin: register, bill, claim, configure</td></tr>
+      <tr><td>Group executives &amp; DPO</td><td>Person</td><td>Read group analytics; handle DPDPA requests and breaches</td></tr>
+      <tr><td>DocPad operators</td><td>Person</td><td>Onboard hospitals, run the platform, provide support with audited access</td></tr>
+      <tr><td>ABDM (NHA)</td><td>External</td><td>ABHA identity, consent manager, health information exchange, facility and professional registries</td></tr>
+      <tr><td>NHCX</td><td>External</td><td>National exchange for cashless pre-auth and claims, using FHIR bundles</td></tr>
+      <tr><td>Insurers &amp; TPAs</td><td>External</td><td>Payers not on NHCX: portals, email packs, partner APIs</td></tr>
+      <tr><td>Public health reporting</td><td>External</td><td>Notifiable disease reporting (IDSP/IHIP) and TB notification (Nikshay)</td></tr>
+      <tr><td>Messaging providers</td><td>External</td><td>WhatsApp, DLT-registered SMS, email</td></tr>
+      <tr><td>AI services</td><td>External</td><td>LLM extraction and summaries; speech-to-text</td></tr>
+      <tr><td>Terminology server</td><td>External</td><td>SNOMED CT search and validation; LOINC and ICD-10</td></tr>
+      <tr><td>Payment gateway</td><td>External</td><td>UPI, cards, payment links, refunds, settlement webhooks</td></tr>
+      <tr><td>Hospital devices</td><td>External</td><td>Analysers, PACS and printers on the hospital LAN, reached through the edge agent</td></tr>
+      <tr><td>External labs &amp; referrers</td><td>External</td><td>Receive orders, return results; send and receive referrals</td></tr>
+      <tr><td>Hospital identity providers</td><td>External</td><td>A chain's own SSO for its staff</td></tr>
+      <tr><td>Drug knowledge base</td><td>External</td><td>Licensed interaction, contraindication and dosing content</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 18 -->
+  <h2 id="appbp">18. Application architecture blueprint</h2>
+  <p>The blueprint has three views. The capability map shows what the business does and how much of it is built. The module diagram shows how the eight Core API modules work together through events. The catalog lists what each module owns.</p>
+
+  <h3>Capability map</h3>
+  <p>Status reflects the repository today. <span class="pill ok">built</span> works end to end. <span class="pill pt">partial</span> exists with a known gap. <span class="pill no">new</span> does not exist yet.</p>
+  <div class="capmap"><div><h4>Patient access</h4><ul><li><span>Registration &amp; duplicate check</span><span class="pill ok">built</span></li><li><span>Appointments &amp; token queue</span><span class="pill ok">built</span></li><li><span>Reminders</span><span class="pill pt">partial</span></li><li><span>ABHA creation &amp; linking</span><span class="pill no">new</span></li><li><span>Patient app &amp; portal</span><span class="pill no">new</span></li></ul></div><div><h4>Clinical care</h4><ul><li><span>OPD encounter &amp; vitals</span><span class="pill ok">built</span></li><li><span>Voice documentation</span><span class="pill pt">partial</span></li><li><span>SNOMED / ICD-10 coding</span><span class="pill ok">built</span></li><li><span>Prescribing with hard stops</span><span class="pill pt">partial</span></li><li><span>IPD notes, orders, MAR</span><span class="pill ok">built</span></li><li><span>OT &amp; PAC</span><span class="pill pt">partial</span></li><li><span>Discharge summary</span><span class="pill pt">partial</span></li></ul></div><div><h4>Diagnostics</h4><ul><li><span>Lab orders &amp; results</span><span class="pill ok">built</span></li><li><span>Result entry from photo (OCR)</span><span class="pill ok">built</span></li><li><span>Analyser integration</span><span class="pill no">new</span></li><li><span>Radiology &amp; PACS</span><span class="pill no">new</span></li><li><span>ECG digitisation</span><span class="pill pt">partial</span></li></ul></div><div><h4>Pharmacy &amp; supply</h4><ul><li><span>Dispensing</span><span class="pill ok">built</span></li><li><span>Inventory &amp; batches</span><span class="pill ok">built</span></li><li><span>Ward stock</span><span class="pill ok">built</span></li><li><span>Vendors &amp; procurement</span><span class="pill pt">partial</span></li></ul></div><div><h4>Revenue cycle</h4><ul><li><span>Automatic charge capture</span><span class="pill ok">built</span></li><li><span>Invoicing &amp; arithmetic checks</span><span class="pill ok">built</span></li><li><span>Payments</span><span class="pill pt">partial</span></li><li><span>Pre-auth &amp; claims</span><span class="pill pt">partial</span></li><li><span>NHCX exchange</span><span class="pill no">new</span></li></ul></div><div><h4>Governance</h4><ul><li><span>Append-only audit</span><span class="pill ok">built</span></li><li><span>DPDPA consent &amp; rights</span><span class="pill ok">built</span></li><li><span>NABH indicators</span><span class="pill pt">partial</span></li><li><span>Retention enforcement</span><span class="pill no">new</span></li></ul></div><div><h4>Interoperability &amp; data</h4><ul><li><span>FHIR OPD bundle</span><span class="pill pt">partial</span></li><li><span>ABDM HIP / HIU</span><span class="pill no">new</span></li><li><span>Hospital dashboards</span><span class="pill ok">built</span></li><li><span>Group analytics</span><span class="pill no">new</span></li></ul></div><div><h4>Platform</h4><ul><li><span>Multi-tenancy (hospital_id)</span><span class="pill ok">built</span></li><li><span>Role-based access</span><span class="pill ok">built</span></li><li><span>MFA &amp; SSO</span><span class="pill no">new</span></li><li><span>Self-service onboarding</span><span class="pill no">new</span></li><li><span>Observability</span><span class="pill no">new</span></li></ul></div></div>
+
+  <h3>Module interactions</h3>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+flowchart LR
+  ID[Patient identity and MPI]
+  SC[Scheduling and queues]
+  CL[Clinical: OPD, IPD, nursing]
+  OR[Orders, lab and radiology]
+  PH[Pharmacy and inventory]
+  BI[Billing and revenue cycle]
+  INS[Insurance and NHCX]
+  CO[Consent, DPDPA and audit]
+  IOG[Interop gateway]
+  NTF[Notification service]
+  SC -- CheckedIn --> CL
+  CL -- OrderPlaced --> OR
+  OR -- ResultReported --> CL
+  CL -- PrescriptionFinalized --> PH
+  CL -- ChargeCaptured --> BI
+  OR -- ChargeCaptured --> BI
+  PH -- MedicationDispensed --> BI
+  CL -- DischargeCompleted --> BI
+  BI -- InvoiceIssued --> INS
+  INS -- ClaimSettled --> BI
+  CL -- EncounterFinalized --> IOG
+  CO -- ConsentGranted --> IOG
+  SC -- AppointmentBooked --> NTF
+  OR -- CriticalValue --> NTF
+  ID -. sync lookup .-> SC
+  ID -. sync lookup .-> CL
+</pre>
+    </div>
+    <figcaption><b>Modules talk through events; identity is the only synchronous dependency.</b> Each solid arrow is a domain event published through the outbox. Today the same chain runs as database triggers, for example <code>trg_auto_consultation_charge</code> and <code>trg_investigation_to_billing</code>. Moving it to events lets billing fail or lag without blocking a clinical write.</figcaption>
+  </figure>
+
+  <h3>Module catalog</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Module</th><th>Owns (main tables)</th><th>Publishes</th><th>Consumes</th><th>Main users</th></tr></thead>
+    <tbody>
+      <tr><td>Patient identity &amp; MPI</td><td>patients → persons + registrations, patient_allergies, abha links, photos</td><td>PatientRegistered, PatientMerged</td><td>ConsentWithdrawn</td><td>Front desk</td></tr>
+      <tr><td>Scheduling &amp; queues</td><td>appointments, reception_queue, appointment_reminders</td><td>AppointmentBooked, CheckedIn, NoShow</td><td>EncounterFinalized (follow-ups)</td><td>Front desk, patients</td></tr>
+      <tr><td>Clinical</td><td>opd_encounters, prescriptions, ipd_admissions, ipd_progress_notes, ipd_mar, nursing_tasks</td><td>EncounterFinalized, PrescriptionFinalized, OrderPlaced, ChargeCaptured, AdmissionStarted, DischargeCompleted</td><td>CheckedIn, ResultReported</td><td>Doctors, nurses</td></tr>
+      <tr><td>Orders, lab &amp; radiology</td><td>investigations, lab_result_entries, investigation_ocr_uploads</td><td>ResultReported, CriticalValue, ChargeCaptured</td><td>OrderPlaced</td><td>Lab, pathologists, radiologists</td></tr>
+      <tr><td>Pharmacy &amp; inventory</td><td>hospital_inventory, stock_transactions, drugs, vendors, ward_inventory</td><td>MedicationDispensed, StockLow, BatchExpiring</td><td>PrescriptionFinalized</td><td>Pharmacists, store</td></tr>
+      <tr><td>Billing &amp; revenue cycle</td><td>charge_item_definitions, charge_items, invoices, invoice_line_items, payments, accounts</td><td>InvoiceIssued, PaymentReceived</td><td>ChargeCaptured, MedicationDispensed, DischargeCompleted, ClaimSettled</td><td>Billing, cashier</td></tr>
+      <tr><td>Insurance &amp; NHCX</td><td>patient_insurance_coverage, insurance_preauths, insurance_claims</td><td>PreauthSubmitted, ClaimSubmitted, ClaimSettled</td><td>InvoiceIssued, AdmissionStarted</td><td>TPA desk</td></tr>
+      <tr><td>Consent, DPDPA &amp; audit</td><td>patient_consents, data_principal_requests, abdm_consent_requests, audit_logs</td><td>ConsentGranted, ConsentWithdrawn</td><td>All events (audit)</td><td>DPO, patients</td></tr>
+      <tr><td>Interop gateway</td><td>hi_data_transfers, FHIR facade store</td><td>HealthRecordShared</td><td>EncounterFinalized, ConsentGranted, ClaimSubmitted</td><td>External systems</td></tr>
+      <tr><td>Notification service</td><td>templates, deliveries, preferences</td><td>MessageDelivered, MessageFailed</td><td>AppointmentBooked, PrescriptionFinalized, CriticalValue, StockLow</td><td>Patients, staff</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- 19 -->
+  <h2 id="intbp">19. Integration architecture blueprint</h2>
+  <p>Every external call goes through one tier of integration services. No browser code and no domain module talks to an outside system directly. The tier handles credentials per hospital, retries, signature checks and translation to and from standards. Domain modules see only DocPad's own models.</p>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+flowchart LR
+  subgraph CORE[DocPad core]
+    API[Core API modules]
+    OUT[(outbox)]
+    INB[(inbox)]
+  end
+  subgraph TIER[Integration tier]
+    IG[Interop gateway: FHIR R4, ABDM, NHCX]
+    NS[Notification service]
+    AG[AI gateway]
+    PA[Payment adapter]
+    IE[Integration engine]
+    TS[Terminology service: Snowstorm]
+  end
+  subgraph EXT[External parties]
+    ABDM[ABDM gateway and consent manager]
+    NHCX[NHCX]
+    MSG[WhatsApp BSP, DLT SMS, SES]
+    LLM[Vertex Gemini, in-house ASR]
+    RZ[Razorpay]
+    EA[Edge agent at hospital]
+    EL[External labs and referrers]
+    DKB[Drug knowledge base]
+  end
+  API --> OUT
+  OUT -->|Kafka events| IG
+  OUT -->|Kafka events| NS
+  API -->|sync REST| AG
+  API -->|sync REST| PA
+  API -->|sync REST| TS
+  IG <-->|HTTPS, signed callbacks| ABDM
+  IG <-->|FHIR bundles, JWE| NHCX
+  NS -->|template API| MSG
+  MSG -.->|delivery receipts| NS
+  AG -->|HTTPS, redacted| LLM
+  PA <-->|REST, HMAC webhooks| RZ
+  EA <-->|mTLS: HL7 v2, ASTM, DICOMweb| IE
+  EL <-->|FHIR or HL7 v2| IE
+  DKB -->|monthly batch| TS
+  IG --> INB
+  PA --> INB
+  IE --> INB
+  INB --> API
+</pre>
+    </div>
+    <figcaption><b>Outbound through the outbox, inbound through the inbox.</b> An inbound message is first verified and stored in the inbox, then acknowledged, then processed. A slow or failing partner therefore never loses data and never blocks a clinical write. Synchronous calls are kept for things a user is waiting on: AI drafts, payment orders and terminology lookups.</figcaption>
+  </figure>
+
+  <h3>Integration catalog</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Integration</th><th>Direction · pattern</th><th>Protocol / standard</th><th>Today</th><th>Target</th></tr></thead>
+    <tbody>
+      <tr><td>ABDM ABHA (M1)</td><td>Out · sync request, async callback</td><td>REST/JSON, gateway session token</td><td><span class="pill pt">skeleton</span> enrolment mocked</td><td>Interop gateway, HFR/HPR registered</td></tr>
+      <tr><td>ABDM HIP / HIU (M2–M3)</td><td>Both · async callbacks</td><td>FHIR R4 NRCES bundles, ECDH X25519 + AES-GCM</td><td><span class="pill pt">skeleton</span> gateway URL unset</td><td>Temporal workflow per consent</td></tr>
+      <tr><td>NHCX</td><td>Out · async</td><td>FHIR Claim / ClaimResponse, JWE</td><td><span class="pill no">none</span></td><td>Interop gateway + Temporal</td></tr>
+      <tr><td>Insurers &amp; TPAs (non-NHCX)</td><td>Out · document pack</td><td>PDF pack, email or partner API</td><td><span class="pill no">manual</span></td><td>Generated claim packs, tracked status</td></tr>
+      <tr><td>Public health (IDSP/IHIP, Nikshay)</td><td>Out · batch or API</td><td>Programme formats</td><td><span class="pill no">none</span></td><td>Reports from notifiable diagnosis events</td></tr>
+      <tr><td>WhatsApp</td><td>Out · async, receipts in</td><td>BSP template API, webhooks</td><td><span class="pill ok">live</span> Twilio, from route handlers</td><td>Notification service with consent and quiet hours</td></tr>
+      <tr><td>SMS</td><td>Out · async</td><td>TRAI DLT templates</td><td><span class="pill no">none</span></td><td>DLT provider via notification service</td></tr>
+      <tr><td>Email</td><td>Out · async</td><td>SMTP/API</td><td><span class="pill ok">live</span> Resend, expiry digest only</td><td>Amazon SES</td></tr>
+      <tr><td>LLM</td><td>Out · sync</td><td>HTTPS/JSON</td><td><span class="pill ok">live</span> Gemini API, key exposed</td><td>AI gateway → Vertex AI, India region</td></tr>
+      <tr><td>Speech-to-text</td><td>Out · streaming</td><td>WebSocket + REST</td><td><span class="pill ok">live</span> AssemblyAI</td><td>In-house medical ASR</td></tr>
+      <tr><td>Terminology</td><td>Out · sync</td><td>FHIR <code>$expand</code>, <code>$validate-code</code></td><td><span class="pill ok">live</span> CSIRO Ontoserver</td><td>Self-hosted Snowstorm + cache</td></tr>
+      <tr><td>Payments</td><td>Both · sync + webhooks</td><td>REST, HMAC-signed webhooks</td><td><span class="pill no">none</span></td><td>Razorpay adapter, daily reconciliation</td></tr>
+      <tr><td>Lab analysers</td><td>In · streaming on LAN</td><td>ASTM E1394, HL7 v2 ORU over TCP/serial</td><td><span class="pill no">none</span></td><td>Edge agent → integration engine</td></tr>
+      <tr><td>PACS / imaging</td><td>Both</td><td>DICOM, DICOMweb (WADO-RS)</td><td><span class="pill no">none</span></td><td>Orthanc + OHIF viewer</td></tr>
+      <tr><td>Printers &amp; wristbands</td><td>Out · LAN</td><td>ZPL, IPP</td><td><span class="pill pt">browser print</span></td><td>Edge agent print queue</td></tr>
+      <tr><td>External labs &amp; referrers</td><td>Both · async</td><td>FHIR ServiceRequest / DiagnosticReport, HL7 v2</td><td><span class="pill no">none</span></td><td>Integration engine, partner portal</td></tr>
+      <tr><td>Hospital SSO</td><td>Out · sync</td><td>SAML 2.0, OIDC</td><td><span class="pill no">none</span></td><td>Keycloak identity brokering</td></tr>
+      <tr><td>Drug knowledge base</td><td>In · batch</td><td>Vendor file or API</td><td><span class="pill no">none</span> (24 pairs in SQL)</td><td>Monthly load with versioning</td></tr>
+      <tr><td>ECG digitizer</td><td>Out · sync</td><td>REST (FastAPI)</td><td><span class="pill pt">undeployed</span></td><td>Behind the AI gateway, or retired</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Example flow: sharing records with ABDM (DocPad as HIP)</h3>
+  <figure>
+    <div class="scroll">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant CM as ABDM consent manager
+  participant IG as Interop gateway
+  participant WF as Temporal
+  participant API as Core API
+  participant HIU as Requesting HIU
+  CM->>IG: consent notification
+  IG->>IG: verify gateway signature, write to inbox
+  IG-->>CM: acknowledge
+  CM->>IG: health information request with keys and push URL
+  IG->>WF: start data-transfer workflow
+  WF->>API: fetch care contexts within consent scope
+  API-->>WF: records filtered by HI types and date range
+  WF->>WF: build NRCES FHIR bundles, encrypt
+  WF->>HIU: push encrypted bundles
+  WF->>CM: notify transfer status
+  Note over WF: retries with backoff, every step written to audit_logs
+</pre>
+    </div>
+    <figcaption><b>Consent scope is enforced by the API, not the gateway.</b> The workflow can only fetch what the consent artefact allows. Temporal makes the multi-step exchange survive restarts and partner timeouts.</figcaption>
+  </figure>
+
+  <h3>Integration rules</h3>
+  <div class="two">
+    <ul>
+      <li><b>Canonical model:</b> FHIR R4 with NRCES profiles at the boundary. Domain modules never parse partner formats.</li>
+      <li><b>Credentials per hospital:</b> each hospital has its own HFR and HIP IDs, NHCX participant code, WhatsApp sender, Razorpay linked account and edge agent certificate. These live in an <code>integration_connections</code> table, with secrets held in Secrets Manager and referenced by ARN.</li>
+      <li><b>Idempotency:</b> every outbound request carries a key, and every inbound message is deduplicated in the inbox.</li>
+      <li><b>Verification:</b> webhooks are rejected unless the signature checks out (gateway JWT, HMAC or mTLS). This replaces today's shared-secret check.</li>
+    </ul>
+    <ul>
+      <li><b>Resilience:</b> timeouts, exponential backoff, circuit breakers and dead-letter queues with a replay console.</li>
+      <li><b>Contracts:</b> partner sandboxes run in CI. Consumer-driven contract tests cover internal events.</li>
+      <li><b>Observability:</b> one correlation ID follows a message from the module through the gateway to the partner. There is a dashboard per integration and per hospital.</li>
+      <li><b>Data minimisation:</b> only the fields a partner needs leave DocPad. Identifiers are redacted before any AI call. Every outbound PHI transfer is written to <code>audit_logs</code>.</li>
+    </ul>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
