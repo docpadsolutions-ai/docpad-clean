@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Product-owner competitive analysis of DocPad against Eka Care, built from site maps of both products and a read of the docpad-clean source. Prepared 16 October 2026 as input to Phase-2 scoping.">
+<meta name="robots" content="noindex">
+<style>
+/* Baseline reset — supplied by the artifact runtime when this page is published,
+   restated here so the file renders identically when opened directly or served statically. */
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>DocPad vs Eka Care</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: long-form clinical briefing — sticky section rail, full-bleed bands, evidence tucked into disclosures */
+:root{
+  --bg:#FBFAF8; --surface:#FFFFFF; --surface-2:#F4F2EE; --fg:#1A1714; --fg-2:#56514A; --fg-3:#8A8277;
+  --rule:#E2DED6; --rule-2:#CFC9BE;
+  --dp:#1D4ED8; --dp-soft:#E8EEFE; --dp-ink:#15327F;
+  --eka:#9D1C7A; --eka-soft:#FAE9F5; --eka-ink:#6E1256;
+  --ok:#2F7A3E; --ok-soft:#E6F2E8;
+  --warn:#9A5B06; --warn-soft:#FBF0DD;
+  --bad:#B0281F; --bad-soft:#FBE8E6;
+  --neutral:#6B6459; --neutral-soft:#EEEBE5;
+  --display:"Newsreader",Georgia,"Times New Roman",serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141210; --surface:#1D1A17; --surface-2:#262220; --fg:#F2EEE7; --fg-2:#B8B0A5; --fg-3:#8A8277;
+  --rule:#34302B; --rule-2:#474139;
+  --dp:#7BA2FF; --dp-soft:#1A2440; --dp-ink:#A9C2FF;
+  --eka:#E87CC4; --eka-soft:#36132B; --eka-ink:#F0A3D6;
+  --ok:#73C083; --ok-soft:#17291B; --warn:#DFA44A; --warn-soft:#2E2312;
+  --bad:#E98A80; --bad-soft:#331615; --neutral:#A49C90; --neutral-soft:#2A2622;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#141210; --surface:#1D1A17; --surface-2:#262220; --fg:#F2EEE7; --fg-2:#B8B0A5; --fg-3:#8A8277;
+  --rule:#34302B; --rule-2:#474139;
+  --dp:#7BA2FF; --dp-soft:#1A2440; --dp-ink:#A9C2FF;
+  --eka:#E87CC4; --eka-soft:#36132B; --eka-ink:#F0A3D6;
+  --ok:#73C083; --ok-soft:#17291B; --warn:#DFA44A; --warn-soft:#2E2312;
+  --bad:#E98A80; --bad-soft:#331615; --neutral:#A49C90; --neutral-soft:#2A2622;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.6;margin:0;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:40;background:var(--surface)}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.narrow{max-width:760px}
+h1,h2,h3,h4{font-family:var(--display);font-weight:600;text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(2rem,5.2vw,3.1rem);line-height:1.08}
+h2{font-size:clamp(1.5rem,3.4vw,2.05rem);line-height:1.15}
+h3{font-size:1.18rem;line-height:1.3}
+h4{font-size:1rem;font-family:var(--body);font-weight:700}
+p{margin:0}
+a{color:var(--dp)}
+.eyebrow{font-family:var(--body);font-size:.7rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3)}
+.lede{font-size:1.06rem;color:var(--fg-2)}
+.small{font-size:.86rem;color:var(--fg-2)}
+.xs{font-size:.76rem;color:var(--fg-3)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.stack{display:flex;flex-direction:column}
+.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g24{gap:24px}.g32{gap:32px}
+section{scroll-margin-top:84px}
+.band{border-top:1px solid var(--rule)}
+.band-inner{padding-block:clamp(40px,6vw,72px)}
+
+/* nav */
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:var(--surface);border-bottom:1px solid var(--rule)}
+.nav-in{display:flex;align-items:center;gap:16px;padding-block:10px;max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.nav-mark{font-family:var(--display);font-weight:600;font-size:.98rem;white-space:nowrap}
+.nav-mark b{color:var(--dp);font-weight:600}
+.nav-mark i{color:var(--eka);font-style:normal}
+.nav-links{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+.nav-links::-webkit-scrollbar{display:none}
+.nav-links a{font-size:.8rem;color:var(--fg-2);text-decoration:none;padding:6px 10px;border-radius:6px;white-space:nowrap;font-weight:500}
+.nav-links a:hover{background:var(--surface-2);color:var(--fg)}
+.nav-links a.on{background:var(--fg);color:var(--bg)}
+.theme-btn{background:none;border:1px solid var(--rule-2);color:var(--fg-2);border-radius:6px;padding:5px 9px;cursor:pointer;font-size:.78rem;font-family:var(--body);flex:none}
+.theme-btn:hover{background:var(--surface-2)}
+
+/* hero */
+.hero{background:var(--surface);border-bottom:1px solid var(--rule)}
+.hero-in{padding-block:clamp(36px,6vw,64px)}
+.verdicts{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;margin-top:28px}
+.verdict{border:1px solid var(--rule);border-radius:4px;padding:20px;background:var(--bg);border-top:3px solid var(--rule-2)}
+.verdict.v-eka{border-top-color:var(--eka)}
+.verdict.v-dp{border-top-color:var(--dp)}
+.verdict .who{font-size:.78rem;font-weight:600;color:var(--fg-3);letter-spacing:.04em;text-transform:uppercase}
+.verdict .win{font-family:var(--display);font-size:1.6rem;font-weight:600;margin-top:6px;line-height:1.1}
+.v-eka .win{color:var(--eka)}
+.v-dp .win{color:var(--dp)}
+.verdict .why{font-size:.92rem;color:var(--fg-2);margin-top:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.chip{font-size:.7rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:3px;background:var(--neutral-soft);color:var(--fg-2);white-space:nowrap}
+.chip.hi{background:var(--ok-soft);color:var(--ok)}
+.chip.med{background:var(--warn-soft);color:var(--warn)}
+.sources-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid var(--rule)}
+.src b{display:block;font-size:.84rem}
+.src.dp b{color:var(--dp)}
+.src.ek b{color:var(--eka)}
+
+/* scorecard */
+.score-row{display:grid;grid-template-columns:210px 1fr;gap:18px;padding:16px 0;border-bottom:1px solid var(--rule);align-items:center}
+.score-label h4{margin-bottom:3px}
+.bars{display:flex;flex-direction:column;gap:9px;min-width:0}
+.barline{display:grid;grid-template-columns:62px 1fr 96px;gap:10px;align-items:center}
+.barline .tag{font-size:.72rem;font-weight:700;letter-spacing:.04em}
+.barline.dp .tag{color:var(--dp)}
+.barline.ek .tag{color:var(--eka)}
+.track{height:12px;background:var(--surface-2);border-radius:2px;overflow:hidden;position:relative;min-width:0}
+.track i{position:absolute;inset:0 auto 0 0;display:block;border-radius:2px}
+.barline.dp .track i{background:var(--dp)}
+.barline.ek .track i{background:var(--eka)}
+.rating{font-size:.74rem;color:var(--fg-2);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+
+/* finding cards */
+.findings{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.find{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.find .rank{font-family:var(--mono);font-size:.74rem;color:var(--fg-3);font-weight:600}
+.find .sowhat{font-size:.88rem;border-top:1px solid var(--rule);padding-top:10px;color:var(--fg-2)}
+.find.wedp{border-left:3px solid var(--dp)}
+.find.weka{border-left:3px solid var(--eka)}
+.find.risk{border-left:3px solid var(--warn)}
+
+/* matrix */
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.fbtn{font-family:var(--body);font-size:.8rem;font-weight:500;padding:6px 12px;border-radius:999px;border:1px solid var(--rule-2);background:var(--surface);color:var(--fg-2);cursor:pointer}
+.fbtn:hover{border-color:var(--fg-3)}
+.fbtn.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.mtx-scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--surface)}
+table.mtx{width:100%;border-collapse:collapse;min-width:620px;font-size:.88rem}
+.mtx th{text-align:left;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);padding:12px;border-bottom:1px solid var(--rule-2);font-weight:600;background:var(--surface-2)}
+.mtx th.c-dp{color:var(--dp)}
+.mtx th.c-ek{color:var(--eka)}
+.mtx td{padding:11px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+.mtx tr:last-child td{border-bottom:none}
+.mtx tr.grp td{background:var(--surface-2);font-family:var(--display);font-size:.96rem;font-weight:600;padding:9px 12px}
+.mtx .feat{font-weight:500}
+.mtx .note{display:block;color:var(--fg-3);font-size:.78rem;margin-top:2px;line-height:1.45}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:.76rem;font-weight:600;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.s-yes .dot{background:var(--ok)}.s-yes{color:var(--ok)}
+.s-part .dot{background:var(--warn)}.s-part{color:var(--warn)}
+.s-no .dot{background:var(--bad)}.s-no{color:var(--bad)}
+.s-diff .dot{background:var(--neutral)}.s-diff{color:var(--neutral)}
+.tag-k{font-size:.64rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--fg-3);white-space:nowrap}
+
+/* gaps */
+.gap{background:var(--surface);border:1px solid var(--rule);border-left-width:4px;border-radius:4px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.gap.blocks{border-left-color:var(--bad)}
+.gap.degrades{border-left-color:var(--warn)}
+.gap.cosmetic{border-left-color:var(--neutral)}
+.gap-head{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between}
+.gap-meta{display:flex;flex-wrap:wrap;gap:14px;border-top:1px solid var(--rule);padding-top:10px;font-size:.8rem}
+.gap-meta div{min-width:0}
+.gap-meta span{display:block;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
+.sev{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;font-weight:700;padding:3px 7px;border-radius:3px}
+.sev.blocks{background:var(--bad-soft);color:var(--bad)}
+.sev.degrades{background:var(--warn-soft);color:var(--warn)}
+.sev.cosmetic{background:var(--neutral-soft);color:var(--fg-2)}
+.eff{font-family:var(--mono);font-size:.72rem;font-weight:600;color:var(--fg-2);border:1px solid var(--rule-2);border-radius:3px;padding:2px 6px}
+
+/* friction */
+.friction{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:720px){.friction{grid-template-columns:1fr}}
+.fcol{border:1px solid var(--rule);border-radius:4px;background:var(--surface);overflow:hidden;min-width:0}
+.fcol header{padding:14px 18px;border-bottom:1px solid var(--rule)}
+.fcol.dp header{background:var(--dp-soft)}
+.fcol.ek header{background:var(--eka-soft)}
+.fcol.dp header h4{color:var(--dp-ink)}
+.fcol.ek header h4{color:var(--eka-ink)}
+.fcount{font-family:var(--display);font-size:2.4rem;font-weight:600;line-height:1}
+.fcol.dp .fcount{color:var(--dp)}
+.fcol.ek .fcount{color:var(--eka)}
+.fsteps{list-style:none;margin:0;padding:12px 18px 18px;display:flex;flex-direction:column;gap:0}
+.fsteps li{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:8px 0;border-bottom:1px dashed var(--rule);font-size:.87rem;align-items:baseline}
+.fsteps li:last-child{border-bottom:none}
+.fsteps b{font-family:var(--mono);font-size:.74rem;color:var(--fg-3);font-weight:600}
+.fsteps li.pain{color:var(--bad)}
+
+/* two-col compare */
+.cmp{border:1px solid var(--rule);border-radius:4px;overflow:hidden;background:var(--surface)}
+.cmp-row{display:grid;grid-template-columns:150px 1fr 1fr;border-bottom:1px solid var(--rule)}
+.cmp-row:last-child{border-bottom:none}
+.cmp-row>div{padding:13px 16px;min-width:0}
+.cmp-row>div:first-child{background:var(--surface-2);font-size:.76rem;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
+.cmp-row>div:nth-child(2){border-left:1px solid var(--rule);border-right:1px solid var(--rule);font-size:.88rem}
+.cmp-row>div:nth-child(3){font-size:.88rem}
+.cmp-head>div:nth-child(2){color:var(--dp);font-weight:700}
+.cmp-head>div:nth-child(3){color:var(--eka);font-weight:700}
+@media (max-width:720px){
+  .cmp-row{grid-template-columns:1fr}
+  .cmp-row>div:nth-child(2),.cmp-row>div:nth-child(3){border-left:none;border-right:none;border-top:1px solid var(--rule)}
+  .cmp-row>div:nth-child(2)::before{content:"DocPad";display:block;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--dp);font-weight:700;margin-bottom:3px}
+  .cmp-row>div:nth-child(3)::before{content:"Eka Care";display:block;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--eka);font-weight:700;margin-bottom:3px}
+  .cmp-head{display:none}
+}
+
+/* bets */
+.bets{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:720px){.bets{grid-template-columns:1fr}}
+.bet{padding:24px;border-radius:4px;border:1px solid var(--rule)}
+.bet.dp{background:var(--dp-soft);border-color:transparent}
+.bet.ek{background:var(--eka-soft);border-color:transparent}
+.bet blockquote{margin:0;font-family:var(--display);font-size:1.22rem;line-height:1.38;font-style:italic}
+.bet.dp blockquote{color:var(--dp-ink)}
+.bet.ek blockquote{color:var(--eka-ink)}
+.bet p{font-size:.89rem;margin-top:14px;color:var(--fg-2)}
+.bet.dp p,.bet.ek p{color:var(--fg-2)}
+
+/* tracks */
+.track-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.ttab{font-family:var(--body);font-size:.88rem;font-weight:600;padding:9px 16px;border-radius:4px;border:1px solid var(--rule-2);background:var(--surface);color:var(--fg-2);cursor:pointer;text-align:left}
+.ttab.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.move{display:grid;grid-template-columns:34px 1fr;gap:14px;padding:16px 0;border-bottom:1px solid var(--rule)}
+.move:last-child{border-bottom:none}
+.move .mn{font-family:var(--display);font-size:1.3rem;font-weight:600;color:var(--fg-3);line-height:1.1}
+.move h4{margin-bottom:5px}
+.move .why{font-size:.89rem;color:var(--fg-2)}
+.move .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+
+/* disclosure */
+details{border:1px solid var(--rule);border-radius:4px;background:var(--surface);margin-top:10px}
+details[open]{background:var(--surface)}
+summary{cursor:pointer;padding:10px 14px;font-size:.8rem;font-weight:600;color:var(--fg-2);list-style:none;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+";font-family:var(--mono);color:var(--fg-3);font-weight:600}
+details[open] summary::before{content:"–"}
+summary:hover{color:var(--fg)}
+.dbody{padding:0 14px 14px;font-size:.84rem;color:var(--fg-2);display:flex;flex-direction:column;gap:8px}
+.dbody ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+.inf{border-bottom:1px dotted var(--fg-3);cursor:help}
+
+.callout{border:1px solid var(--rule);border-left:4px solid var(--warn);background:var(--warn-soft);border-radius:4px;padding:16px 20px}
+.callout h4{color:var(--warn);margin-bottom:6px}
+.callout p{font-size:.89rem;color:var(--fg-2)}
+
+.qa{padding:16px 0;border-bottom:1px solid var(--rule)}
+.qa:last-child{border-bottom:none}
+.qa h4{margin-bottom:5px}
+.qa p{font-size:.89rem;color:var(--fg-2)}
+
+footer{border-top:1px solid var(--rule);background:var(--surface)}
+.foot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:24px}
+@media (max-width:640px){
+  .score-row{grid-template-columns:1fr;gap:12px}
+  .barline{grid-template-columns:52px 1fr;gap:8px}
+  .barline .rating{grid-column:2;font-size:.68rem}
+  .nav-mark{display:none}
+}
+@media print{.nav,.theme-btn,.filters,.track-tabs{display:none}details{break-inside:avoid}details[open]{display:block}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-in">
+    <div class="nav-mark"><b>DocPad</b> vs <i>Eka Care</i></div>
+    <div class="nav-links" id="navlinks">
+      <a href="#verdict" class="on">Verdict</a>
+      <a href="#scorecard">Scorecard</a>
+      <a href="#headline">What stands out</a>
+      <a href="#matrix">Feature matrix</a>
+      <a href="#gaps">Gaps</a>
+      <a href="#friction">Friction</a>
+      <a href="#business">Business</a>
+      <a href="#bets">Strategy</a>
+      <a href="#tracks">What to build</a>
+      <a href="#change">Open questions</a>
+    </div>
+    <button class="theme-btn" id="theme" type="button">Dark</button>
+  </div>
+</nav>
+
+<header class="hero" id="verdict">
+  <div class="wrap hero-in">
+    <p class="eyebrow">Competitor analysis · 16 October 2026 · prepared before Phase-2 scoping</p>
+    <h1 style="margin-top:14px;max-width:18ch">We are not losing on features. We are losing on finishing.</h1>
+    <p class="lede" style="margin-top:18px;max-width:62ch">Eka Care and DocPad were both mapped screen by screen on 15–16 October. Eka is built so a solo doctor can run a whole OPD day in about eight clicks and the patient leaves with a prescription on WhatsApp. DocPad is built so nothing unsafe or unauditable can ever reach the database — and then takes roughly twenty clicks to get there, and sends the patient a link with the diagnosis missing.</p>
+
+    <div class="verdicts">
+      <div class="verdict v-eka">
+        <div class="who">For a solo doctor or small OPD clinic</div>
+        <div class="win">Eka Care wins</div>
+        <p class="why">Clearly, and today. It is the only one of the two a doctor can reach without a salesperson, configure alone, and use to see patients the same afternoon. DocPad&rsquo;s signup is invitation-only, and it has no booking page and no doctor-availability manager at all.</p>
+        <div class="chips"><span class="chip hi">High confidence</span><span class="chip">Both products exercised live</span></div>
+      </div>
+      <div class="verdict v-dp">
+        <div class="who">For a 50–200 bed hospital</div>
+        <div class="win">DocPad wins</div>
+        <p class="why">Eka barely competes here. Its inpatient module was an unlicensed sales demo on our mapped account, and no pharmacy, insurance, claims, receipt tax or allergy list was found anywhere in the product we mapped. DocPad has all of those built &mdash; though roughly a third of its screens never rendered on the day it was mapped.</p>
+        <div class="chips"><span class="chip med">Medium confidence</span><span class="chip med">Eka&rsquo;s IPD seen only as a demo</span></div>
+      </div>
+    </div>
+
+    <div class="sources-strip">
+      <div class="src dp"><b>DocPad — what was examined</b><p class="small">42 routes and 61 endpoints mapped on the live Vercel instance, plus a full read of the <span class="num">docpad-clean</span> source at commit 3f0d836 (19 Sep 2026). Strongest evidence on this side.</p></div>
+      <div class="src ek"><b>Eka Care — what was examined</b><p class="small">21 routes, 29 components and 51 endpoints on dr.eka.care, walked end to end with a test patient through a real prescription. No source access.</p></div>
+      <div class="src"><b>Outside the two products</b><p class="small">Eka's funding and revenue filings, its public feature-request board, app-store reviews, and the April 2026 revision of the government incentive scheme.</p></div>
+    </div>
+  </div>
+</header>
+
+<section class="band" id="scorecard">
+  <div class="wrap band-inner">
+    <p class="eyebrow">At a glance</p>
+    <h2 style="margin-top:10px">Where each product is strong</h2>
+    <p class="lede narrow" style="margin-top:12px">Five bands, no scores out of a hundred. The evidence supports a rough position, not a decimal.</p>
+
+    <div style="margin-top:28px">
+      <div class="score-row">
+        <div class="score-label"><h4>Finishing the job</h4><p class="xs">Does the visit actually complete, end to end?</p></div>
+        <div class="bars">
+          <div class="barline dp"><span class="tag">DocPad</span><span class="track"><i style="width:60%"></i></span><span class="rating">Adequate</span></div>
+          <div class="barline ek"><span class="tag">Eka</span><span class="track"><i style="width:80%"></i></span><span class="rating">Strong</span></div>
+        </div>
+      </div>
+      <div class="score-row">
+        <div class="score-label"><h4>Breadth of coverage</h4><p class="xs">How much of a healthcare business it runs</p></div>
+        <div class="bars">
+          <div class="barline dp"><span class="tag">DocPad</span><span class="track"><i style="width:80%"></i></span><span class="rating">Strong</span></div>
+          <div class="barline ek"><span class="tag">Eka</span><span class="track"><i style="width:60%"></i></span><span class="rating">Adequate</span></div>
+        </div>
+      </div>
+      <div class="score-row">
+        <div class="score-label"><h4>Speed and ease of use</h4><p class="xs">What it costs the doctor and the front desk, per patient</p></div>
+        <div class="bars">
+          <div class="barline dp"><span class="tag">DocPad</span><span class="track"><i style="width:40%"></i></span><span class="rating">Weak</span></div>
+          <div class="barline ek"><span class="tag">Eka</span><span class="track"><i style="width:80%"></i></span><span class="rating">Strong</span></div>
+        </div>
+      </div>
+      <div class="score-row">
+        <div class="score-label"><h4>Clinical safety</h4><p class="xs">Interactions and allergies &mdash; and whether the checks actually fire today</p></div>
+        <div class="bars">
+          <div class="barline dp"><span class="tag">DocPad</span><span class="track"><i style="width:55%"></i></span><span class="rating">Adequate</span></div>
+          <div class="barline ek"><span class="tag">Eka</span><span class="track"><i style="width:35%"></i></span><span class="rating">Weak</span></div>
+        </div>
+      </div>
+      <div class="score-row">
+        <div class="score-label"><h4>Readiness to sell</h4><p class="xs">Pricing, signup, time to first value, national rails</p></div>
+        <div class="bars">
+          <div class="barline dp"><span class="tag">DocPad</span><span class="track"><i style="width:22%"></i></span><span class="rating">Absent–weak</span></div>
+          <div class="barline ek"><span class="tag">Eka</span><span class="track"><i style="width:60%"></i></span><span class="rating">Adequate</span></div>
+        </div>
+      </div>
+    </div>
+
+    <details>
+      <summary>How these positions were decided</summary>
+      <div class="dbody">
+        <ul>
+          <li><b>Finishing the job</b> — Eka's walk-in to finished prescription was executed end to end on a test patient: queue, check-in, vitals, pad, PDF, automatic WhatsApp, receipt, follow-up booking. DocPad's documentation flow is complete, but the patient-facing prescription link returns no diagnosis, no advice and no follow-up date, and appointment reminders depend on a scheduled-job secret the repo's own notes say was never set.</li>
+          <li><b>Breadth</b> — DocPad has inpatient care (around 35 tables including medication administration and an accreditation checklist), pharmacy with an 821-line formulary and a stock ledger, insurance preauthorisation and claims, and tax-aware billing. None of these were found in the mapped Eka product; its inpatient module was an unlicensed sales demo. Against that, roughly a third of DocPad's 42 mapped routes never resolved, were stubs, or were labelled coming soon.</li>
+          <li><b>Speed</b> — counted, not judged. See the friction section.</li>
+          <li><b>Clinical safety</b> — DocPad's architecture is the strongest thing in either product: a database trigger that refuses an unsafe prescription, a cross-reactivity map across drug families, and 26 automated assertions. It is rated only adequate because those checks do not yet fire on data entered through the app — see the gap below. Eka showed a severity label and nothing more on the one interacting pair tested, and no allergy list was found anywhere in the mapped product.</li>
+          <li><b>Readiness to sell</b> — Eka publishes prices and, per a November 2025 interview with its founder, had roughly 12,000 paying doctors. DocPad has no self-serve signup, no screen anywhere that creates a new hospital, and its national health-ID enrolment still returns a hardcoded placeholder.</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="band" id="headline" style="background:var(--surface-2)">
+  <div class="wrap band-inner">
+    <p class="eyebrow">The five things worth repeating in a room</p>
+    <h2 style="margin-top:10px">What actually stands out</h2>
+
+    <div class="findings" style="margin-top:28px">
+      <article class="find wedp">
+        <div class="rank">01 — our strongest position, and not yet safe to sell</div>
+        <h3>We built the better safety system. It is not switched on.</h3>
+        <p class="small">No allergy list was found anywhere in the Eka product we mapped. Its medical history is six toggles — diabetes, hypertension, thyroid, alcohol, tobacco, smoking — so it has nothing to check a prescription against. On the one interacting pair tested it showed a severity label and a drug pair: no mechanism, no consequence, no advice, and no prompt to record a reason for overriding. DocPad's answer is far better designed: a database trigger that refuses the prescription outright, management advice on screen, and a cross-reactivity map that knows a penicillin allergy implicates cephalosporins.</p>
+        <p class="small"><b>But on DocPad today that hard stop almost never fires.</b> The only screen that records an allergy writes to an older free-text field, which the checker treats as an unclassified substance — and an unclassified substance is never allowed to block. The cephalosporin match is advisory and does not block either. Behind it, the interaction content is, by the repository's own September note, about 24 drug pairs, with warfarin plus aspirin returning clean.</p>
+        <p class="sowhat"><b>So what:</b> still the one claim a competitor cannot answer with a sprint — but do not make it in a sales conversation until the entry form feeds the checker and the content is real. Today we would be claiming a capability our own test fixtures show is dormant.</p>
+      </article>
+
+      <article class="find weka">
+        <div class="rank">02 — they win this outright</div>
+        <h3>Eka finishes the visit. DocPad finishes the note.</h3>
+        <p class="small">On Eka, about eight interactions take a patient from the queue to a finished prescription that has already been sent to their WhatsApp, with a receipt raised at check-in and the follow-up booking offered on the same screen. On DocPad the same stretch takes roughly twenty, prescribing happens in a modal rather than on the page, and the patient then receives a link that omits the diagnosis, the advice and the follow-up date — the three things they most need.</p>
+        <p class="sowhat"><b>So what:</b> a doctor seeing 60 patients a day spends about 1,200 interactions getting through the list, against roughly 500 on Eka. It is the single biggest reason a clinic would choose them over us.</p>
+      </article>
+
+      <article class="find weka">
+        <div class="rank">03 — the capability gap that compounds</div>
+        <h3>Their software gets faster the longer you use it. Ours doesn't.</h3>
+        <p class="small">Eka's "My Genie" learns each doctor's own prescribing — dose, frequency, timing, duration, instructions — and replays it as defaults, with per-attribute controls over exactly what is remembered. It had already learned two medicines after a single test prescription. DocPad has most of the same machinery: a medication history table, a favourites star, and a working similarity search over past prescriptions. But the prefill only fires from one tab, and the similarity result is a read-only grey box the doctor cannot apply.</p>
+        <p class="sowhat"><b>So what:</b> this is the cheapest large win on the board. The parts exist and are not plugged in.</p>
+      </article>
+
+      <article class="find wedp">
+        <div class="rank">04 — the wedge</div>
+        <h3>Eka's own users are voting for things we already built</h3>
+        <p class="small">Eka runs a public feature-request board where its users vote. Top items when it was read: a QR code on printed prescriptions (101 votes), bulk messaging (65), regional-language follow-up messages (56), an e-signature (53), consent forms (45), inpatient support (37). Two of those six are things DocPad already has &mdash; a consent template library with mandatory and optional forms, and a full inpatient module with medication administration and discharge summaries. The other four are gaps we share with them.</p>
+        <p class="sowhat"><b>So what:</b> a public, vote-counted list of what Eka's own users are asking for and not getting. Two entries are ours to exploit today. The other four say where the whole category is weak, which is also worth knowing.</p>
+      </article>
+
+      <article class="find risk">
+        <div class="rank">05 — the thing to not build a plan on</div>
+        <h3>The government incentive story is shrinking, for both of us</h3>
+        <p class="small">Eka sells a dashboard that tracks rupees earned from the national Digital Health Incentive Scheme. The scheme's seventh revision, dated April 2026, narrowed it hard: only identity-verified records count, the share-a-QR route no longer earns anything, a clinic must clear 100 eligible transactions in a month before it is paid anything at all, and a routine prescription now pays the facility ₹5. That document set a window to September 2026, and <span class="inf" title="Searched official notices and press; none found, which is not proof none exists">no extension notice could be found</span>.</p>
+        <p class="sowhat"><b>So what:</b> do not let incentive income become a pillar of the DocPad business case. <span class="inf" title="Our arithmetic on the published rates, not a figure from the scheme itself">At those rates a busy solo clinic clears a few thousand rupees a month</span>, and a clinic under the 100-transaction floor earns nothing at all.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="matrix">
+  <div class="wrap band-inner">
+    <p class="eyebrow">The comprehensive view</p>
+    <h2 style="margin-top:10px">Feature-by-feature</h2>
+    <p class="lede narrow" style="margin-top:12px">Twenty-eight rows, grouped by the job being done. Filter to just the rows that decide something.</p>
+
+    <div class="filters" style="margin-top:22px" id="filters">
+      <button class="fbtn on" data-f="all" type="button">Everything</button>
+      <button class="fbtn" data-f="stakes" type="button">Table stakes</button>
+      <button class="fbtn" data-f="diff" type="button">Differentiators</button>
+      <button class="fbtn" data-f="wedp" type="button">Where we win</button>
+      <button class="fbtn" data-f="weka" type="button">Where we lose</button>
+    </div>
+
+    <div class="mtx-scroll">
+      <table class="mtx">
+        <thead><tr><th style="width:38%">Capability</th><th class="c-dp" style="width:21%">DocPad</th><th class="c-ek" style="width:21%">Eka Care</th><th style="width:20%">Kind</th></tr></thead>
+        <tbody id="mtxbody">
+          <tr class="grp" data-k="all"><td colspan="4">Getting the patient in front of the doctor</td></tr>
+
+          <tr data-k="stakes"><td class="feat">Patient registration<span class="note">DocPad captures consent across five separate purposes; Eka opens a national-health-ID wizard before manual entry</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="stakes"><td class="feat">Duplicate handling<span class="note">DocPad detects duplicates by hashing the mobile number and offers a merge review. Eka offers merge from the patient directory; automatic detection was not observed</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="stakes weka"><td class="feat">Doctor availability and slots<span class="note">DocPad stores clinic hours and slot length per department but enforces neither — no double-booking check exists</span></td>
+          <td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">Patient self-booking<span class="note">Eka ships a public doctor page, an embeddable website widget and a printable clinic QR poster</span></td>
+          <td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="stakes"><td class="feat">Walk-in queue with tokens<span class="note">Eka shows live wait timers; DocPad gates the queue on payment collected</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">Pre-visit symptom questionnaire<span class="note">Eka sends an adaptive ~13-step symptom checker before the consultation</span></td>
+          <td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr class="grp" data-k="all"><td colspan="4">The consultation itself</td></tr>
+
+          <tr data-k="stakes"><td class="feat">Structured encounter / prescription pad<span class="note">Eka's is reorderable section cards; DocPad's is a fixed SOAP-style workspace</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Coded clinical terminology<span class="note">DocPad resolves to SNOMED CT with ICD-10 suggestion. Eka shows ICD-10 badges on symptoms and diagnoses, and also has a pad setting called “ICD 10 coded” that ships off — what that setting changes was not tested</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Drug–drug interaction checking<span class="note">DocPad blocks at the database and shows management advice, but on roughly 24 curated pairs. Eka, on the one pair tested, showed a severity label with no mechanism, no advice and no prompt for an override reason</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Allergy list and contraindication check<span class="note">None found anywhere in the mapped Eka product. DocPad's cross-reactivity map is built and tested, but nothing in the app writes to it, so allergies typed in today do not trigger the hard stop</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Duplicate-therapy check<span class="note">DocPad catches the same generic twice, including against active medications — narrow, but real. Not observed on Eka</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-diff"><i class="dot"></i>Not observed</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff"><td class="feat">Voice capture during the consult<span class="note">DocPad has five per-field microphones live in the encounter, English only. Eka's scribe is a separate app plus a browser extension, and its pad-filling assistant ships off</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">Learns the doctor's own prescribing<span class="note">Eka remembers dose, frequency, timing and duration per drug with per-attribute controls. DocPad prefills last-used values, but only from one tab</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="stakes"><td class="feat">Reusable prescription templates<span class="note">Both have them. DocPad's separate admin "OPD templates" builder is not wired to the encounter at all</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">Clinical AI assistant<span class="note">Eka's streams answers grounded in the patient's own record and calls its own drug-search tools</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">Specialty modules<span class="note">Eka has dental charting, five ophthalmology sections, growth charts, milestones, a vaccination chart. DocPad has orthopaedic x-ray measurement</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="all"><td class="feat">Freehand clinical drawing<span class="note">Eka's Care Canvas prints with the prescription. Pleasant, rarely decisive</span></td>
+          <td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Noise</span></td></tr>
+
+          <tr class="grp" data-k="all"><td colspan="4">Closing the visit</td></tr>
+
+          <tr data-k="stakes weka"><td class="feat">The prescription document<span class="note">Eka renders a real PDF and ships separate print and digital letterhead designers. DocPad prints from the browser and has no QR code. Neither product's rendered prescription carried a signature block</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="stakes weka"><td class="feat">Getting it to the patient<span class="note">Eka sends automatically on finish. DocPad's link leaves out diagnosis, advice and follow-up date</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">Patient instructions in Indian languages<span class="note">Eka translates advice and medication instructions into eight or more. DocPad glosses dosage lines into Hindi, and the public link shows none of it</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="stakes wedp"><td class="feat">Billing with tax<span class="note">DocPad's charge master carries tax per line and issues real invoice PDFs. Eka has no tax breakdown anywhere in its billing</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="stakes weka"><td class="feat">Appointment reminders<span class="note">DocPad's code is complete and scheduled, but its own notes say the scheduling secret was never set, so it has likely never sent one</span></td>
+          <td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="all"><td class="feat">How patient messaging is paid for<span class="note">Eka meters every message against a prepaid balance. DocPad sends through its own account with no accounting — cheaper for the clinic, a cost risk for us</span></td>
+          <td><span class="st s-diff"><i class="dot"></i>By design</span></td><td><span class="st s-diff"><i class="dot"></i>By design</span></td><td><span class="tag-k">Different bet</span></td></tr>
+
+          <tr data-k="stakes"><td class="feat">Certificates and consent forms<span class="note">Eka has seven certificate templates and five consent templates with a merge-field editor. DocPad has a consent template library with mandatory and optional forms, system defaults and versioning</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr class="grp" data-k="all"><td colspan="4">Running the whole business</td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Pharmacy, formulary and stock<span class="note">DocPad has an 821-line formulary, a dispensing queue, a stock ledger and an audit export. None found in the mapped Eka product, though its inpatient demo shows a pharmacy clearance step</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-diff"><i class="dot"></i>Not observed</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Insurance, preauthorisation and claims<span class="note">DocPad codes procedures to SNOMED and diagnoses to ICD on the preauth form, and tracks panels and third-party administrators. Nothing equivalent found on Eka</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-diff"><i class="dot"></i>Not observed</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Inpatient care<span class="note">DocPad has beds, transfers, medication administration, nursing care plans, discharge summaries and an accreditation checklist. Eka's exists as a licensed product but was a 16-step sales demo on our account</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">National health-ID integration<span class="note">Eka treats it as first-class: an identity wizard before manual entry, records linked to it, and a dashboard tracking incentive rupees. DocPad's enrolment function still returns a hardcoded mock and its gateway address is unset</span></td>
+          <td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="diff wedp"><td class="feat">Audit trail and data-protection rights<span class="note">DocPad writes an append-only audit across 83 tables that the database refuses to let anyone edit, apart from a 24-month retention job, plus data-principal request handling</span></td>
+          <td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="st s-diff"><i class="dot"></i>Not observed</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+
+          <tr data-k="stakes weka"><td class="feat">Signing up without a salesperson<span class="note">DocPad's signup is invitation-only and no screen anywhere creates a new hospital. Eka's own archived pricing page advertises a 15-day trial</span></td>
+          <td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="st s-yes"><i class="dot"></i>Present</span></td><td><span class="tag-k">Table stakes</span></td></tr>
+
+          <tr data-k="diff weka"><td class="feat">Tablet and offline use<span class="note">DocPad's encounter screen has one layout switch and collapses to a single column below 1024px; no offline support of any kind. Eka ships a desktop app in beta</span></td>
+          <td><span class="st s-no"><i class="dot"></i>Absent</span></td><td><span class="st s-part"><i class="dot"></i>Partial</span></td><td><span class="tag-k">Differentiator</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="xs" style="margin-top:12px">"Not observed" means the mapping could not see it from outside, not that it is missing. Eka's source code was not available.</p>
+  </div>
+</section>
+
+<section class="band" id="gaps" style="background:var(--surface-2)">
+  <div class="wrap band-inner">
+    <p class="eyebrow">Ordered by damage, divided by cost to fix</p>
+    <h2 style="margin-top:10px">The gaps that matter</h2>
+    <p class="lede narrow" style="margin-top:12px">The order is the recommendation. The first three are small jobs with outsized effect; the last two are strategic commitments.</p>
+
+    <div class="stack g16" style="margin-top:28px">
+
+      <article class="gap blocks">
+        <div class="gap-head"><h3>The patient never receives the diagnosis</h3><div style="display:flex;gap:8px"><span class="sev blocks">Blocks</span><span class="eff">Small</span></div></div>
+        <p class="small">DocPad's patient-facing prescription link returns vitals, the chief complaint and the medicines — but not the diagnosis, not the advice, and not the follow-up date. A patient told to come back in three days has no record of it. The WhatsApp message carries a medication block, so the instruction survives only if the doctor happened to type it there.</p>
+        <div class="gap-meta">
+          <div><span>Who it hurts</span>Every patient, and the doctor whose follow-up never arrives</div>
+          <div><span>Why small</span>One database function decides what the link returns</div>
+          <div><span>Also fix</span>The link is a permanent unguessable address with no expiry</div>
+        </div>
+      </article>
+
+      <article class="gap blocks">
+        <div class="gap-head"><h3>There is no front door</h3><div style="display:flex;gap:8px"><span class="sev blocks">Blocks</span><span class="eff">Medium</span></div></div>
+        <p class="small">No signup. No screen that creates a hospital — a new customer currently needs someone to run SQL. No public booking page, no embeddable widget, no clinic QR poster, no doctor profile. Eka's entire acquisition engine is exactly these surfaces, and they double as the patient's way in. Without them DocPad cannot be sold to a clinic at all, only delivered to one.</p>
+        <div class="gap-meta">
+          <div><span>Who it hurts</span>Sales, and every clinic too small to warrant an implementation</div>
+          <div><span>Why medium</span>New surfaces, but a signed-out prescription route already proves the pattern</div>
+          <div><span>Blocks</span>Any attempt at Eka's market</div>
+        </div>
+      </article>
+
+      <article class="gap degrades">
+        <div class="gap-head"><h3>Twenty clicks where eight will do</h3><div style="display:flex;gap:8px"><span class="sev degrades">Degrades</span><span class="eff">Medium</span></div></div>
+        <p class="small">Prescribing opens a modal rather than living on the page. A patient-identity confirmation appears three times in one visit. Terminology search results cannot be chosen with the keyboard, so the doctor's hand leaves the keyboard on every complaint and every diagnosis. There are no shortcuts anywhere in the encounter. Picking a drug from search ignores how that doctor prescribed it last time, even though the record exists.</p>
+        <div class="gap-meta">
+          <div><span>Who it hurts</span>High-volume outpatient doctors — the exact segment Eka owns</div>
+          <div><span>Why medium</span>Inline prescribing is a real rebuild; keyboard selection and prefill are not</div>
+          <div><span>Quick win inside it</span>Keyboard selection on terminology search, and prefill from history on every path</div>
+        </div>
+      </article>
+
+      <article class="gap degrades">
+        <div class="gap-head"><h3>Our best safety feature has no way to enter data</h3><div style="display:flex;gap:8px"><span class="sev degrades">Degrades</span><span class="eff">Small</span></div></div>
+        <p class="small">The structured allergy table, the severity grades and the cross-reactivity map across penicillins, cephalosporins, sulfonamides, NSAIDs and opioids are all built and tested. Nothing in the application writes to them. The encounter screen still saves allergies into an old free-text list, and once a patient has any structured allergy, anything added through that old screen is invisible to the checker.</p>
+        <div class="gap-meta">
+          <div><span>Who it hurts</span>Patients, directly. And it silently undercuts our strongest sales claim</div>
+          <div><span>Why small</span>One form and one read path against a schema that already exists</div>
+          <div><span>Related</span>A free-text drug name bypasses interaction checking entirely</div>
+        </div>
+      </article>
+
+      <article class="gap degrades">
+        <div class="gap-head"><h3>The prescription doesn't look like a prescription</h3><div style="display:flex;gap:8px"><span class="sev degrades">Degrades</span><span class="eff">Small–medium</span></div></div>
+        <p class="small">No QR code — the single most-requested item on Eka's own board, with 101 votes. No signature image or stamp, just a ruled line. And when a doctor's qualification field is empty the document prints a hardcoded "MBBS", which is a wrong credential on a legal document. Eka ships separate print and digital letterhead designers tuned for Indian page economics.</p>
+        <div class="gap-meta">
+          <div><span>Who it hurts</span>Doctors, at the moment they hand paper to a patient</div>
+          <div><span>Why small–medium</span>QR and signature upload are small; a letterhead designer is its own project</div>
+          <div><span>Fix first</span>The hardcoded qualification. That one is a defect, not a gap</div>
+        </div>
+      </article>
+
+      <article class="gap blocks">
+        <div class="gap-head"><h3>National health-ID enrolment is a placeholder</h3><div style="display:flex;gap:8px"><span class="sev blocks">Blocks</span><span class="eff">Large</span></div></div>
+        <p class="small">The enrolment function returns a fixed success message and a random transaction id. The gateway address is unset, so every downstream function fails on first call. The verification step calls a database function that does not exist in any migration. Meanwhile the surrounding work is genuinely good — encrypted record envelopes, consent filtering, a standards-compliant clinical document are all built and waiting for a connection.</p>
+        <div class="gap-meta">
+          <div><span>Who it hurts</span>Any sale where interoperability is a procurement checkbox</div>
+          <div><span>Why large</span>Needs sandbox credentials, facility and professional registry enrolment, a security assessment</div>
+          <div><span>Temper it</span>The incentive income this unlocks is smaller than it was a year ago</div>
+        </div>
+      </article>
+
+      <article class="gap degrades">
+        <div class="gap-head"><h3>Built, admired, never connected</h3><div style="display:flex;gap:8px"><span class="sev degrades">Degrades</span><span class="eff">Small each</span></div></div>
+        <p class="small">A pattern worth naming on its own, because it is cheaper to fix than anything else here. The admin template builder has a full create-read-update-delete interface that the encounter screen never reads. The similarity search over past prescriptions works and renders a card the doctor cannot apply. Clinic hours and slot lengths are stored and editable and enforced nowhere. A messaging-consent purpose is defined and never checked before a message goes out.</p>
+        <div class="gap-meta">
+          <div><span>Who it hurts</span>Us — we are paying for capability we don't ship</div>
+          <div><span>Why small</span>Each is a wiring job, not a build</div>
+          <div><span>Worth auditing</span>Assume there are more</div>
+        </div>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<section class="band" id="friction">
+  <div class="wrap band-inner">
+    <p class="eyebrow">Counted, not judged</p>
+    <h2 style="margin-top:10px">From the queue to a finished prescription</h2>
+    <p class="lede narrow" style="margin-top:12px">The same stretch of the visit on both products, every discrete interaction counted. Registration is excluded on both sides, because the two products structure it differently and the comparison would stop being like-for-like. Eka's count was executed on a live test patient; DocPad's is reconstructed from its source, since no writes were performed.</p>
+
+    <div class="friction" style="margin-top:28px">
+      <div class="fcol dp">
+        <header>
+          <h4>DocPad</h4>
+          <div class="fcount num">~20</div>
+          <p class="xs">interactions, mouse-driven, no keyboard path</p>
+        </header>
+        <ol class="fsteps">
+          <li><b>1</b><span>Open the encounter from the queue</span></li>
+          <li><b>2</b><span>Type the complaint, click a terminology result</span></li>
+          <li><b>2</b><span>Type the diagnosis, click a result</span></li>
+          <li><b>1</b><span>Click Prescribe</span></li>
+          <li><b>1</b><span class="pain">Confirm the patient's identity (first time)</span></li>
+          <li><b>2</b><span>Search a drug, click it</span></li>
+          <li><b>3</b><span>Set frequency, duration, confirm the dose</span></li>
+          <li><b>1</b><span>Finalise the prescription</span></li>
+          <li><b>1</b><span class="pain">Confirm again</span></li>
+          <li><b>1</b><span>Close the modal</span></li>
+          <li><b>2</b><span>Save and close, then confirm a third time</span></li>
+          <li><b>+</b><span class="pain">Separately click to send the WhatsApp message</span></li>
+        </ol>
+      </div>
+
+      <div class="fcol ek">
+        <header>
+          <h4>Eka Care</h4>
+          <div class="fcount num">~8</div>
+          <p class="xs">interactions, and the patient already has it. Defaults come prefilled once the doctor has prescribed before</p>
+        </header>
+        <ol class="fsteps">
+          <li><b>2</b><span>Search the patient, add them</span></li>
+          <li><b>1</b><span>Check in — the wait timer starts, a receipt is raised</span></li>
+          <li><b>1</b><span>Click Write</span></li>
+          <li><b>3</b><span>Symptom, diagnosis, drug — each one type-and-pick, against a coded knowledge base</span></li>
+          <li><b>1</b><span>Finish</span></li>
+          <li><b>0</b><span>The prescription sends itself over WhatsApp and SMS</span></li>
+          <li><b>–</b><span>Receipt, follow-up booking and save-as-template all sit on that same screen</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:20px">
+      <h4>One thing to copy carefully, not wholesale</h4>
+      <p>Eka's automatic send is also its worst design decision. Finishing a prescription dispatches it to the patient with no confirmation step and no undo, and bills the clinic for the message. A doctor who finishes the wrong draft has already sent it. Their settings do let a clinic choose which messages go out on which channel, so this may be configurable — but on the account we mapped, finishing sent it. Copy the speed, not the absence of a brake: an explicit send, or a few seconds of undo, is both safer and a fair thing to point at in a sales conversation.</p>
+    </div>
+
+    <details style="margin-top:16px">
+      <summary>Other friction observed on each side</summary>
+      <div class="dbody">
+        <ul>
+          <li><b>DocPad</b> — the encounter screen renders a second navigation header inside the main sidebar, so there are two competing navigations on the most important screen. The billing module renders dark panels while the rest of the app is light, and on the insurance page the heading is dark text on a dark surface and effectively invisible. Marking a visit complete requires no complaint, no diagnosis and no medication, despite the complaint field showing a required marker. A Save Draft button in the prescription modal has no handler attached.</li>
+          <li><b>Eka</b> — the queue row packs about ten actions into a single line, and at a normal laptop size several screens already clip. Support chat bubbles and product coach-marks repeatedly covered primary controls during mapping. Coded diagnoses are off by default, so most of its data is uncoded unless a doctor finds the setting. Its own "assessment summary" showed nothing after a completed questionnaire.</li>
+          <li><b>Both</b> — desktop-first. Eka already clips on several screens at 1440×727, and the mapping recommends treating 1280px and up as the design target for any rebuild. DocPad's encounter screen has exactly one layout switch and no tablet work, with a dosage popover fixed at 420px that is tight on a ten-inch tablet held upright.</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="band" id="business" style="background:var(--surface-2)">
+  <div class="wrap band-inner">
+    <p class="eyebrow">Who buys, what it costs, how long before it's worth anything</p>
+    <h2 style="margin-top:10px">The business read</h2>
+
+    <div class="cmp" style="margin-top:24px">
+      <div class="cmp-row cmp-head"><div></div><div>DocPad</div><div>Eka Care</div></div>
+      <div class="cmp-row"><div>Who buys</div><div>Hospital administrator or owner. Procurement-shaped: compliance, audit, reporting.</div><div>The doctor, personally. Buyer and user are the same person, which is why the product optimises for their hands.</div></div>
+      <div class="cmp-row"><div>Price</div><div>No published price. Built to a fixed-scope contract.</div><div>Roughly ₹10,000–15,000 a year plus tax, with metered patient messages on top. <span class="inf" title="Prices differ across Eka's own archived pricing page, a third-party aggregator and a Nov 2025 interview">Sources disagree on the current list.</span></div></div>
+      <div class="cmp-row"><div>Time to first value</div><div>Weeks. Someone must create the hospital, invite staff, and load the charge master and formulary before anything works.</div><div>An afternoon. Its archived pricing page advertises a 15-day trial; then register a patient and write.</div></div>
+      <div class="cmp-row"><div>Scale reached</div><div>One hospital on the mapped instance; the signed-in doctor's panel held 30 patients.</div><div>Around 65,000 doctors with roughly 12,000 paying, and about ₹25–29 crore of annual revenue, loss-making — all from a November 2025 interview with the founder, so nearly a year old now. No funding round found since July 2022.</div></div>
+      <div class="cmp-row"><div>Switching cost for the customer</div><div>High once inpatient care, pharmacy and billing are in use. That is a moat, but only after the sale.</div><div>Low. The product is largely one doctor's own records, and a competitor offers migration.</div></div>
+      <div class="cmp-row"><div>Price pressure</div><div>Not yet exposed to it.</div><div>Significant. Press reported a government-backed clinic system launching at ₹499 a month in mid-2026, which would anchor the low end below Eka's annual plans.</div></div>
+      <div class="cmp-row"><div>What users complain about</div><div>No public reviews exist — nothing to learn from yet.</div><div>Thin but consistent across the handful of reviews visible: renewals paid with no response afterwards, patient-merge failures, feature requests declined. Store ratings stay healthy — 4.5 on Play across about 915 ratings, 4.3 on the Indian App Store.</div></div>
+    </div>
+
+    <div class="callout" style="margin-top:20px">
+      <h4>The business factor that outweighs any feature</h4>
+      <p>On those November 2025 figures Eka had converted under a fifth of its doctors to a paid plan, and earned roughly ₹25–29 crore a year against losses, having raised nothing new since 2022. <span class="inf" title="Our reading of the funding and revenue picture, not something the company has said">That reads as a company under pressure to monetise rather than one with room to out-build a competitor.</span> It makes the market attackable — but it also means price alone will not win it, because a government-backed clinic product at ₹499 a month already sits below everyone. The way in is being visibly better at something a doctor feels in the first week.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="bets">
+  <div class="wrap band-inner">
+    <p class="eyebrow">Why the two products differ</p>
+    <h2 style="margin-top:10px">Two different bets about what a clinician wants</h2>
+    <p class="lede narrow" style="margin-top:12px">Neither company has said this. These are the bets each product's behaviour implies, and almost every difference above follows from them. Neither is wrong.</p>
+
+    <div class="bets" style="margin-top:28px">
+      <div class="bet ek">
+        <p class="eyebrow" style="color:var(--eka-ink)">Eka believes</p>
+        <blockquote style="margin-top:10px">The doctor is the customer, the prescription is the product, and whoever holds the national record holds the market.</blockquote>
+        <p>So the pad is fast, personal and forgiving. The identity wizard opens before manual entry, which is what you would build if the record were the asset. Breadth ships across five separate web properties with three different visual languages, as if being present everywhere beat being seamless. And the safety features inform rather than interrupt — which is the shape you get when the person you answer to is the one being interrupted.</p>
+      </div>
+      <div class="bet dp">
+        <p class="eyebrow" style="color:var(--dp-ink)">DocPad believes</p>
+        <blockquote style="margin-top:10px">The institution is the customer, the database is the product, and anything that can be bypassed will be.</blockquote>
+        <p>So safety rules live in the database where no screen can route around them, the audit log cannot be edited even by the system, and tenant isolation is proven by automated tests. Breadth means one application covering outpatients, inpatients, pharmacy, billing and insurance together. The cost of that bet is visible in every click count on this page: the product was designed to be correct before it was designed to be quick.</p>
+      </div>
+    </div>
+
+    <p class="lede narrow" style="margin-top:26px">The useful thing is that these bets are not actually in conflict. A hard stop that takes one keystroke to satisfy is still a hard stop. Nothing about enforcing safety at the database requires twenty clicks — that is a separate, fixable choice about the interface on top of it.</p>
+  </div>
+</section>
+
+<section class="band" id="tracks" style="background:var(--surface-2)">
+  <div class="wrap band-inner">
+    <p class="eyebrow">Input to Phase-2 scoping</p>
+    <h2 style="margin-top:10px">What to build, in what order</h2>
+    <p class="lede narrow" style="margin-top:12px">Two tracks, as agreed. They share most of their work, which is the point — almost everything in the first track is something the hospital product needs anyway.</p>
+
+    <div class="track-tabs" style="margin-top:24px" id="ttabs">
+      <button class="ttab on" data-t="t1" type="button">Track 1 · Go after Eka's market</button>
+      <button class="ttab" data-t="t2" type="button">Track 2 · Sharpen the hospital product</button>
+      <button class="ttab" data-t="t3" type="button">Don't build this</button>
+    </div>
+
+    <div id="t1">
+      <p class="small" style="max-width:62ch;margin-bottom:8px">A clinic-tier DocPad a single doctor can sign up for and use the same day. Ordered so that each step is usable before the next begins.</p>
+      <div class="move"><div class="mn num">1</div><div><h4>Close the loop on the visit output</h4><p class="why">Make the patient's prescription link carry the diagnosis, the advice and the follow-up date. Add the QR code and a signature image. Fix the hardcoded qualification. This is days of work and it is the difference between a document a patient can use and one they can't.</p><div class="tags"><span class="chip">Small</span><span class="chip">Also fixes a defect</span></div></div></div>
+      <div class="move"><div class="mn num">2</div><div><h4>Make the pad fast</h4><p class="why">Keyboard selection on terminology search. Prefill from the doctor's own last prescription on every path, not just the Recent tab. Let the similar-past-prescription card actually populate the lines instead of showing a note. Collapse the three identity confirmations to one. Target under ten interactions for a routine visit, and measure it.</p><div class="tags"><span class="chip">Medium</span><span class="chip">Biggest felt difference</span></div></div></div>
+      <div class="move"><div class="mn num">3</div><div><h4>Build the front door</h4><p class="why">Self-serve signup that creates a clinic. A public doctor page, an embeddable booking widget and a printable QR poster. A real availability manager with slots, because clinic hours are currently stored and ignored. This is what a clinic buys before it buys anything clinical.</p><div class="tags"><span class="chip">Medium</span><span class="chip">Blocks the whole track</span></div></div></div>
+      <div class="move"><div class="mn num">4</div><div><h4>Switch the safety system on, then lead with it</h4><p class="why">Wire the entry form to the structured allergy table that already exists, classify what it writes so the hard stop can fire, backfill the legacy free-text list, and stop manually typed drug names bypassing the interaction check. Then deal with the content: roughly 24 interaction pairs is not yet a claim worth making. Only after that does the sales line work — and then it works very well, because the competitor cannot check allergies at all.</p><div class="tags"><span class="chip">Small to wire</span><span class="chip">Content is the real cost</span><span class="chip">Do before any safety claim</span></div></div></div>
+      <div class="move"><div class="mn num">5</div><div><h4>Make it work on a tablet</h4><p class="why">The front desk and the ward are not desk jobs. One layout switch at 1024px and a 420px-wide popover is not tablet support. Eka is equally desktop-bound, so this is open ground rather than catch-up.</p><div class="tags"><span class="chip">Medium</span><span class="chip">Open ground</span></div></div></div>
+    </div>
+
+    <div id="t2" hidden>
+      <p class="small" style="max-width:62ch;margin-bottom:8px">Keep the hospital buyer, and take the parts of Eka's craft that make staff faster without weakening what makes DocPad defensible.</p>
+      <div class="move"><div class="mn num">1</div><div><h4>Fix what is visibly broken before adding anything</h4><p class="why">Five high-severity defects were observed on the live instance: outpatient counters returning errors so every figure reads zero, patient lookup hanging with no request sent, the backup-listing function missing from the database entirely, financial and accreditation reports refusing a valid staff session, and clinical analytics never rendering. None are architectural. All are the first thing a prospect would see in a demo — and the backup one sits directly under the accreditation clause we cite elsewhere in the product.</p><div class="tags"><span class="chip">Small each</span><span class="chip">Demo-blocking</span></div></div></div>
+      <div class="move"><div class="mn num">2</div><div><h4>Connect what is already built</h4><p class="why">Wire the admin template builder to the encounter. Enforce the slot lengths that are already stored. Check the messaging consent that is already defined before sending. Set the scheduling secret so the reminders that are already written actually go out. Audit for more of these — the pattern is consistent enough to expect others.</p><div class="tags"><span class="chip">Small each</span><span class="chip">Capability already paid for</span></div></div></div>
+      <div class="move"><div class="mn num">3</div><div><h4>Take Eka's configuration pattern</h4><p class="why">Eka uses one drag-to-reorder, toggle-per-column table for five different settings screens — appointment fields, pad sections, messages, receipt fields, ID rules. Building that primitive once gives a hospital the ability to shape its own forms without us, and it collapses several screens into one component. It is the single most reusable idea in their product.</p><div class="tags"><span class="chip">Medium</span><span class="chip">Reduces our own build cost</span></div></div></div>
+      <div class="move"><div class="mn num">4</div><div><h4>Extend voice from fields to the consultation</h4><p class="why">DocPad already has five live microphones in the encounter resolving speech to coded terminology. Eka's equivalent lives outside the pad — a separate scribe application plus a browser extension — and its in-pad assistant ships switched off, so neither could be tested. The honest read is that we are not behind here. The gaps are language and scope: English only, one field at a time. Hindi first, then whichever language the first customers speak.</p><div class="tags"><span class="chip">Medium–large</span><span class="chip">Not behind</span></div></div></div>
+      <div class="move"><div class="mn num">5</div><div><h4>Decide on interoperability deliberately, not by default</h4><p class="why">Enrolment is mocked, the gateway is unset, and connecting properly needs sandbox credentials, registry enrolment and a security assessment. That is real work for a smaller payoff than it had a year ago. Worth doing when a deal requires it, or when the underlying standards work — which is genuinely good — can be pointed at instead.</p><div class="tags"><span class="chip">Large</span><span class="chip">Sequence against a real deal</span></div></div></div>
+    </div>
+
+    <div id="t3" hidden>
+      <p class="small" style="max-width:62ch;margin-bottom:8px">Things Eka has that look impressive and would be a poor use of the next two quarters.</p>
+      <div class="move"><div class="mn num">—</div><div><h4>A metered message-credit system</h4><p class="why">Eka's prepaid credits are a revenue line, not a feature; its own users resent topping up. Charging nothing for messages is a cleaner story at this stage. Do add cost accounting internally, because we currently send on our own account with no tracking at all.</p></div></div>
+      <div class="move"><div class="mn num">—</div><div><h4>Freehand drawing and most specialty modules</h4><p class="why">Dental charts and five ophthalmology sections serve Eka's long tail of solo specialists. They are a distraction until a customer asks, and each one is a surface to maintain forever.</p></div></div>
+      <div class="move"><div class="mn num">—</div><div><h4>A business case resting on incentive income</h4><p class="why">The scheme now requires identity-verified records, pays ₹5 for a routine prescription, excludes the QR route entirely, and pays nothing at all to a clinic under 100 eligible transactions a month. Its published window ended in September 2026 with no confirmed extension.</p></div></div>
+      <div class="move"><div class="mn num">—</div><div><h4>Spreading across separate web properties</h4><p class="why">Eka runs administration, analytics, assessments and its scribe on five origins with three visual languages, and the seams show. DocPad's single application is an advantage — protect it rather than copying the sprawl.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="change">
+  <div class="wrap band-inner narrow">
+    <p class="eyebrow">Honest ending</p>
+    <h2 style="margin-top:10px">What would change the call</h2>
+
+    <div style="margin-top:22px">
+      <div class="qa"><h4>Whether our own safety checks actually fire</h4><p>This is the first thing to settle, because the verdict leans on it. Two questions for whoever owns the clinical code: does an allergy entered through the encounter screen today reach the hard stop, and how many drug pairs are really in the live interaction table? The repository's own September note says about 24, and that warfarin with aspirin comes back clean. Until both are answered, the safety advantage is architectural rather than clinical.</p></div>
+      <div class="qa"><h4>If Eka ships an allergy list</h4><p>The clinical-safety advantage narrows sharply, because their drug knowledge base is visibly broader than ours — branded Indian products mapped to generics and manufacturers — even though their interaction content was never sized. Watch their public feature board; it would appear there first.</p></div>
+      <div class="qa"><h4>If the live instance is healthier than it looked</h4><p>The five high-severity defects and the stuck screens were observed on 15 October on the Vercel instance, while the source read is from 19 September. If the defects are environment problems rather than product problems, the readiness position improves and nothing else on this page changes.</p></div>
+      <div class="qa"><h4>If the incentive scheme is renewed generously</h4><p>Then interoperability moves up both tracks rather than waiting for a deal. One official notice settles it.</p></div>
+      <div class="qa"><h4>Questions only your team can answer</h4><p>Who is the first clinic-tier customer, and do they have inpatient beds? Is anyone paying for DocPad today, and what did they buy? And the one that decides Track 1 entirely: is there appetite to support self-serve customers, who arrive without an implementation and expect the software to explain itself?</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap band-inner">
+    <div class="foot-grid">
+      <div>
+        <p class="eyebrow">What was examined</p>
+        <p class="small" style="margin-top:8px">DocPad: the live instance on 15 October 2026 (42 routes, 61 endpoints) and the <span class="num">docpad-clean</span> repository at commit 3f0d836, 19 September 2026. Eka Care: dr.eka.care on 15–16 October 2026 (21 routes, 29 components, 51 endpoints) on a base-plan account, walked end to end with a test patient.</p>
+      </div>
+      <div>
+        <p class="eyebrow">What could not be evaluated</p>
+        <p class="small" style="margin-top:8px">Eka's source code, its inpatient module (not licensed on the account), its ambient scribe (a separate application), and its administration and analytics properties beyond their structure. On DocPad, no write actions were performed, so prescribing, billing and registration were documented from the code rather than executed. Drug-interaction content lives only in the live database and could not be counted.</p>
+      </div>
+      <div>
+        <p class="eyebrow">Outside sources</p>
+        <p class="small" style="margin-top:8px">Eka's funding and filings via Inc42 and Crunchbase; revenue and paid-doctor counts from a November 2025 YourStory interview; pricing from Eka's own archived pricing page and third-party listings, which disagree; the incentive scheme from its April 2026 revision; feature demand from Eka's public board at eka.frill.co; sentiment from Play and App Store listings.</p>
+      </div>
+      <div>
+        <p class="eyebrow">Reading the page</p>
+        <p class="small" style="margin-top:8px">A <span class="inf" title="Like this — hover or tap for the reason">dotted underline</span> marks a judgement call rather than an observation. Statements about what was or was not found describe the account and build that were mapped, not the products in every configuration. This page was fact-checked against the two site maps and the DocPad source on 16 October; figures from outside those sources are attributed where they appear.</p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  // theme toggle
+  var root=document.documentElement, btn=document.getElementById("theme");
+  function dark(){var a=root.getAttribute("data-theme");if(a)return a==="dark";
+    try{return window.matchMedia("(prefers-color-scheme: dark)").matches}catch(e){return false}}
+  function sync(){btn.textContent=dark()?"Light":"Dark"}
+  btn.addEventListener("click",function(){root.setAttribute("data-theme",dark()?"light":"dark");sync()});
+  try{window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",sync)}catch(e){}
+  sync();
+
+  // matrix filter
+  var rows=Array.prototype.slice.call(document.querySelectorAll("#mtxbody tr"));
+  document.getElementById("filters").addEventListener("click",function(e){
+    var b=e.target.closest(".fbtn"); if(!b) return;
+    var f=b.dataset.f;
+    Array.prototype.forEach.call(this.querySelectorAll(".fbtn"),function(x){x.classList.toggle("on",x===b)});
+    rows.forEach(function(r){
+      var k=r.dataset.k||"";
+      if(f==="all"){r.hidden=false;return}
+      if(r.classList.contains("grp")){r.hidden=true;return}
+      r.hidden=k.indexOf(f)===-1;
+    });
+  });
+
+  // track tabs
+  var panes={t1:document.getElementById("t1"),t2:document.getElementById("t2"),t3:document.getElementById("t3")};
+  document.getElementById("ttabs").addEventListener("click",function(e){
+    var b=e.target.closest(".ttab"); if(!b) return;
+    Array.prototype.forEach.call(this.querySelectorAll(".ttab"),function(x){x.classList.toggle("on",x===b)});
+    Object.keys(panes).forEach(function(k){panes[k].hidden=(k!==b.dataset.t)});
+  });
+
+  // scroll spy
+  var links=Array.prototype.slice.call(document.querySelectorAll("#navlinks a"));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute("href"))}).filter(Boolean);
+  if("IntersectionObserver" in window){
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if(!en.isIntersecting) return;
+        var id="#"+en.target.id;
+        links.forEach(function(a){a.classList.toggle("on",a.getAttribute("href")===id)});
+      });
+    },{rootMargin:"-25% 0px -65% 0px"});
+    secs.forEach(function(s){io.observe(s)});
+  }
+})();
+</script>
+
+</body>
+</html>
