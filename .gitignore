@@ -41,3 +41,5 @@ supabase/_baseline_schema.sql
 
 # Local symlink to docs/graphify-out, which is committed
 /graphify-out
+.vercel
+.env*
