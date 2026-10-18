@@ -43,7 +43,7 @@ These figures size the target. Revisit them when the commercial plan changes.
 | Patients | 20 million registrations |
 | Encounters | 150,000 OPD and 15,000 IPD-days per day |
 | Documents and images | 400 TB over 7 years, excluding DICOM archives hosted by hospitals |
-| Data residency | All PHI stored and processed in India |
+| Data residency | All PHI stored in India. Approved providers (Gemini, AssemblyAI, Twilio) process PHI under contract; hospitals that require in-country processing use the open-model option |
 
 The service levels below are targets, not current measurements.
 
@@ -68,7 +68,8 @@ The service levels below are targets, not current measurements.
 5. **Standards at the boundary, pragmatic models inside.** Internal tables stay relational and fast. FHIR R4 with the NRCES profiles is the shape used for interoperability, export and analytics conformance.
 6. **Least privilege, defence in depth.** The edge checks the request, the identity provider authenticates the user, a policy engine authorises the action, and Postgres RLS is the final guard. Any one layer failing alone must not leak data.
 7. **Evolve, don't rewrite.** The target is reached in phases. Each phase leaves a working system. The SQL safety and billing logic, the pgTAP suites and the data model are assets to keep.
-8. **Everything is reproducible.** Infrastructure is Terraform, the schema is versioned migrations from a committed baseline, and every environment can be rebuilt from git.
+8. **Everything is reproducible.** Infrastructure is OpenTofu, the schema is versioned migrations from a committed baseline, and every environment can be rebuilt from git.
+9. **Open source first.** Every engine is OSI-licensed open-source software running on Kubernetes, so DocPad can run in any Indian cloud or data centre. Managed services are acceptable only when the engine underneath is open source and wire-compatible. The approved paid services are Twilio, Gemini and AssemblyAI; section 5 lists them with the few services that cannot be replaced.
 
 ---
 
@@ -82,15 +83,15 @@ flowchart TB
     PA[Patient app + WhatsApp]
     PP[Partner portals and APIs: TPA, referrers, labs]
   end
-  EDGE[Edge: CloudFront, AWS WAF, Shield, per-tenant rate limits]
+  EDGE[Edge: Envoy Gateway, Coraza WAF, per-tenant rate limits]
   CH --> EDGE
-  subgraph APP[Application tier: ECS Fargate, ap-south-1]
+  subgraph APP[Application tier: Kubernetes, primary Indian region]
     BFF[Next.js BFF / SSR]
     IAM[Keycloak + Cerbos]
     CORE[Core API: modular monolith, TypeScript]
     WF[Temporal workflows]
     INT[Interop gateway: HAPI FHIR, ABDM, NHCX]
-    AIG[AI gateway]
+    AIG[AI gateway: Gemini, AssemblyAI, open-model option]
     NTF[Notification service]
     IE[Integration engine: HL7v2, ASTM, DICOM]
   end
@@ -103,15 +104,15 @@ flowchart TB
     PG[(PostgreSQL 17, Multi-AZ)]
     RD[(Valkey / Redis)]
     OS[(OpenSearch)]
-    S3[(S3 + KMS)]
-    K[[Kafka / MSK]]
+    S3[(Ceph RGW, S3 API)]
+    K[[Kafka via Strimzi]]
   end
   CORE --> PG & RD & OS & S3
   PG -- outbox CDC --> K
   subgraph AN[Analytics]
-    LH[(S3 + Iceberg lakehouse)]
+    LH[(Iceberg lakehouse)]
     DBT[dbt]
-    SF[(Snowflake, AWS Mumbai)]
+    SF[(Trino + Superset)]
   end
   K --> LH --> DBT --> SF
   SITE[Hospital site: DocPad edge agent] <--> IE
@@ -129,13 +130,13 @@ flowchart TB
 
 ### 4.2 Edge
 
-CloudFront serves the static assets. AWS WAF applies managed rule sets, bot control and rate limits per tenant and per IP. Shield Standard protects against DDoS.
+Envoy Gateway is the ingress. Coraza WAF runs the OWASP Core Rule Set, and Envoy enforces rate limits per tenant and per IP. Network-level DDoS scrubbing comes from the hosting provider, since no software can supply that capacity.
 
 All origins are in India. TLS 1.3 is used everywhere. Partner and device traffic goes through API keys plus mTLS.
 
 ### 4.3 Identity and access
 
-- **Authentication: Keycloak**, self-hosted in India. The alternative is Amazon Cognito.
+- **Authentication: Keycloak**, self-hosted in India. Open-source alternatives are Authentik and Zitadel.
   - One realm per deployment, with hospital groups as organisations.
   - Hospital chains can sign in through their own SAML or OIDC identity provider (SSO).
   - Clinicians must use MFA, through a TOTP app or a passkey.
@@ -151,7 +152,7 @@ All origins are in India. TLS 1.3 is used everywhere. Partner and device traffic
 
 #### Core API: a modular monolith in TypeScript
 
-Use NestJS with Kysely and generated types. It runs on ECS Fargate in private subnets.
+Use NestJS with Kysely and generated types. It runs on Kubernetes in private network segments.
 
 One deployable holds eight domain modules with enforced boundaries:
 
@@ -179,7 +180,7 @@ The BFF does server-side rendering and UI composition, and keeps the session. It
 
 #### Temporal workflows
 
-Temporal runs long, multi-party processes that must survive restarts and retries. The alternative is AWS Step Functions.
+Temporal runs long, multi-party processes that must survive restarts and retries. It is self-hosted (MIT licence).
 
 - pre-authorisation to claim to settlement
 - discharge, where clinical sign-off, billing clearance, pharmacy return and bed release run in parallel
@@ -196,11 +197,13 @@ Temporal runs long, multi-party processes that must survive restarts and retries
 - **AI gateway.**
   - It is the single exit for all model calls. It removes identifiers before text leaves DocPad, sets quotas and keeps cost records per tenant, logs prompts and responses (with PHI redacted) and runs model evaluations.
   - Models:
-    - Gemini through Vertex AI, in an India region where the model is offered, under enterprise terms that prohibit training on DocPad data.
-    - The contracted in-house speech-to-text model: a medical ASR fine-tuned for Indian accents, hosted on GPU instances in ap-south-1.
+    - Gemini (approved) for extraction, summaries, OCR and embeddings, preferably through Vertex AI with no-training terms and a regional endpoint where offered.
+    - AssemblyAI (approved) for speech-to-text.
+    - Open-weight models (Apache-2.0 or MIT), served by vLLM on GPU nodes in India, as a per-hospital option selected in the gateway.
+    - The contracted in-house speech-to-text model: a medical ASR fine-tuned for Indian accents, hosted on GPU nodes in India (Whisper-family or AI4Bharat Indic models). It is delivered through the open-model option.
   - Every AI-extracted clinical fact stays a draft until a clinician confirms it.
 - **Notification service.**
-  - Channels: WhatsApp Business through a BSP, SMS through a TRAI DLT-registered provider, email through Amazon SES, and push through FCM and APNs.
+  - Channels: WhatsApp and DLT-registered SMS through Twilio (approved), email through self-hosted Postal or any SMTP relay, and push through FCM and APNs. Orchestration runs on Novu (MIT).
   - It uses templates in multiple languages (English, Hindi and regional), checks consent and quiet hours, and keeps delivery receipts.
 - **Integration engine.**
   - Adapters for HL7 v2 and ASTM lab analysers, DICOM through Orthanc with an OHIF viewer, and results from external labs.
@@ -211,11 +214,11 @@ Temporal runs long, multi-party processes that must survive restarts and retries
 
 | Store | Role |
 |---|---|
-| PostgreSQL 17 (Aurora PostgreSQL, Multi-AZ) | System of record. RLS on tenant keys, pgvector (HNSW), pg_trgm. Large time-series tables are partitioned with pg_partman, for example audit, vitals, MAR and notifications. Connections go through RDS Proxy. Read replicas serve operational reporting. |
-| Valkey (ElastiCache, Redis-compatible) | Cache for reference data and terminology, rate limits, idempotency keys, distributed locks for bed allocation and token numbers, and pub/sub for live boards. Holds no PHI longer than 15 minutes. |
+| PostgreSQL 17 (CloudNativePG operator, HA across zones) | System of record. RLS on tenant keys, pgvector (HNSW), pg_trgm. Large time-series tables are partitioned with pg_partman, for example audit, vitals, MAR and notifications. Connections go through PgBouncer. Read replicas serve operational reporting. |
+| Valkey (BSD, Redis-compatible) | Cache for reference data and terminology, rate limits, idempotency keys, distributed locks for bed allocation and token numbers, and pub/sub for live boards. Holds no PHI longer than 15 minutes. |
 | OpenSearch | Patient search with phonetic and transliterated Indian-name matching, terminology search, and search over staff and inventory. Indexed from Kafka. |
-| S3 with SSE-KMS | Documents, scans, consent PDFs, wound photos, exports and backups. Paths are prefixed per tenant. Object Lock keeps medico-legal records for the retention period. Lifecycle rules move cold data to Glacier. |
-| Kafka (Amazon MSK) | The domain event backbone. A transactional outbox plus Debezium CDC publishes every change in commit order. One topic per domain, keyed by `hospital_id`. |
+| Ceph RGW via Rook (S3 API), encrypted with OpenBao-managed keys | Documents, scans, consent PDFs, wound photos, exports and backups. Paths are prefixed per tenant. Object Lock keeps medico-legal records for the retention period. Lifecycle rules move cold data to a cheaper pool. |
+| Apache Kafka (Strimzi operator) | The domain event backbone. A transactional outbox plus Debezium CDC publishes every change in commit order. One topic per domain, keyed by `hospital_id`. |
 
 ### 4.6 Analytics
 
@@ -227,52 +230,99 @@ The lakehouse is described in section 6.
 
 | Concern | Target |
 |---|---|
-| Infrastructure as code | Terraform, one module per cell, Atlantis or GitHub Actions plan/apply |
+| Infrastructure as code | OpenTofu, one module per cell; Argo CD for GitOps deployment |
 | Environments | dev, staging (anonymised production-shaped data), prod; ephemeral preview environments per PR with a database branch |
 | CI/CD | GitHub Actions: typecheck, lint, unit, pgTAP (against staging, never prod), contract tests, migration drift gate, container scan (Trivy), SAST (Semgrep), blue/green deploy |
 | Schema | Committed baseline + versioned SQL migrations (Atlas or Supabase CLI); generated TypeScript types; drift check blocks merge |
 | Feature flags | OpenFeature with Unleash; per-tenant module flags replace `hospitals.enabled_modules` |
-| Observability | OpenTelemetry SDK in every service → Grafana stack (Loki logs, Tempo traces, Mimir metrics) or Datadog; Sentry for front-end and API errors; SLO dashboards per module and per tenant |
-| Security operations | GuardDuty, Security Hub, CloudTrail Lake; log retention ≥ 180 days in India (CERT-In); quarterly VAPT; ISO 27001 then SOC 2 Type II |
-| Secrets and keys | AWS Secrets Manager; KMS envelope encryption; per-tenant data keys for highly sensitive columns; nothing secret ever in a `NEXT_PUBLIC_*` variable |
-| Disaster recovery | Aurora Global Database or cross-region snapshot copy to Hyderabad (ap-south-2); S3 cross-region replication; quarterly restore drills per tenant |
+| Observability | OpenTelemetry SDK in every service → Prometheus, Grafana, Loki, Tempo; GlitchTip for front-end and API errors (Sentry SDK compatible); Uptime Kuma; SLO dashboards per module and per tenant |
+| Security operations | Wazuh SIEM, Falco runtime detection, Trivy and Semgrep CE in CI; log retention ≥ 180 days in India (CERT-In); quarterly VAPT; ISO 27001 then SOC 2 Type II |
+| Secrets and keys | OpenBao (secrets and transit encryption); envelope encryption; per-tenant data keys for highly sensitive columns; nothing secret ever in a `NEXT_PUBLIC_*` variable |
+| Disaster recovery | CloudNativePG replica cluster in a second Indian region; WAL archiving with Barman; Ceph multi-site replication; quarterly restore drills per tenant |
 
 ---
 
-## 5. Recommended technology by component
+## 5. Recommended technology by component (open source first)
 
-| Component | Recommended (target) | Interim / alternative | Why |
-|---|---|---|---|
-| Cloud and region | AWS ap-south-1 Mumbai, DR ap-south-2 Hyderabad | Supabase on AWS ap-south-1 (Team or Enterprise plan) until cell split | India residency, two Indian regions, mature healthcare compliance tooling |
-| Staff front end | Next.js 16, React 19, Tailwind 4, Radix | keep current | Existing investment; team skills |
-| Front-end hosting | ECS Fargate behind CloudFront | Vercel pinned to `bom1` | Keeps PHI-bearing SSR inside the VPC |
-| Patient app | Expo (React Native) | PWA | Shares TypeScript, models and validation with web |
-| Core API | NestJS + Kysely, TypeScript | Next.js route handlers grown carefully | Typed modules, DI, testability, same language |
-| Validation and contracts | Zod schemas shared FE/BE; OpenAPI generated | — | One schema for the form, the API and the docs |
-| Identity | Keycloak | Amazon Cognito; Supabase Auth with MFA forced (interim) | SSO for chains, MFA, patient OTP, India-hosted |
-| Authorisation | Cerbos | OpenFGA; RLS only (today) | Policy as code with care-relationship rules and audit of decisions |
-| Workflows | Temporal | AWS Step Functions | Durable multi-day processes such as claims |
-| Simple jobs | Amazon SQS + workers | pg_cron (today) | Retries, DLQs, visibility |
-| OLTP database | Aurora PostgreSQL 17 | Supabase Postgres 17 with PITR and read replica | Keeps every SQL asset; HA; global DB for DR |
-| Connection pooling | RDS Proxy | Supavisor | Serverless-safe pooling |
-| Cache | ElastiCache Valkey | Upstash Redis (India region) | Rate limits, locks, hot reference data |
-| Search | Amazon OpenSearch | Postgres pg_trgm + pgvector (keep until ~5M patients) | Phonetic, fuzzy, transliterated names at scale |
-| Vector | pgvector (HNSW) | — | Data stays next to the rows it describes |
-| Object storage | S3 + KMS + Object Lock | Supabase Storage | Retention lock, lifecycle, replication |
-| Event streaming | Amazon MSK (Kafka) + Debezium | Confluent Cloud (AWS Mumbai); SQS/EventBridge at small scale | Ordered, replayable domain events, CDC to analytics |
-| Terminology | Snowstorm (SNOMED CT India edition) + LOINC + ICD-10 | CSIRO Ontoserver (today, licensed) | SOW names Snowstorm; self-hosted, no external PHI fragments |
-| FHIR | HAPI FHIR R4 server, NRCES profiles | SQL-built bundles (today) | Conformance testing, ABDM, NHCX |
-| Integration | Custom adapters on HAPI HL7v2 + ASTM parsers; Orthanc for DICOM; DocPad edge agent | — | Lab analysers and PACS live on hospital LANs |
-| AI | Vertex AI Gemini behind an AI gateway; in-house medical ASR on GPU | Gemini API (today, server key only) | Residency, contract terms, redaction, evaluation |
-| Messaging | WhatsApp BSP, DLT-registered SMS, Amazon SES, FCM/APNs | Twilio + Resend (today) | Indian SMS regulation, cost, deliverability |
-| Payments | Razorpay (UPI, cards, refunds, payment links) | — | No gateway today |
-| Lakehouse | S3 + Apache Iceberg | — | Open format, cheap, replayable |
-| Transformation | dbt | — | Tested, documented SQL models |
-| Warehouse | Snowflake (AWS Mumbai) | Amazon Redshift; Athena on Iceberg | Strong governance, data sharing for groups |
-| BI | Apache Superset embedded with row-level security per tenant | Metabase | Embeddable, open source |
-| Data catalog and lineage | OpenMetadata | DataHub | PII tags, lineage, ownership |
-| Observability | OpenTelemetry + Grafana (Loki, Tempo, Mimir) + Sentry | Datadog | Traces across BFF, API, workers, DB |
-| IaC and CI | Terraform + GitHub Actions | — | Reproducible environments |
+Every engine in the target is OSI-licensed open-source software running on Kubernetes. This gives DocPad three properties:
+
+- It runs in any Indian cloud or a hospital group's own data centre.
+- It depends on no vendor-proprietary API.
+- PHI stays on infrastructure DocPad controls, except where an approved provider (Twilio, Gemini, AssemblyAI) processes it under contract.
+
+A managed service is acceptable only when the engine is open source and wire-compatible, such as managed Kubernetes or managed vanilla PostgreSQL. Leaving it then stays possible.
+
+The MVP still runs on the interim stack, Supabase and Vercel. Supabase is itself Apache-2.0 and can be self-hosted.
+
+| Component | Open-source choice | Licence | Replaces | Notes |
+|---|---|---|---|---|
+| Runtime platform | Kubernetes + Argo CD (GitOps) | Apache-2.0 | ECS Fargate | Any Indian cloud or on-premises |
+| Edge, WAF, rate limits | Envoy Gateway + Coraza WAF (OWASP CRS) | Apache-2.0 | CloudFront, AWS WAF | DDoS scrubbing stays with the network provider |
+| Certificates, mTLS | cert-manager | Apache-2.0 | ACM | Partner and edge-agent mTLS |
+| Staff UI | Next.js, React, Tailwind, Radix on a self-hosted Node server | MIT | Vercel hosting | Same code |
+| Patient app | Expo / React Native | MIT | — | Shares TypeScript models |
+| Core API | NestJS + Kysely | MIT | — | Typed modules |
+| Identity | Keycloak | Apache-2.0 | Cognito, Supabase Auth | SSO, MFA, patient OTP |
+| Authorisation | Cerbos | Apache-2.0 | — | Policy as code |
+| Workflows | Temporal (self-hosted) | MIT | Step Functions | Durable multi-day processes |
+| Background jobs | Graphile Worker or pg-boss on Postgres | MIT | SQS | Transactional with the data |
+| OLTP database | PostgreSQL 17 + CloudNativePG | PostgreSQL, Apache-2.0 | Aurora | Keeps all SQL, tests, RLS |
+| Pooling | PgBouncer | ISC | RDS Proxy | Per-tenant connection budgets |
+| Backups, PITR | Barman (via CloudNativePG) or pgBackRest | GPL-3.0, MIT | Managed snapshots | WAL archive in a second region |
+| Cache | Valkey | BSD-3 | ElastiCache, Redis | Open Redis fork |
+| Search | OpenSearch (operator) | Apache-2.0 | Amazon OpenSearch | Phonetic Indian names |
+| Vectors | pgvector (HNSW) | PostgreSQL | — | Embeddings next to their rows |
+| Object storage | Ceph RGW via Rook (S3 API) | LGPL, Apache-2.0 | S3 | Object Lock; any S3-compatible store works |
+| Events and CDC | Apache Kafka (Strimzi) + Debezium | Apache-2.0 | MSK, Confluent | Ordered, replayable events |
+| Secrets and keys | OpenBao | MPL-2.0 | Secrets Manager, KMS | Open fork of Vault (now BSL) |
+| Terminology | Snowstorm | Apache-2.0 | CSIRO Ontoserver | SNOMED content licensed; free in India via NRCeS |
+| FHIR | HAPI FHIR server + HL7 validator | Apache-2.0 | — | NRCES conformance |
+| Integration engine | Apache Camel + HAPI HL7 v2 | Apache-2.0, MPL | — | Analysers, external labs |
+| Imaging | Orthanc + OHIF | GPL-3.0, MIT | — | Separate service |
+| ABDM encryption | fidelius-cli (sidecar) | open source | — | Reference Fidelius implementation |
+| LLM | **Gemini** (approved) behind a LiteLLM gateway; open-weight models on vLLM as a per-hospital option | commercial; MIT, Apache-2.0 | Gemini key in the browser | Gateway redacts, logs, sets quotas, routes per hospital |
+| Speech-to-text | **AssemblyAI** (approved); Whisper-family or AI4Bharat Indic ASR as the open option | commercial; MIT | — | The open option is the route to the SOW in-house STT |
+| OCR | **Gemini** vision (approved); PaddleOCR or docTR as the open option | commercial; Apache-2.0 | — | Lab reports, insurance cards |
+| Embeddings | **gemini-embedding-001** (current); open embedding models (e.g. BGE, E5) as the option | commercial; MIT / Apache-2.0 | — | Raise the Gemini quota to finish the ICD-10 backfill; switching models means re-embedding 73,790 codes |
+| Notifications | Novu (self-hosted) orchestrating **Twilio** (approved) for WhatsApp and DLT SMS | MIT; commercial | Direct Twilio calls from route handlers | Templates, preferences, consent in one place |
+| Email sending | Postal (self-hosted) | MIT | SES, Resend | Or any SMTP relay |
+| Lakehouse | Apache Iceberg + Apache Polaris or Nessie catalog | Apache-2.0 | Snowflake storage | Open table format |
+| Query engine | Trino | Apache-2.0 | Snowflake, Redshift | Group and network analytics |
+| Transform, quality | dbt Core, Great Expectations | Apache-2.0 | — | Tested SQL models |
+| BI | Apache Superset (embedded, RLS) | Apache-2.0 | — | Per hospital and group |
+| Catalog, lineage | OpenMetadata | Apache-2.0 | — | PII tags, lineage |
+| Metrics, logs, traces | OpenTelemetry, Prometheus, Grafana, Loki, Tempo | Apache-2.0, AGPL-3.0 | Datadog | End-to-end traces |
+| Error tracking | GlitchTip | MIT | Sentry SaaS | Uses the Sentry SDK |
+| Uptime | Uptime Kuma | MIT | — | Per-tenant checks |
+| Security monitoring | Wazuh, Falco | GPL-2.0, Apache-2.0 | GuardDuty, Security Hub | CERT-In log retention |
+| Infrastructure as code | OpenTofu | MPL-2.0 | Terraform (BSL) | Open fork |
+| Supply-chain scanning | Trivy, Semgrep CE | Apache-2.0, LGPL | — | Images, dependencies, code |
+| Feature flags | Unleash + OpenFeature | Apache-2.0 | — | Per-tenant module flags |
+
+### 5.1 Paid services in the target
+
+Twilio, Gemini and AssemblyAI are approved choices. The rest are external services or licensed content by nature. Each one sits behind an adapter.
+
+| Item | Why it stays a service | How lock-in is limited |
+|---|---|---|
+| Payment gateway (Razorpay) | RBI-licensed payment aggregators | Payment adapter; a second gateway can be added |
+| Twilio (WhatsApp, SMS) | Approved; carries Meta and DLT registration | Novu provider; DocPad owns templates and sender registrations |
+| Gemini (LLM, OCR, embeddings) | Approved | LiteLLM gateway; per-hospital switch to open models |
+| AssemblyAI (speech-to-text) | Approved | AI gateway; open ASR option |
+| Push (FCM, APNs) | Apple and Google | Novu providers |
+| ABDM, NHCX, IDSP/IHIP, Nikshay | Government platforms | Interop gateway |
+| DDoS scrubbing, anycast CDN | Needs network capacity | Stateless; any provider |
+| Compute, network, data centre | Hardware | Kubernetes and OpenTofu run on any provider with two Indian regions |
+| SNOMED CT content, drug knowledge base | Licensed clinical content (SNOMED free in India) | Loaded into Snowstorm and versioned tables |
+| Source hosting and CI (GitHub) | Developer tooling, not runtime | Forgejo + Woodpecker CI is the open alternative |
+
+### 5.2 Licence notes
+
+- **Avoided because the licence is not open source:** Terraform and Vault (BSL), Sentry (FSL), Redis 7.4 (RSAL/SSPL), Snowflake, Aurora, and MinIO (AGPL, with the community edition reduced by the vendor).
+- **AGPL and GPL components** (Grafana, Loki, Tempo, Orthanc, Wazuh) run unmodified as separate internal services. Used this way, they create no obligation to publish DocPad code. Get counsel review before modifying any of them.
+- **Open-model option:** use only models licensed Apache-2.0 or MIT. Several popular model licences restrict commercial use.
+- **Approved providers and the DPDP Act:** Gemini, AssemblyAI and Twilio may process PHI outside India. Sign data-processing agreements with no-training terms, use regional endpoints where offered (Vertex AI for Gemini), and list each one as a processor in the privacy notice. Audio cannot be redacted before speech-to-text, so a hospital that forbids it uses the open ASR option.
+- **The trade-off is operations.** Self-hosting moves work from vendors to DocPad's platform team. Budget for at least two SRE/platform engineers before Phase 3, and use managed Kubernetes and managed vanilla PostgreSQL where that load is too high.
 
 ---
 
@@ -301,7 +351,7 @@ flowchart LR
   K --> BR[(Bronze: raw events)]
   BR -- dbt --> SI[(Silver: conformed, pseudonymised)]
   SI -- dbt --> GO[(Gold: marts)]
-  GO --> SF[(Snowflake)]
+  GO --> SF[(Trino query engine)]
   SF --> BI[Superset per hospital and group]
   SI --> ML[Consented, de-identified AI datasets]
   PG --> RR[(Read replica)] --> OPS[Operational dashboards]
@@ -416,8 +466,8 @@ Platform (DocPad)
 
 | Tier | Who | Database | Compute | Notes |
 |---|---|---|---|---|
-| Pooled | Clinics and small to mid hospitals (default) | Shared Aurora cluster in a cell; RLS on `hospital_id` | Shared | Lowest cost; noisy-neighbour limits apply |
-| Silo | Large groups, or contracts that require it | Dedicated Aurora cluster | Shared or dedicated workers | Same code and schema; tenant catalog routes connections |
+| Pooled | Clinics and small to mid hospitals (default) | Shared PostgreSQL cluster in a cell; RLS on `hospital_id` | Shared | Lowest cost; noisy-neighbour limits apply |
+| Silo | Large groups, or contracts that require it | Dedicated PostgreSQL cluster | Shared or dedicated workers | Same code and schema; tenant catalog routes connections |
 | Self-hosted edge | Any hospital | n/a | DocPad edge agent on the LAN | Devices, printers, offline cache |
 
 A **tenant catalog**, a small platform database, maps each hospital to its cell and its database. The BFF and the Core API look up this mapping at login and cache it in Valkey.
@@ -433,7 +483,7 @@ Moving a tenant from the pooled tier to the silo tier is a scripted operation. I
 | Hospital groups | Group-level roles, such as a group CMO, see aggregated dashboards. They see patient detail only through a care relationship or break-glass. |
 | Shared patients across a group | The group MPI links registrations. The clinician sees the history from other branches when consent allows, with the source hospital labelled. |
 | Visiting consultants | One login and several affiliations. The user picks the hospital context, and every action is scoped to it. |
-| Noisy neighbours | Per-tenant API rate limits, statement timeouts, a connection budget per tenant in RDS Proxy, and queue partitions by `hospital_id`. |
+| Noisy neighbours | Per-tenant API rate limits, statement timeouts, a connection budget per tenant in PgBouncer, and queue partitions by `hospital_id`. |
 | Support access | Support staff request time-boxed access that the hospital admin approves. It is fully audited and visible to the hospital. |
 | Per-tenant backup, restore and export | Logical export per `hospital_id` (FHIR bulk export plus documents), used for DPDPA portability, contract exit and point-in-time restore of a single tenant. |
 | Metering and SaaS billing | Usage events (encounters, beds, AI minutes, messages) are aggregated per tenant to bill DocPad's customers. |
@@ -483,8 +533,8 @@ DocPad today routes six staff roles (doctor, nurse, pharmacist, receptionist, la
 | **Security** | RLS strong and tested; append-only audit; but browser talks to DB directly; Gemini key shipped to browser and not rotated; no MFA; public buckets for templates and assets; admin client falls back to anon key; PHI to third-party AI under consumer terms | WAF; Keycloak with MFA and SSO; Cerbos policies + RLS backstop; secrets only server-side and rotated; KMS envelope encryption; AI gateway with redaction; private buckets with signed URLs; SIEM; VAPT; ISO 27001 |
 | **Reliability** | Single project, single region; backups cannot be decrypted; no queue, retries happen inside requests; ECG service not deployed; one missing edge function | Multi-AZ, cross-region DR (RPO 5 min, RTO 1 h); restore drills; outbox + Kafka; Temporal retries; DLQs; offline ward PWA; edge agent store-and-forward; dependency health checks |
 | **Performance efficiency** | Analytics run as live RPCs on the OLTP primary; ILIKE search; no cache; ~90 triggers on the write path | Read replicas and materialised views; OpenSearch; Valkey; partitioned time-series tables; orchestration moved off triggers; load tests per release |
-| **Cost optimisation** | Low today; unbounded AI calls; no per-tenant cost visibility | Per-tenant cost allocation tags and metering; AI quotas; S3 lifecycle; Graviton instances; savings plans once usage is steady |
-| **Sustainability** | Not considered | Right-sized cells, Graviton, cold-storage tiering, efficient AI model selection |
+| **Cost optimisation** | Low today; unbounded AI calls; no per-tenant cost visibility | Per-tenant cost allocation tags and metering; AI quotas; storage lifecycle tiers; ARM nodes; committed-use discounts; no per-seat licence fees |
+| **Sustainability** | Not considered | Right-sized cells, ARM nodes, cold-storage tiering, small open models where they suffice |
 
 ---
 
@@ -541,7 +591,7 @@ Each hospital is onboarded without engineering help. Every clinical write is saf
 | Workstream | Weeks | Scope |
 |---|---|---|
 | Security | W1–W4 | Keys rotated (W1); Supabase Auth TOTP MFA enforced for clinicians and admins in `proxy.ts`; public buckets made private with signed URLs; remove the anon-key fallback in `lib/supabase/admin.ts` |
-| Operations | W2–W4 | Sentry and uptime alerts; CI pgTAP suites against staging only; baseline DDL and generated types committed; Supabase PITR enabled and the custom backup code retired; one restore drill |
+| Operations | W2–W4 | GlitchTip error tracking (Sentry SDK) and Uptime Kuma alerts; CI pgTAP suites against staging only; baseline DDL and generated types committed; Supabase PITR enabled and the custom backup code retired; one restore drill |
 | Clinical safety | W3–W6 | AI extractions stay drafts until a doctor confirms them (`doctor_confirmed`); licensed or substantially expanded drug-interaction content; discharge summary modal pointed at the existing compile route |
 | Routes and RBAC | W3–W6 | One canonical route tree; proxy denies by default (covers `/ipd`); tablet layouts for nursing screens |
 | Multi-hospital | W4–W7 | Merge `organizations` into `hospitals`; scripted onboarding that seeds master data from a versioned catalogue; per-hospital configuration screen |
@@ -566,16 +616,16 @@ Each hospital is onboarded without engineering help. Every clinical write is saf
 | MVP | 24 drug-interaction pairs | Licensed knowledge base (decision by W3) |
 | MVP | Missing `generate-discharge-summary` | Use the existing compile route |
 | MVP | Duplicate routes; `/ipd` outside the proxy | One tree; deny by default |
-| MVP | No observability; CI tests hit production | Sentry and alerts; CI on staging |
+| MVP | No observability; CI tests hit production | GlitchTip and alerts; CI on staging |
 | MVP | `hospitals` / `organizations` split | Merge; scripted onboarding |
 | MVP | No tablet layouts | Nursing screens at 10–11" |
 | MVP | ABDM not running; live ABDM bugs | Fix the bugs; v3 M1 + M2 in sandbox; certification after the MVP |
 | Post-MVP | Browser writes directly; orchestration in triggers | BFF + Core API (strangler), outbox, Kafka |
 | Post-MVP | One hospital per practitioner; no SSO | Keycloak, Cerbos, affiliations |
-| Post-MVP | Analytics on the primary | Read replica, then lakehouse + Snowflake |
+| Post-MVP | Analytics on the primary | Read replica, then Iceberg lakehouse + Trino |
 | Post-MVP | No devices, patient app, payments, NHCX | Edge agent, Expo app, Razorpay, NHCX |
 | Post-MVP | External terminology; plain-text phones; retention unenforced | Snowstorm; tokenisation; retention workflow |
-| Post-MVP | Single region | AWS cells, Hyderabad DR |
+| Post-MVP | Single region | Kubernetes cells in two Indian regions |
 
 ### 10.5 Risks to the dates
 
@@ -599,25 +649,25 @@ From January 2027, each track ships in small increments behind feature flags whi
 | Platform seams | BFF → Core API with the strangler pattern, one module at a time (billing first: clearest boundary, strongest tests) → outbox → Valkey | The browser writes to no tables; every write emits an event |
 | Identity | Keycloak with SSO for chains → Cerbos policies → practitioner affiliations | One login works across hospitals; policies are code |
 | Interop | ABDM M3 → functional test + WASA → production keys → HAPI FHIR facade → NHCX | ABDM certified; hospitals earn DHIS incentives; a cashless claim submitted through NHCX |
-| Data | Read replica for dashboards → Kafka CDC → lakehouse → Snowflake | Group dashboards served off the primary |
+| Data | Read replica for dashboards → Kafka CDC → Iceberg lakehouse → Trino + Superset | Group dashboards served off the primary |
 | Integration and patient | Edge agent and first lab analyser → Expo patient app → Razorpay | One analyser live; patients book and pay in the app |
-| AI | AI gateway → Vertex in an India region → in-house speech-to-text | All model calls go through the gateway; SOW STT delivered |
-| Scale-out | AWS cells → Hyderabad DR → silo tier → OpenSearch, partitioning | A region failover drill meets RPO and RTO |
+| AI | AI gateway (LiteLLM) in front of Gemini and AssemblyAI → open-model option on vLLM → in-house speech-to-text | All model calls go through the gateway; SOW STT delivered |
+| Scale-out | Kubernetes cells → second-region DR → silo tier → OpenSearch, partitioning | A region failover drill meets RPO and RTO |
 
-Hosting moves to AWS last. Once every write goes through the API and every change emits an event, moving the database becomes a mechanical cutover rather than a redesign.
+Hosting moves to self-managed Kubernetes last. Once every write goes through the API and every change emits an event, moving the database becomes a mechanical cutover rather than a redesign.
 
 ## 12. Key decisions (ADR summary)
 
 | ADR | Decision | Alternatives considered | Reason |
 |---|---|---|---|
-| 001 | Keep PostgreSQL as the single system of record; host on Aurora in the target, Supabase in the interim | MongoDB, per-module databases | All safety and billing logic, pgTAP tests and RLS are Postgres assets; relational integrity matters for clinical and financial data |
+| 001 | Keep PostgreSQL as the single system of record; self-hosted with CloudNativePG in the target, Supabase (itself open source) in the interim | MongoDB, per-module databases | All safety and billing logic, pgTAP tests and RLS are Postgres assets; relational integrity matters for clinical and financial data |
 | 002 | Modular monolith Core API in TypeScript | Microservices; keep logic in SQL | One team, tight transactional coupling, same language as the front end |
 | 003 | Keep RLS as backstop behind an application policy layer | RLS only; app checks only | Defence in depth; care-relationship rules are awkward in pure SQL |
 | 004 | Transactional outbox + Debezium + Kafka | Dual writes; triggers calling HTTP | Guaranteed, ordered delivery without losing events |
 | 005 | Pooled tenancy by default, silo on demand, grouped into cells | Database per tenant for all; single global pool | Balances cost, blast radius and contractual isolation |
 | 006 | India-only data residency, including AI inference | Global regions | DPDP Act expectations, hospital contracts, CERT-In |
 | 007 | FHIR as interoperability and analytics shape, not the internal store | FHIR server as system of record | Performance and modelling freedom inside; standards outside |
-| 008 | Lakehouse on open Iceberg tables with Snowflake as the query engine | Analytics on OLTP replica only | Cross-hospital analytics without loading the clinical database |
+| 008 | Lakehouse on open Iceberg tables with Trino as the query engine | Analytics on OLTP replica only | Cross-hospital analytics without loading the clinical database |
 
 Each ADR should become its own file under `docs/architecture/adr/` once it is accepted.
 
@@ -679,8 +729,8 @@ flowchart TB
 | NHCX | External | Cashless pre-auth and claims as FHIR bundles |
 | Insurers and TPAs | External | Payers outside NHCX |
 | Public health reporting | External | IDSP/IHIP notifiable diseases, Nikshay TB notification |
-| Messaging providers | External | WhatsApp, DLT SMS, email (live today: Twilio, Resend) |
-| AI services | External | LLM and speech-to-text (live today: Gemini, AssemblyAI) |
+| Messaging providers | External | Twilio for WhatsApp and DLT SMS; email relay (live today: Twilio, Resend) |
+| AI services | External | Gemini and AssemblyAI behind the AI gateway; any hospital can switch to self-hosted open models |
 | Terminology server | External | SNOMED CT, LOINC, ICD-10 (live today: CSIRO Ontoserver) |
 | Payment gateway | External | UPI, cards, refunds, settlement webhooks |
 | Hospital devices | External | Analysers, PACS, printers on the hospital LAN |
@@ -785,12 +835,13 @@ flowchart LR
     PA[Payment adapter]
     IE[Integration engine]
     TS[Terminology service: Snowstorm]
+    MS[Open-model option: vLLM, open ASR]
   end
   subgraph EXT[External parties]
     ABDM[ABDM gateway and consent manager]
     NHCX[NHCX]
-    MSG[WhatsApp BSP, DLT SMS, SES]
-    LLM[Vertex Gemini, in-house ASR]
+    MSG[Twilio WhatsApp and SMS, email relay]
+    LLM[Gemini, AssemblyAI]
     RZ[Razorpay]
     EA[Edge agent at hospital]
     EL[External labs and referrers]
@@ -807,6 +858,7 @@ flowchart LR
   NS -->|template API| MSG
   MSG -.->|delivery receipts| NS
   AG -->|HTTPS, redacted| LLM
+  AG -.->|per-hospital option| MS
   PA <-->|REST, HMAC webhooks| RZ
   EA <-->|mTLS: HL7 v2, ASTM, DICOMweb| IE
   EL <-->|FHIR or HL7 v2| IE
@@ -826,11 +878,11 @@ flowchart LR
 | NHCX | Out; async | FHIR Claim / ClaimResponse, JWE | None | Interop gateway + Temporal |
 | Insurers and TPAs outside NHCX | Out; document pack | PDF pack, email or partner API | Manual | Generated claim packs with tracked status |
 | Public health (IDSP/IHIP, Nikshay) | Out; batch or API | Programme formats | None | Reports triggered by notifiable diagnosis events |
-| WhatsApp | Out; async, receipts in | BSP template API, webhooks | Live (Twilio, from route handlers) | Notification service with consent and quiet hours |
-| SMS | Out; async | TRAI DLT templates | None | DLT provider through notification service |
-| Email | Out; async | API | Live (Resend, expiry digest only) | Amazon SES |
-| LLM | Out; sync | HTTPS/JSON | Live (Gemini API; key exposed) | AI gateway → Vertex AI in an India region |
-| Speech-to-text | Out; streaming | WebSocket + REST | Live (AssemblyAI) | In-house medical ASR |
+| WhatsApp | Out; async, receipts in | BSP template API, webhooks | Live (Twilio, from route handlers) | Twilio via Novu, with consent and quiet hours |
+| SMS | Out; async | TRAI DLT templates | None | Twilio SMS (DLT-registered) via Novu |
+| Email | Out; async | API | Live (Resend, expiry digest only) | Postal (self-hosted) or any SMTP relay, through Novu |
+| LLM | Out; sync | HTTPS/JSON | Live (Gemini API; key exposed) | Gemini through the AI gateway (LiteLLM); open models on vLLM as a per-hospital option |
+| Speech-to-text | Out; streaming | WebSocket + REST | Live (AssemblyAI) | AssemblyAI through the AI gateway; open ASR (Whisper or AI4Bharat) as the option |
 | Terminology | Out; sync | FHIR `$expand`, `$validate-code` | Live (CSIRO Ontoserver) | Self-hosted Snowstorm with cache |
 | Payments | Both; sync + webhooks | REST, HMAC-signed webhooks | None | Razorpay adapter with daily reconciliation |
 | Lab analysers | In; streaming on LAN | ASTM E1394, HL7 v2 ORU over TCP/serial | None | Edge agent → integration engine |
@@ -863,7 +915,7 @@ In short:
    - Razorpay linked account
    - edge agent certificate
 
-   These live in an `integration_connections` table. Secrets are held in Secrets Manager and referenced by ARN.
+   These live in an `integration_connections` table. Secrets are held in OpenBao and referenced by path.
 3. **Outbox out, inbox in.** An inbound message is verified, stored, acknowledged and only then processed. A slow partner therefore never loses data and never blocks a clinical write.
 4. **Idempotency.** Every outbound request carries a key, and every inbound message is deduplicated.
 5. **Verification.** Webhooks need a valid gateway JWT, HMAC or mTLS. This replaces today's shared-secret check in `consent-request-notify`.
